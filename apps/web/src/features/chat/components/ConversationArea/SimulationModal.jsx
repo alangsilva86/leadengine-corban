@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Copy } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -29,8 +28,6 @@ import {
   summarizeProposal,
 } from './utils/salesSnapshot.js';
 import { createProposalMessageFromEntries } from './utils/proposalMessage.js';
-import emitInboxTelemetry from '../../utils/telemetry.js';
-import { useClipboard } from '@/hooks/use-clipboard.js';
 import SimulationForm from './SimulationForm.jsx';
 import QueueAlerts from './QueueAlerts.jsx';
 import {
@@ -77,7 +74,6 @@ const SimulationModal = ({
   const productsByAgreement =
     rawProductsByAgreement instanceof Map ? rawProductsByAgreement : new Map();
   const ticketId = defaultValues?.ticketId ?? null;
-  const clipboard = useClipboard();
 
   const [stage, setStage] = useState(() => normalizeStageState(defaultValues.stage));
   const [leadId, setLeadId] = useState(defaultValues.leadId ?? '');
@@ -631,29 +627,6 @@ const SimulationModal = ({
     setCustomTermInput('');
   };
 
-  const handleCopyMessage = useCallback(() => {
-    if (!proposalMessage) {
-      return;
-    }
-
-    Promise.resolve(clipboard.copy(proposalMessage))
-      .then((copied) => {
-        emitInboxTelemetry('chat.sales.proposal.copy_message', {
-          ticketId,
-          source: 'simulation-modal',
-          copied: Boolean(copied),
-          length: proposalMessage.length,
-        });
-      })
-      .catch(() => {
-        emitInboxTelemetry('chat.sales.proposal.copy_message', {
-          ticketId,
-          source: 'simulation-modal',
-          copied: false,
-          length: proposalMessage.length,
-        });
-      });
-  }, [clipboard, proposalMessage, ticketId]);
   const validateForm = () => {
     const nextErrors = {};
 
