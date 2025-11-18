@@ -61,10 +61,10 @@ import {
   removeCachedSnapshot,
   clearInstanceArchive,
   collectInstancesForTenant,
-} from '../modules/whatsapp/instances/service';
+} from '../modules/whatsapp/instances';
 import { parseListInstancesQuery, listInstancesUseCase } from '../modules/whatsapp/instances/list-instances';
 import { metaOfflineRouter } from './integrations/meta-offline-router';
-import type { InstanceOperationContext, StoredInstance } from '../modules/whatsapp/instances/service';
+import type { InstanceOperationContext, StoredInstance } from '../modules/whatsapp/instances';
 import { resolveRequestTenantId, resolveRequestActorId } from '../services/tenant-service';
 import { normalizeQueryValue } from '../utils/request-parsers';
 
