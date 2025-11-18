@@ -90,6 +90,7 @@ const SimulationModal = ({
   const [initialSelection, setInitialSelection] = useState([]);
   const [normalizedAlerts, dispatchQueueAlerts] = useReducer(queueAlertsReducer, []);
   const [errors, setErrors] = useState({});
+  const [tableFilter, setTableFilter] = useState('');
 
   const alertsActive = normalizedAlerts.length > 0;
   const fieldsDisabled = disabled || alertsActive;
@@ -173,9 +174,60 @@ const SimulationModal = ({
     [productId, selectedConvenio, simulationDate]
   );
 
+  const tableOptions = useMemo(() => {
+    const unique = new Map();
+    activeTaxes.forEach((tax, index) => {
+      const tableId =
+        normalizeString(tax?.table?.id) ||
+        normalizeString(tax?.table?.name) ||
+        normalizeString(tax?.modalidade);
+      if (!tableId || unique.has(tableId)) {
+        return;
+      }
+      const fallbackLabel = `Tabela ${index + 1}`;
+      const label =
+        normalizeString(tax?.table?.name) || normalizeString(tax?.modalidade) || fallbackLabel;
+      unique.set(tableId, { value: tableId, label: label || fallbackLabel });
+    });
+    return Array.from(unique.values());
+  }, [activeTaxes]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    if (tableOptions.length === 0) {
+      if (tableFilter !== '') {
+        setTableFilter('');
+      }
+      return;
+    }
+    const hasSelected = tableOptions.some((option) => option.value === tableFilter);
+    if (!hasSelected) {
+      const fallbackValue = tableOptions.length === 1 ? tableOptions[0].value : '';
+      if (tableFilter !== fallbackValue) {
+        setTableFilter(fallbackValue);
+      }
+    }
+  }, [open, tableFilter, tableOptions]);
+
+  const filteredActiveTaxes = useMemo(() => {
+    const normalizedFilter = normalizeString(tableFilter);
+    if (!normalizedFilter) {
+      return activeTaxes;
+    }
+    return activeTaxes.filter((tax) => {
+      const tableId =
+        normalizeString(tax?.table?.id) ||
+        normalizeString(tax?.table?.name) ||
+        normalizeString(tax?.modalidade);
+      return tableId === normalizedFilter;
+    });
+  }, [activeTaxes, tableFilter]);
+
   const availableTermOptions = useMemo(() => {
     const terms = new Set();
-    activeTaxes.forEach((tax) => {
+    filteredActiveTaxes.forEach((tax) => {
       (tax.termOptions ?? []).forEach((term) => {
         if (Number.isFinite(term)) {
           terms.add(term);
@@ -186,7 +238,7 @@ const SimulationModal = ({
       DEFAULT_TERM_POOL.forEach((term) => terms.add(term));
     }
     return Array.from(terms).sort((a, b) => a - b);
-  }, [activeTaxes]);
+  }, [filteredActiveTaxes]);
 
   const selectedTermsSorted = useMemo(() => ensureUniqueTerms(selectedTerms), [selectedTerms]);
 
@@ -204,7 +256,7 @@ const SimulationModal = ({
     simulationDate,
     simulationDateInput,
     activeWindow,
-    activeTaxes,
+    activeTaxes: filteredActiveTaxes,
     prefilledSnapshot,
   });
 
@@ -360,6 +412,7 @@ const SimulationModal = ({
       : null;
     setSimulationDateInput(formatDateInput(snapshotDate ?? new Date()));
     setErrors({});
+    setTableFilter('');
   }, [defaultValues, isProposalMode, open]);
 
   useEffect(() => {
@@ -559,8 +612,8 @@ const SimulationModal = ({
     if (selectedConvenio && !activeWindow) {
       blocking.push('Nenhuma janela vigente para a data escolhida. Atualize o calendário antes de simular.');
     }
-    if (selectedConvenio && productId && activeTaxes.length === 0) {
-      blocking.push('Nenhuma taxa válida para este produto nesta data. Confira as configurações.');
+    if (selectedConvenio && productId && filteredActiveTaxes.length === 0) {
+      blocking.push('Nenhuma taxa válida para este produto na tabela ou data selecionada. Confira as configurações.');
     }
     if (selectedTermsSorted.length === 0) {
       blocking.push('Escolha ao menos um prazo para calcular as condições.');
@@ -584,7 +637,7 @@ const SimulationModal = ({
     }
     return { blockingIssues: blocking, warningIssues: warnings };
   }, [
-    activeTaxes.length,
+    filteredActiveTaxes.length,
     activeWindow,
     baseValueNumber,
     calculationMode,
@@ -653,6 +706,9 @@ const SimulationModal = ({
             fieldsDisabled={fieldsDisabled}
             errors={errors}
             onToggleOfferSelection={handleToggleOfferSelection}
+            tableOptions={tableOptions}
+            tableFilter={tableFilter}
+            onTableFilterChange={setTableFilter}
           />
 
           <div className="space-y-2">
