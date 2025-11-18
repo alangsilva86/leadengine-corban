@@ -1,6 +1,6 @@
 import { NotFoundError } from '@ticketz/core';
 import { findTicketById as storageFindTicketById } from '@ticketz/storage';
-import { listTicketSalesEvents } from '../../data/ticket-sales-event-store';
+import { listTicketSalesEvents } from '../../../data/ticket-sales-event-store';
 import type { ListTicketsOptions, TicketHydrated } from '../types';
 import { hydrateTicket, resolveTicketHydrations } from './query-helpers';
 

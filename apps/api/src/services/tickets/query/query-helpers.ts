@@ -1,7 +1,7 @@
 import { logger } from '../../../config/logger';
 import { prisma } from '../../../lib/prisma';
-import type { TicketNote } from '../../data/ticket-note-store';
-import { listTicketNotes } from '../../data/ticket-note-store';
+import type { TicketNote } from '../../../data/ticket-note-store';
+import { listTicketNotes } from '../../../data/ticket-note-store';
 import type { Ticket, TicketHydrated, TicketLeadSummary, TicketContactSummary } from '../types';
 import type { ConversationComputation } from '../shared/metrics';
 import { fetchConversationStatsForTickets } from '../shared/metrics';

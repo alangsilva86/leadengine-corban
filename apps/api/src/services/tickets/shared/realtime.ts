@@ -1,6 +1,6 @@
-import type { Message, Ticket, TicketStatus } from '../../types/tickets';
+import type { Message, Ticket, TicketStatus } from '../../../types/tickets';
 import { emitToAgreement, emitToTenant, emitToTicket, emitToUser } from '../../../lib/socket-registry';
-import type { TicketSalesEvent } from '../../data/ticket-sales-event-store';
+import type { TicketSalesEvent } from '../../../data/ticket-sales-event-store';
 import { resolveWhatsAppInstanceId } from './whatsapp';
 
 export type MessageRealtimeEnvelope = {

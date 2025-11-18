@@ -1,5 +1,5 @@
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '@ticketz/core';
-import type { Message, SendMessageDTO, Ticket } from '../../types/tickets';
+import type { Message, SendMessageDTO, Ticket } from '../../../types/tickets';
 import {
   createMessage as storageCreateMessage,
   findMessageByExternalId as storageFindMessageByExternalId,
@@ -19,18 +19,18 @@ import {
   getWhatsAppTransport,
   type WhatsAppTransport,
   type WhatsAppTransportSendMessagePayload,
-} from '../../features/whatsapp-transport';
+} from '../../../features/whatsapp-transport';
 import type { WhatsAppTransportDependencies } from '../whatsapp-send';
 import type { WhatsAppCanonicalError } from '@ticketz/wa-contracts';
 import { WhatsAppTransportError } from '@ticketz/wa-contracts';
-import { normalizeContactsPayload, normalizeLocationPayload, normalizeTemplatePayload } from '../../utils/message-normalizers';
+import { normalizeContactsPayload, normalizeLocationPayload, normalizeTemplatePayload } from '../../../utils/message-normalizers';
 import {
   assertCircuitClosed,
   buildCircuitBreakerKey,
   getCircuitBreakerConfig,
   recordCircuitFailure,
   recordCircuitSuccess,
-} from '../../utils/circuit-breaker';
+} from '../../../utils/circuit-breaker';
 import { handleDatabaseError, isUniqueViolation } from '../shared/prisma-helpers';
 
 export const emitMessageUpdatedEvents = async (
