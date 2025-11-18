@@ -55,7 +55,1142 @@ import {
   normalizeInstanceStatusResponse,
   normalizeQr,
   extractQrImageBuffer,
+  type NormalizedQr,
 } from './qr';
+import {
+  resolveDefaultInstanceId,
+  INVALID_INSTANCE_ID_MESSAGE,
+  readBrokerErrorStatus,
+} from './http';
+import type {
+  InstanceMetadata,
+  NormalizedInstance,
+  NormalizedInstanceStatus,
+  StoredInstance,
+} from './types';
+
+const MAX_BFS_NODES = 5_000;
+
+type BrokerRateLimit = {
+  limit: number | null;
+  remaining: number | null;
+  resetAt: string | null;
+};
+
+type BrokerSessionStatus = {
+  status?: string | null;
+  connected?: boolean | null;
+  qrCode?: string | null;
+  qrExpiresAt?: string | null;
+  rate?: Record<string, unknown> | null;
+};
+
+const safeIncrementHttpCounter = (): void => {
+  try {
+    // metrics are best-effort in some environments
+    whatsappHttpRequestsCounter.inc();
+  } catch {
+    // ignore metric failures
+  }
+};
+
+const normalizeKeyName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const toNumeric = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const mapDbStatusToNormalized = (status: WhatsAppInstanceStatus): NormalizedInstance['status'] => {
+  switch (status) {
+    case 'connected':
+      return 'connected';
+    case 'connecting':
+      return 'connecting';
+    case 'pending':
+      return 'pending';
+    case 'failed':
+      return 'failed';
+    case 'error':
+      return 'error';
+    default:
+      return 'disconnected';
+  }
+};
+
+export const mapBrokerStatusToDbStatus = (
+  status: WhatsAppStatus | null | undefined,
+): WhatsAppInstanceStatus => {
+  if (!status) {
+    return 'disconnected';
+  }
+  switch (status.status) {
+    case 'connected':
+      return 'connected';
+    case 'connecting':
+      return 'connecting';
+    case 'qr_required':
+      return 'connecting';
+    case 'disconnected':
+      return 'disconnected';
+    case 'pending':
+      return 'pending';
+    case 'failed':
+      return 'failed';
+    default:
+      return 'error';
+  }
+};
+
+export const mapBrokerInstanceStatusToDbStatus = (
+  status: string | null | undefined,
+): WhatsAppInstanceStatus => {
+  switch (status) {
+    case 'connected':
+      return 'connected';
+    case 'connecting':
+    case 'qr_required':
+      return 'connecting';
+    case 'disconnected':
+      return 'disconnected';
+    case 'pending':
+      return 'pending';
+    case 'failed':
+      return 'failed';
+    default:
+      return 'error';
+  }
+};
+
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  return isRecord(value) ? (value as Record<string, unknown>) : null;
+};
+
+const mergeRecords = (...sources: Array<Record<string, unknown> | null>): Record<string, unknown> | undefined => {
+  const merged: Record<string, unknown> = {};
+  let hasValue = false;
+
+  for (const source of sources) {
+    if (!isRecord(source)) {
+      continue;
+    }
+    for (const [key, value] of Object.entries(source as Record<string, unknown>)) {
+      merged[key] = value;
+      hasValue = true;
+    }
+  }
+
+  return hasValue ? merged : undefined;
+};
+
+export const collectNumericFromSources = (
+  sources: unknown[],
+  keywords: string[],
+): number | null => {
+  const normalizedKeywords = keywords.map(normalizeKeyName).filter((entry) => entry.length > 0);
+
+  const inspect = (root: unknown, visited: Set<unknown>, override?: string[]): number | null => {
+    if (!root || typeof root !== 'object') {
+      return null;
+    }
+
+    const targetKeywords = override ?? normalizedKeywords;
+    const queue = Array.isArray(root) ? [...root] : [root];
+    let visitedCount = 0;
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || typeof current !== 'object') {
+        continue;
+      }
+      if (visited.has(current)) {
+        continue;
+      }
+      visited.add(current);
+      visitedCount += 1;
+      if (visitedCount > MAX_BFS_NODES) {
+        return null;
+      }
+
+      if (Array.isArray(current)) {
+        for (const entry of current) {
+          queue.push(entry);
+        }
+        continue;
+      }
+
+      for (const [key, value] of Object.entries(current as Record<string, unknown>)) {
+        const normalizedKey = normalizeKeyName(key);
+        const hasMatch = targetKeywords.some((keyword) => normalizedKey.includes(keyword));
+        if (hasMatch) {
+          const numeric = toNumeric(value);
+          if (numeric !== null) {
+            return numeric;
+          }
+          if (value && typeof value === 'object') {
+            const nested = inspect(
+              value,
+              visited,
+              ['total', 'value', 'count', 'quantity'].map(normalizeKeyName),
+            );
+            if (nested !== null) {
+              return nested;
+            }
+          }
+        }
+
+        if (value && typeof value === 'object') {
+          queue.push(value);
+        }
+      }
+    }
+
+    return null;
+  };
+
+  for (const source of sources) {
+    const result = inspect(source, new Set());
+    if (result !== null) {
+      return result;
+    }
+  }
+
+  return null;
+};
+
+const locateStatusCountsCandidate = (sources: Record<string, unknown>[]): Record<string, unknown> | number[] | undefined => {
+  const keywords = [
+    'statuscounts',
+    'statuscount',
+    'statusmap',
+    'statusmetrics',
+    'statuses',
+    'bystatus',
+    'messagestatuscounts',
+    'messagesstatuscounts',
+    'status',
+  ];
+  const normalizedKeywords = keywords.map(normalizeKeyName);
+  const statusKeys = new Set(['1', '2', '3', '4', '5']);
+  const visited = new Set<unknown>();
+  const queue: unknown[] = sources.filter((item) => item !== undefined && item !== null);
+  let visitedCount = 0;
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    visitedCount += 1;
+    if (visitedCount > MAX_BFS_NODES) {
+      return undefined;
+    }
+
+    if (Array.isArray(current)) {
+      if (current.length > 0 && current.every((entry) => typeof entry === 'number')) {
+        return current;
+      }
+      for (const entry of current) {
+        queue.push(entry);
+      }
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    const numericKeys = Object.keys(record).filter((key) => statusKeys.has(key));
+    if (numericKeys.length >= 3) {
+      return record;
+    }
+
+    for (const [key, value] of Object.entries(record)) {
+      const normalizedKey = normalizeKeyName(key);
+      if (normalizedKeywords.some((keyword) => normalizedKey.includes(keyword))) {
+        if (value && typeof value === 'object') {
+          return value as Record<string, unknown>;
+        }
+      }
+        if (value && typeof value === 'object') {
+          queue.push(value);
+        }
+    }
+  }
+
+  return undefined;
+};
+
+export const normalizeStatusCountsData = (
+  rawCounts: Record<string, unknown> | number[] | null | undefined,
+): Record<string, number> | null => {
+  if (!rawCounts) {
+    return null;
+  }
+
+  const defaultKeys = ['1', '2', '3', '4', '5'];
+  const normalizedEntries = new Map<string, number>();
+
+  if (Array.isArray(rawCounts)) {
+    rawCounts.forEach((value, index) => {
+      const numeric = toNumeric(value);
+      if (numeric === null) {
+        return;
+      }
+      normalizedEntries.set(normalizeKeyName(String(index + 1)), numeric);
+    });
+  } else if (typeof rawCounts === 'object') {
+    for (const [key, value] of Object.entries(rawCounts)) {
+      const numeric = toNumeric(value);
+      if (numeric === null) {
+        continue;
+      }
+      normalizedEntries.set(normalizeKeyName(key), numeric);
+    }
+  }
+
+  if (normalizedEntries.size === 0) {
+    return null;
+  }
+
+  const result: Record<string, number> = {};
+  defaultKeys.forEach((key) => {
+    const normalizedKey = normalizeKeyName(key);
+    const candidates = [
+      normalizedKey,
+      normalizeKeyName(`status_${key}`),
+      normalizeKeyName(`status${key}`),
+    ];
+
+    let resolved = 0;
+    for (const candidate of candidates) {
+      if (normalizedEntries.has(candidate)) {
+        resolved = normalizedEntries.get(candidate) ?? 0;
+        break;
+      }
+    }
+    result[key] = resolved;
+  });
+
+  return result;
+};
+
+const locateRateSourceCandidate = (sources: Record<string, unknown>[]): Record<string, unknown> | null => {
+  const keywords = ['rateusage', 'ratelimit', 'ratelimiter', 'rate', 'throttle', 'quota'];
+  const normalizedKeywords = keywords.map(normalizeKeyName);
+  const visited = new Set<unknown>();
+  const queue: unknown[] = sources.filter((item) => item !== undefined && item !== null);
+  let visitedCount = 0;
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+    visitedCount += 1;
+    if (visitedCount > MAX_BFS_NODES) {
+      return null;
+    }
+
+    if (Array.isArray(current)) {
+      for (const entry of current) {
+        queue.push(entry);
+      }
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    for (const [key, value] of Object.entries(record)) {
+      const normalizedKey = normalizeKeyName(key);
+      if (normalizedKeywords.some((keyword) => normalizedKey.includes(keyword))) {
+        if (value && typeof value === 'object') {
+          return value as Record<string, unknown>;
+        }
+      }
+      if (value && typeof value === 'object') {
+        queue.push(value);
+      }
+    }
+  }
+
+  return null;
+};
+
+export const normalizeRateUsageData = (
+  rawRate: Record<string, unknown> | null | undefined,
+): Record<string, number> | null => {
+  if (!rawRate || typeof rawRate !== 'object') {
+    return null;
+  }
+
+  const source = rawRate as Record<string, unknown>;
+  const used =
+    collectNumericFromSources([source], ['usage', 'used', 'current', 'value', 'count', 'consumed']) ??
+    null;
+  const limit =
+    collectNumericFromSources([source], ['limit', 'max', 'maximum', 'quota', 'total', 'capacity']) ??
+    null;
+  const remaining =
+    collectNumericFromSources([source], ['remaining', 'left', 'available', 'saldo', 'restante']) ??
+    null;
+
+  const resolvedLimit = typeof limit === 'number' ? Math.max(0, limit) : null;
+  let resolvedUsed = typeof used === 'number' ? Math.max(0, used) : null;
+  let resolvedRemaining = typeof remaining === 'number' ? Math.max(0, remaining) : null;
+
+  if (resolvedUsed === null && resolvedRemaining !== null && resolvedLimit !== null) {
+    resolvedUsed = Math.max(0, resolvedLimit - resolvedRemaining);
+  }
+
+  if (resolvedRemaining === null && resolvedLimit !== null && resolvedUsed !== null) {
+    resolvedRemaining = Math.max(0, resolvedLimit - resolvedUsed);
+  }
+
+  const usedValue = resolvedUsed ?? 0;
+  const limitValue = resolvedLimit ?? 0;
+  const remainingValue = resolvedRemaining ?? (limitValue ? Math.max(0, limitValue - usedValue) : 0);
+  const percentageValue =
+    limitValue > 0 ? Math.min(100, Math.round((usedValue / limitValue) * 100)) : usedValue > 0 ? 100 : 0;
+
+  if (!usedValue && !limitValue && !remainingValue) {
+    return null;
+  }
+
+  return {
+    used: usedValue,
+    limit: limitValue,
+    remaining: remainingValue,
+    percentage: percentageValue,
+  };
+};
+
+const readRecordString = (
+  source: Record<string, unknown> | null,
+  key: string,
+): string | null => {
+  if (!source) {
+    return null;
+  }
+  const value = source[key];
+  return typeof value === 'string' ? value : null;
+};
+
+const extractPhoneFromJidString = (value: string | null): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || !trimmed.includes('@')) {
+    return null;
+  }
+
+  const local = trimmed.split('@')[0] ?? '';
+  const digits = local.replace(/\D+/g, '');
+  if (digits.length < 8) {
+    return null;
+  }
+  return `+${digits}`;
+};
+
+const findPhoneFromJid = (value: unknown): string | null => {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    return extractPhoneFromJidString(value);
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const result = findPhoneFromJid(entry);
+      if (result) {
+        return result;
+      }
+    }
+    return null;
+  }
+
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const queue: Record<string, unknown>[] = [value as Record<string, unknown>];
+  const visited = new Set<unknown>();
+
+  while (queue.length > 0) {
+    const current = queue.shift() as Record<string, unknown>;
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    for (const entry of Object.values(current)) {
+      if (typeof entry === 'string') {
+        const phone = extractPhoneFromJidString(entry);
+        if (phone) {
+          return phone;
+        }
+      } else if (Array.isArray(entry)) {
+        for (const nested of entry) {
+          const phone = findPhoneFromJid(nested);
+          if (phone) {
+            return phone;
+          }
+        }
+      } else if (isRecord(entry)) {
+        queue.push(entry as Record<string, unknown>);
+      }
+    }
+  }
+
+  return null;
+};
+
+const resolvePhoneNumber = (
+  instance: StoredInstance,
+  metadata: Record<string, unknown>,
+  brokerStatus: WhatsAppStatus | null,
+): string | null => {
+  const brokerRecord = asRecord(brokerStatus);
+  const rawStatus = asRecord(brokerStatus?.raw);
+  const phone = pickString(
+    instance.phoneNumber,
+    metadata.phoneNumber,
+    metadata.phone_number,
+    metadata.msisdn,
+    metadata.phone,
+    metadata.number,
+    brokerRecord?.phoneNumber,
+    brokerRecord?.phone_number,
+    brokerRecord?.msisdn,
+    rawStatus?.phoneNumber,
+    rawStatus?.phone_number,
+    rawStatus?.msisdn,
+  );
+
+  if (phone) {
+    try {
+      const normalized = normalizePhoneNumber(phone);
+      return normalized.e164;
+    } catch (error) {
+      if (!(error instanceof PhoneNormalizationError)) {
+        logger.warn('whatsapp.instances.phone.normalizeUnexpected', {
+          tenantId: instance.tenantId,
+          error: String(error),
+        });
+      }
+      const digits = phone.replace(/\D+/g, '');
+      return digits ? `+${digits}` : phone;
+    }
+  }
+
+  const brokerRecordObject = isRecord(brokerRecord) ? (brokerRecord as Record<string, unknown>) : null;
+  const rawStatusObject = isRecord(rawStatus) ? (rawStatus as Record<string, unknown>) : null;
+  const metadataObject = isRecord(metadata) ? (metadata as Record<string, unknown>) : null;
+
+  const phoneFromJid =
+    extractPhoneFromJidString(readRecordString(brokerRecordObject, 'jid')) ??
+    extractPhoneFromJidString(
+      isRecord(brokerRecordObject?.user)
+        ? readRecordString(brokerRecordObject.user as Record<string, unknown>, 'id')
+        : null,
+    ) ??
+    extractPhoneFromJidString(readRecordString(rawStatusObject, 'jid')) ??
+    extractPhoneFromJidString(readRecordString(metadataObject, 'jid')) ??
+    findPhoneFromJid(metadata) ??
+    findPhoneFromJid(rawStatus) ??
+    findPhoneFromJid(brokerRecord);
+
+  if (phoneFromJid) {
+    return phoneFromJid;
+  }
+
+  return (
+    findPhoneNumberInObject(metadata) ??
+    findPhoneNumberInObject(rawStatus) ??
+    findPhoneNumberInObject(brokerRecord) ??
+    null
+  );
+};
+
+const normalizeInstance = (instance: BrokerWhatsAppInstance | null | undefined): NormalizedInstance | null => {
+  if (!instance) {
+    return null;
+  }
+
+  const id = typeof instance.id === 'string' && instance.id.trim().length > 0 ? instance.id.trim() : null;
+  if (!id) {
+    return null;
+  }
+
+  const status: NormalizedInstance['status'] = (() => {
+    switch (instance.status) {
+      case 'connected':
+        return 'connected';
+      case 'connecting':
+      case 'qr_required':
+        return 'connecting';
+      case 'disconnected':
+        return 'disconnected';
+      case 'pending':
+        return 'pending';
+      case 'failed':
+        return 'failed';
+      default:
+        return instance.connected ? 'connected' : 'disconnected';
+    }
+  })();
+
+  const connected = Boolean(instance.connected ?? status === 'connected');
+  const name = typeof instance.name === 'string' && instance.name.trim().length > 0 ? instance.name.trim() : id;
+
+  return {
+    id,
+    tenantId: instance.tenantId ?? null,
+    name,
+    status,
+    connected,
+    createdAt: instance.createdAt ?? null,
+    lastActivity: instance.lastActivity ?? null,
+    phoneNumber: instance.phoneNumber ?? null,
+    user: instance.user ?? null,
+    agreementId: null,
+    stats: instance.stats ?? null,
+    metrics: isRecord((instance as { metrics?: unknown }).metrics)
+      ? ((instance as { metrics?: Record<string, unknown> | null }).metrics ?? null)
+      : null,
+    messages: null,
+    rate: null,
+    rawStatus: null,
+    metadata: {},
+    lastError: null,
+  };
+};
+
+const slugifyInstanceId = (value: string): string => {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+};
+
+const generateInstanceIdSuggestion = async (
+  tenantId: string,
+  baseName: string,
+  fallbackId: string,
+): Promise<string> => {
+  const base = slugifyInstanceId(baseName) || slugifyInstanceId(fallbackId) || 'whatsapp-instance';
+
+  const exists = async (candidate: string) => {
+    const match = await prisma.whatsAppInstance.findFirst({
+      where: { tenantId, id: candidate },
+      select: { id: true },
+    });
+    return Boolean(match);
+  };
+
+  const suffix = () => Math.floor(Math.random() * 10_000)
+    .toString()
+    .padStart(4, '0');
+
+  const maxLength = 40;
+  let candidate = base.slice(0, maxLength);
+  let attempts = 0;
+
+  while (await exists(candidate) && attempts < 5) {
+    const suffixValue = suffix();
+    const trimmedBase = candidate.slice(0, Math.max(0, maxLength - suffixValue.length - 1));
+    candidate = `${trimmedBase}-${suffixValue}`.replace(/^-+/, '');
+    attempts += 1;
+  }
+
+  return candidate || fallbackId || `instance-${suffix()}`;
+};
+
+export class WhatsAppInstanceAlreadyExistsError extends Error {
+  code = 'INSTANCE_ALREADY_EXISTS';
+  status = 409;
+  suggestedId: string | null;
+
+  constructor(message = 'Já existe uma instância WhatsApp com esse identificador.', suggestedId: string | null = null) {
+    super(message);
+    this.name = 'WhatsAppInstanceAlreadyExistsError';
+    this.suggestedId = suggestedId;
+  }
+}
+
+export class WhatsAppInstanceInvalidPayloadError extends Error {
+  code = 'INVALID_INSTANCE_PAYLOAD';
+  status = 400;
+
+  constructor(message = 'Não foi possível criar a instância WhatsApp com os dados fornecidos.') {
+    super(message);
+    this.name = 'WhatsAppInstanceInvalidPayloadError';
+  }
+}
+
+export const createWhatsAppInstanceSchema = z
+  .object({
+    name: z.string({ required_error: 'Nome da instância é obrigatório.' }).trim().min(1, 'Nome da instância é obrigatório.'),
+    id: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length > 0, INVALID_INSTANCE_ID_MESSAGE)
+      .optional(),
+    tenantId: z.string().optional().transform((value) => (typeof value === 'string' ? value.trim() : value)),
+  })
+  .transform((data) => ({
+    ...data,
+    id: data.id && data.id.length > 0 ? data.id : undefined,
+    tenantId: data.tenantId && data.tenantId.length > 0 ? data.tenantId : undefined,
+  }));
+
+export const executeSideEffects = async (
+  effects: Array<() => Promise<void> | void>,
+  context: Record<string, unknown>,
+): Promise<void> => {
+  for (const effect of effects) {
+    try {
+      await effect();
+    } catch (error) {
+      logger.warn('whatsapp.instances.sideEffect.failed', {
+        ...context,
+        error: describeErrorForLog(error),
+      });
+    }
+  }
+};
+
+const BROKER_NOT_FOUND_CODES = new Set(['SESSION_NOT_FOUND', 'BROKER_SESSION_NOT_FOUND', 'INSTANCE_NOT_FOUND']);
+const BROKER_ALREADY_DISCONNECTED_CODES = new Set([
+  'SESSION_NOT_CONNECTED',
+  'SESSION_ALREADY_DISCONNECTED',
+  'SESSION_ALREADY_LOGGED_OUT',
+  'SESSION_NOT_OPEN',
+  'SESSION_CLOSED',
+  'ALREADY_DISCONNECTED',
+  'ALREADY_LOGGED_OUT',
+  'SESSION_NOT_INITIALIZED',
+]);
+
+const readBrokerErrorCode = (error: unknown): string | null => {
+  if (
+    error &&
+    typeof error === 'object' &&
+    'code' in error &&
+    typeof (error as { code?: unknown }).code === 'string'
+  ) {
+    const normalized = ((error as { code: string }).code ?? '').trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+  return null;
+};
+
+const readBrokerErrorMessage = (error: unknown): string | null => {
+  if (error && typeof error === 'object' && 'message' in error && typeof (error as { message?: unknown }).message === 'string') {
+    const normalized = ((error as { message: string }).message || '').trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+  return null;
+};
+
+export const isBrokerMissingInstanceError = (error: unknown): boolean => {
+  const status = readBrokerErrorStatus(error);
+  const code = readBrokerErrorCode(error);
+  return status === 404 || (code ? BROKER_NOT_FOUND_CODES.has(code) : false);
+};
+
+const includesBrokerMessageKeyword = (message: string | null, keywords: string[]): boolean => {
+  if (!message) {
+    return false;
+  }
+  const normalized = message.toLowerCase();
+  return keywords.some((keyword) => normalized.includes(keyword));
+};
+
+export const isBrokerAlreadyDisconnectedError = (error: unknown): boolean => {
+  const code = readBrokerErrorCode(error);
+  if (code && (BROKER_ALREADY_DISCONNECTED_CODES.has(code) || BROKER_NOT_FOUND_CODES.has(code))) {
+    return true;
+  }
+
+  const message = readBrokerErrorMessage(error);
+  if (
+    includesBrokerMessageKeyword(message, [
+      'already disconnected',
+      'already logged out',
+      'not connected',
+      'session closed',
+      'sessão já desconectada',
+      'sessão encerrada',
+      'não está conectada',
+    ])
+  ) {
+    return true;
+  }
+
+  const status = readBrokerErrorStatus(error);
+  return status === 409 || status === 410 || status === 404;
+};
+
+const extractAgreementIdFromMetadata = (metadata: Record<string, unknown> | null | undefined): string | null => {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+  const source = metadata as Record<string, unknown>;
+  const direct = pickString(
+    source.agreementId,
+    source.agreement_id,
+    source.agreementCode,
+    source.agreementSlug,
+    source.tenantAgreement,
+    source.agreement,
+  );
+  if (direct) {
+    return direct;
+  }
+  const nested =
+    isRecord(source.agreement) && typeof (source.agreement as Record<string, unknown>).id === 'string'
+      ? ((source.agreement as Record<string, unknown>).id as string)
+      : null;
+  return nested ?? null;
+};
+
+export const serializeStoredInstance = (
+  instance: StoredInstance,
+  brokerStatus: WhatsAppStatus | null,
+) => {
+  const normalizedStatus: NormalizedInstance['status'] =
+    brokerStatus?.status ?? mapDbStatusToNormalized(instance.status);
+  const connected = brokerStatus?.connected ?? instance.connected;
+  const rawStatus =
+    asRecord(brokerStatus?.raw) ??
+    (isRecord(brokerStatus) ? (brokerStatus as Record<string, unknown>) : null);
+
+  const stats =
+    mergeRecords(
+      asRecord(brokerStatus?.stats),
+      asRecord(brokerStatus?.messages),
+      asRecord(rawStatus?.stats as Record<string, unknown> | null),
+      asRecord(rawStatus?.messages as Record<string, unknown> | null),
+      asRecord(rawStatus?.metrics as Record<string, unknown> | null),
+      asRecord((rawStatus as Record<string, unknown> | null)?.counters),
+      asRecord((rawStatus as Record<string, unknown> | null)?.status),
+      asRecord((instance.metadata as Record<string, unknown> | null)?.stats),
+    ) ?? undefined;
+
+  let metrics =
+    mergeRecords(
+      asRecord(brokerStatus?.metrics),
+      asRecord(brokerStatus?.rateUsage),
+      asRecord(rawStatus?.metrics as Record<string, unknown> | null),
+      asRecord(rawStatus?.messages as Record<string, unknown> | null),
+      asRecord(rawStatus?.stats as Record<string, unknown> | null),
+    ) ?? null;
+
+  const baseMetadata = (instance.metadata as Record<string, unknown>) ?? {};
+  const cachedNormalized =
+    typeof baseMetadata.normalizedMetrics === 'object' ? baseMetadata.normalizedMetrics : null;
+  const brokerBroughtNewMetrics =
+    Boolean(brokerStatus?.metrics) ||
+    Boolean(brokerStatus?.rateUsage) ||
+    Boolean(rawStatus?.metrics) ||
+    Boolean(rawStatus?.messages) ||
+    Boolean(rawStatus?.stats);
+
+  if (!brokerBroughtNewMetrics && cachedNormalized && (!metrics || Object.keys(metrics).length === 0)) {
+    metrics = { ...(cachedNormalized as Record<string, unknown>) };
+  }
+
+  const messages = asRecord(brokerStatus?.messages) ?? asRecord(rawStatus?.messages) ?? null;
+  const rate =
+    mergeRecords(
+      asRecord(brokerStatus?.rate),
+      asRecord(brokerStatus?.rateUsage),
+      asRecord(rawStatus?.rate as Record<string, unknown> | null),
+      asRecord((rawStatus as Record<string, unknown> | null)?.rateUsage),
+    ) ?? null;
+
+  const metadata = { ...baseMetadata };
+  if (brokerStatus?.metrics && typeof brokerStatus.metrics === 'object') {
+    metadata.brokerMetrics = brokerStatus.metrics;
+  }
+  if (brokerStatus?.rateUsage && typeof brokerStatus.rateUsage === 'object') {
+    metadata.brokerRateUsage = brokerStatus.rateUsage;
+  }
+
+  const phoneNumber = resolvePhoneNumber(instance, metadata, brokerStatus);
+  const brokerRecord = brokerStatus ? brokerStatus : null;
+
+  const dataSources = [metrics, stats, messages, rawStatus, brokerRecord].filter(
+    (value) => value !== undefined && value !== null,
+  ) as Record<string, unknown>[];
+
+  const sentMetric = collectNumericFromSources(dataSources, [
+    'messagessent',
+    'messagesent',
+    'totalsent',
+    'senttotal',
+    'sent',
+    'enviadas',
+    'enviados',
+  ]);
+  const queuedMetric = collectNumericFromSources(dataSources, [
+    'queue',
+    'queued',
+    'pending',
+    'waiting',
+    'fila',
+    'aguardando',
+  ]);
+  const failedMetric = collectNumericFromSources(dataSources, [
+    'fail',
+    'failed',
+    'failure',
+    'falha',
+    'falhas',
+    'error',
+    'errors',
+    'erro',
+    'erros',
+  ]);
+
+  const statusCountsCandidate = locateStatusCountsCandidate(dataSources);
+  const normalizedStatusCounts = normalizeStatusCountsData(statusCountsCandidate);
+  const rateSourceCandidate = locateRateSourceCandidate(dataSources);
+  const normalizedRateUsage = normalizeRateUsageData(rateSourceCandidate);
+
+  const normalizedMetrics: Record<string, unknown> = metrics ? { ...metrics } : {};
+  if (sentMetric !== null) {
+    normalizedMetrics.messagesSent = sentMetric;
+    normalizedMetrics.sent = sentMetric;
+  }
+  if (queuedMetric !== null) {
+    normalizedMetrics.queued = queuedMetric;
+    normalizedMetrics.pending = queuedMetric;
+  }
+  if (failedMetric !== null) {
+    normalizedMetrics.failed = failedMetric;
+    normalizedMetrics.errors = failedMetric;
+  }
+  if (normalizedStatusCounts) {
+    normalizedMetrics.statusCounts = normalizedStatusCounts;
+  }
+  if (normalizedRateUsage) {
+    normalizedMetrics.rateUsage = normalizedRateUsage;
+  }
+  if (Object.keys(normalizedMetrics).length > 0) {
+    metrics = normalizedMetrics;
+    metadata.normalizedMetrics = normalizedMetrics;
+  } else {
+    metrics = null;
+  }
+
+  const agreementId = extractAgreementIdFromMetadata(metadata) ?? null;
+  if (agreementId && typeof metadata.agreementId !== 'string') {
+    metadata.agreementId = agreementId;
+  }
+  if (agreementId) {
+    const agreementMetadata =
+      metadata.agreement && typeof metadata.agreement === 'object'
+        ? { ...(metadata.agreement as Record<string, unknown>) }
+        : {};
+    if (!agreementMetadata.id) {
+      agreementMetadata.id = agreementId;
+    }
+    metadata.agreement = agreementMetadata;
+  }
+
+  const lastError = readLastErrorFromMetadata(metadata as InstanceMetadata);
+
+  return {
+    id: instance.id,
+    tenantId: instance.tenantId,
+    name: instance.name,
+    status: normalizedStatus,
+    connected,
+    createdAt: instance.createdAt.toISOString(),
+    lastActivity: instance.lastSeenAt ? instance.lastSeenAt.toISOString() : null,
+    phoneNumber,
+    user: null,
+    agreementId,
+    stats,
+    metrics,
+    messages,
+    rate,
+    rawStatus,
+    metadata,
+    lastError,
+    brokerId: instance.brokerId,
+  };
+};
+
+export const syncInstancesFromBroker = createSyncInstancesFromBroker({
+  prisma,
+  logger,
+  whatsappBrokerClient,
+  emitToTenant,
+  readInstanceArchives,
+  appendInstanceHistory,
+  buildHistoryEntry,
+  withInstanceLastError,
+  findPhoneNumberInObject,
+  pickString,
+  mapBrokerStatusToDbStatus,
+  mapBrokerInstanceStatusToDbStatus,
+});
+
+const toJsonObject = (value: unknown): Record<string, unknown> => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  try {
+    return JSON.parse(JSON.stringify(value ?? {}));
+  } catch {
+    return {};
+  }
+};
+
+export const createWhatsAppInstance = async ({
+  tenantId,
+  actorId,
+  input,
+}: {
+  tenantId: string;
+  actorId: string;
+  input: z.infer<typeof createWhatsAppInstanceSchema>;
+}) => {
+  const name = input.name.trim();
+  const explicitId = input.id?.trim() ?? '';
+  const instanceId = explicitId || name || resolveDefaultInstanceId();
+
+  const existing = await prisma.whatsAppInstance.findFirst({
+    where: {
+      tenantId,
+      id: instanceId,
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
+    throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
+  }
+
+  safeIncrementHttpCounter();
+  const brokerInstance = await whatsappBrokerClient.createInstance({
+    tenantId,
+    name,
+    instanceId,
+  });
+
+  const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
+  const brokerId = brokerIdCandidate.length > 0 ? brokerIdCandidate : instanceId;
+  const brokerNameCandidate = typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
+  const displayName = brokerNameCandidate.length > 0 ? brokerNameCandidate : name;
+  const mappedStatus = mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
+  const connected = Boolean(brokerInstance.connected ?? mappedStatus === 'connected');
+  const phoneNumber =
+    typeof brokerInstance.phoneNumber === 'string' && brokerInstance.phoneNumber.trim().length > 0
+      ? brokerInstance.phoneNumber.trim()
+      : null;
+
+  const historyEntry = buildHistoryEntry(
+    'created',
+    actorId,
+    compactRecord({
+      status: mappedStatus,
+      connected,
+      name: displayName,
+      phoneNumber: phoneNumber ?? undefined,
+    }),
+  );
+
+  const baseMetadata: Record<string, unknown> = {
+    displayId: instanceId,
+    slug: instanceId,
+    brokerId,
+    displayName,
+    label: displayName,
+    origin: 'api-create',
+  };
+  const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry);
+  const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
+
+  let stored: StoredInstance;
+  try {
+    stored = await prisma.whatsAppInstance.create({
+      data: {
+        id: instanceId,
+        tenantId,
+        name: displayName,
+        brokerId,
+        status: mappedStatus,
+        connected,
+        ...(phoneNumber ? { phoneNumber } : {}),
+        metadata: metadataWithoutError,
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
+      throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
+    }
+    if (error instanceof Prisma.PrismaClientValidationError) {
+      throw new WhatsAppInstanceInvalidPayloadError();
+    }
+    throw error;
+  }
+
+  const serialized = serializeStoredInstance(stored, null);
+  const sideEffects: Array<() => Promise<void> | void> = [
+    async () => {
+      await clearInstanceArchive(tenantId, stored.id, brokerId);
+    },
+    async () => {
+      await removeCachedSnapshot(tenantId, instanceId, brokerId);
+    },
+    () => {
+      emitToTenant(tenantId, 'whatsapp.instances.created', {
+        instance: toJsonObject(serialized),
+      });
+    },
+    () => {
+      logger.info('whatsapp.instances.create.success', {
+        tenantId,
+        actorId,
+        instanceId: serialized.id,
+        brokerId,
+        status: serialized.status,
+        connected: serialized.connected,
+      });
+    },
+  ];
+
+  return {
+    serialized,
+    sideEffects,
+    context: {
+      tenantId,
+      actorId,
+      instanceId: serialized.id,
+      brokerId,
+    },
+  };
+};
 
 type InstanceCollectionOptions = {
   refresh?: boolean;

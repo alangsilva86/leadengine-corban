@@ -2,3 +2,8 @@ export * from './service';
 export * from './cache';
 export * from './http';
 export * from './qr';
+export * from './errors';
+export * from './helpers';
+export * from './archive';
+export * from './sync';
+export * from './types';

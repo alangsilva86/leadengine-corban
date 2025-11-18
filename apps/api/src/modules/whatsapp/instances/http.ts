@@ -59,7 +59,7 @@ export type ResponseLike = {
   json(payload: unknown): ResponseLike;
 };
 
-const readBrokerErrorStatus = (error: unknown): number | null => {
+export const readBrokerErrorStatus = (error: unknown): number | null => {
   if (!error || typeof error !== 'object') {
     return null;
   }
