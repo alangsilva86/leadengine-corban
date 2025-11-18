@@ -11,7 +11,11 @@ import useManualConversationFlow from '../hooks/useManualConversationFlow';
 import useTicketFieldUpdaters from '../hooks/useTicketFieldUpdaters';
 import useWhatsAppAvailability from '../hooks/useWhatsAppAvailability';
 import emitInboxTelemetry from '../utils/telemetry.js';
-import { getLegacyStageValue, normalizeStage } from '../components/ConversationArea/utils/stage.js';
+import {
+  getLegacyStageValue,
+  normalizeStage,
+  isSupportedSalesStageKey,
+} from '../components/ConversationArea/utils/stage.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import { getTenantId } from '@/lib/auth.js';
 import { apiGet, apiPost } from '@/lib/api.js';
@@ -211,10 +215,15 @@ const resolveTicketStrategy = (ticket: any): string | null => {
 };
 
 const normalizeStageValue = (value: unknown): string | null => {
-  const normalizedStage = normalizeStage(value);
-  if (!value || normalizedStage === 'DESCONHECIDO') {
+  if (!isSupportedSalesStageKey(value)) {
     return null;
   }
+
+  const normalizedStage = normalizeStage(value);
+  if (!normalizedStage || normalizedStage === 'DESCONHECIDO') {
+    return null;
+  }
+
   return getLegacyStageValue(normalizedStage);
 };
 

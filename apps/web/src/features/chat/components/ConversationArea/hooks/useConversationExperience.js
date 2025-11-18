@@ -20,6 +20,7 @@ import {
   normalizeStage,
   applyStageSalesHints,
   getSalesStageOrder,
+  isSupportedSalesStageKey,
 } from '../utils/stage.js';
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -162,7 +163,7 @@ export const useConversationExperience = ({
   const stageOptions = useMemo(
     () =>
       Object.entries(STAGE_LABELS)
-        .filter(([key]) => key !== 'DESCONHECIDO')
+        .filter(([key]) => key !== 'DESCONHECIDO' && isSupportedSalesStageKey(key))
         .map(([key, label]) => ({
           key,
           label,
@@ -172,7 +173,11 @@ export const useConversationExperience = ({
   );
   const ticketStageKey = useMemo(() => getTicketStage(ticket), [ticket]);
   const defaultStageValue =
-    ticketStageKey && ticketStageKey !== 'DESCONHECIDO' ? getStageValue(ticketStageKey) : '';
+    ticketStageKey &&
+    ticketStageKey !== 'DESCONHECIDO' &&
+    isSupportedSalesStageKey(ticketStageKey)
+      ? getStageValue(ticketStageKey)
+      : '';
   const ticketStageLabel =
     ticketStageKey && ticketStageKey !== 'DESCONHECIDO'
       ? formatStageLabel(ticketStageKey)
@@ -263,7 +268,7 @@ export const useConversationExperience = ({
   const [salesDialog, setSalesDialog] = useState({ type: null, defaults: {} });
   const resolveTargetStageValue = useCallback(
     (targetStageKey) => {
-      if (!targetStageKey) {
+      if (!targetStageKey || !isSupportedSalesStageKey(targetStageKey)) {
         return defaultStageValue;
       }
 

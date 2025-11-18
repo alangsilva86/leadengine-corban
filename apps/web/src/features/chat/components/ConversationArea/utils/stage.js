@@ -13,6 +13,20 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+const SUPPORTED_SALES_STAGE_KEYS = new Set([
+  'NOVO',
+  'CONECTADO',
+  'QUALIFICACAO',
+  'PROPOSTA',
+  'DOCUMENTACAO',
+  'DOCUMENTOS_AVERBACAO',
+  'AGUARDANDO',
+  'AGUARDANDO_CLIENTE',
+  'LIQUIDACAO',
+  'APROVADO_LIQUIDACAO',
+  'RECICLAR',
+]);
+
 const STAGE_LABELS = {
   NOVO: 'Novo',
   CONECTADO: 'Conectado',
@@ -270,6 +284,17 @@ const normalizeStage = (value) => {
   }
 
   return canonical && STAGE_LABELS[canonical] ? canonical : 'DESCONHECIDO';
+};
+
+export const isSupportedSalesStageKey = (stageKey) => {
+  if (!stageKey) {
+    return false;
+  }
+  const normalized = normalizeStage(stageKey);
+  if (!normalized || normalized === 'DESCONHECIDO') {
+    return false;
+  }
+  return SUPPORTED_SALES_STAGE_KEYS.has(normalized);
 };
 
 const formatFallbackStageLabel = (stageKey) =>
