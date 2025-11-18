@@ -20,6 +20,8 @@ export default defineConfig({
       '@ticketz/contracts': path.resolve(__dirname, '../../packages/contracts/src'),
       '@ticketz/shared': path.resolve(__dirname, '../../packages/shared/src/index.ts'),
       '@ticketz/shared/': path.resolve(__dirname, '../../packages/shared/src/'),
+      '@ticketz/wa-contracts': path.resolve(__dirname, '../../packages/wa-contracts/src'),
+      '@ticketz/wa-contracts/': path.resolve(__dirname, '../../packages/wa-contracts/src/'),
     },
   },
   optimizeDeps: {
