@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button.jsx';
+import { Badge } from '@/components/ui/badge.jsx';
+import { Skeleton } from '@/components/ui/skeleton.jsx';
 
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from '@/components/ui/drawer.jsx';
 import { cn } from '@/lib/utils.js';
@@ -8,7 +10,7 @@ import { formatMetricValue, formatTimestampLabel } from '../lib/formatting';
 import SelectedInstanceBanner from './SelectedInstanceBanner.jsx';
 import InstanceFiltersBar from './InstanceFiltersBar.jsx';
 import InstanceGrid from './InstanceGrid.jsx';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Sparkles } from 'lucide-react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -369,11 +371,133 @@ const InstancesPanel = ({
       }
     : null;
 
+  const selectedInstanceInsights = useMemo(() => {
+    if (!selectedInstance) return null;
+    const match = enrichedInstances.find((item) => item.instance?.id === selectedInstance.id);
+    if (!match) return null;
+    return {
+      healthScore: match.healthScore,
+      healthCategory: match.healthCategory,
+      relativeUpdated: match.relativeUpdated,
+      queueSize: match.queueSize,
+      failureCount: match.failureCount,
+      connectionState: match.connectionState,
+    };
+  }, [enrichedInstances, selectedInstance]);
+
+  const readinessChecklist = useMemo(() => {
+    const normalizedConnection =
+      localStatus === 'connected'
+        ? 'done'
+        : localStatus === 'connecting'
+          ? 'progress'
+          : selectedInstanceInsights?.connectionState === 'connected'
+            ? 'done'
+            : selectedInstanceInsights?.connectionState === 'attention'
+              ? 'progress'
+              : 'todo';
+
+    const healthScore = selectedInstanceInsights?.healthScore ?? null;
+    const healthState =
+      healthScore === null ? 'todo' : healthScore >= 70 ? 'done' : healthScore >= 40 ? 'progress' : 'todo';
+
+    const healthLabel =
+      healthScore === null
+        ? 'Sem leituras recentes.'
+        : `Saúde ${healthScore}% (${selectedInstanceInsights?.healthCategory ?? '—'})`;
+
+    const inboxState = canContinue ? 'done' : normalizedConnection === 'todo' ? 'todo' : 'progress';
+
+    return [
+      {
+        key: 'connection',
+        label: 'Conexão segura',
+        state: normalizedConnection,
+        meta: selectedInstanceStatusInfo?.label ?? 'Selecione um canal conectado',
+      },
+      {
+        key: 'health',
+        label: 'Canal estável',
+        state: healthState,
+        meta: healthLabel,
+      },
+      {
+        key: 'inbox',
+        label: 'Pronto para Inbox',
+        state: inboxState,
+        meta: canContinue ? 'Você pode abrir a Inbox sem bloqueios.' : 'Finalize a conexão para liberar as ações.',
+      },
+    ];
+  }, [canContinue, localStatus, selectedInstanceInsights, selectedInstanceStatusInfo?.label]);
+
+  const daySummaryCards = useMemo(() => {
+    return [
+      {
+        key: 'connected',
+        label: 'Canais ativos',
+        value: `${summary.totals.connected}/${summary.total}`,
+        meta:
+          summary.totals.attention > 0
+            ? `${summary.totals.attention} pedem atenção agora`
+            : 'Todos saudáveis',
+        tone: summary.totals.connected > 0 ? 'success' : 'warning',
+      },
+      {
+        key: 'queue',
+        label: 'Fila (15min)',
+        value: formatMetricValue(summary.queueTotal),
+        meta: summary.queueTotal > 100 ? 'Elevada nas últimas 2h' : 'Dentro do limite esperado',
+        tone: summary.queueTotal > 100 ? 'warning' : 'default',
+      },
+      {
+        key: 'failures',
+        label: 'Falhas 24h',
+        value: formatMetricValue(summary.failureTotal),
+        meta: summary.failureTotal > 0 ? 'Revise alertas críticos' : 'Sem falhas relevantes',
+        tone: summary.failureTotal > 0 ? 'warning' : 'success',
+      },
+      {
+        key: 'health',
+        label: 'Saúde média',
+        value: `${summary.healthScore}%`,
+        meta: summary.healthScore >= 70 ? 'Pronto para campanha' : 'Avalie canais em alerta',
+        tone: summary.healthScore >= 70 ? 'success' : summary.healthScore >= 40 ? 'warning' : 'destructive',
+      },
+      {
+        key: 'sync',
+        label: 'Última sync',
+        value: summary.lastSyncLabel,
+        meta: 'Referência do dado mais recente',
+        tone: 'default',
+      },
+    ];
+  }, [summary.healthScore, summary.lastSyncLabel, summary.queueTotal, summary.totals.attention, summary.totals.connected, summary.total, summary.failureTotal]);
+
+  const priorityInstance = useMemo(() => {
+    if (!enrichedInstances.length) return null;
+    const sorted = [...enrichedInstances].sort((a, b) => {
+      const connectionScore = (state) => {
+        if (state === 'disconnected') return 3;
+        if (state === 'attention') return 2;
+        return 1;
+      };
+      const scoreA = connectionScore(a.connectionState) * 1000 + a.queueSize * 2 + a.failureCount * 5;
+      const scoreB = connectionScore(b.connectionState) * 1000 + b.queueSize * 2 + b.failureCount * 5;
+      return scoreB - scoreA;
+    });
+    return sorted[0];
+  }, [enrichedInstances]);
+
   const handleClearFilters = () => {
     setSearchTerm('');
     setStatusFilter('all');
     setHealthFilter('all');
     setProviderFilter('all');
+  };
+
+  const handleGoToPriorityInstance = () => {
+    if (!priorityInstance) return;
+    onSelectInstance?.(priorityInstance.instance, { skipAutoQr: true });
   };
 
   const filtersApplied = useMemo(() => {
@@ -426,7 +550,82 @@ const InstancesPanel = ({
         countdownMessage={countdownMessage}
         journeySteps={journeySteps}
         canContinue={canContinue}
+        readinessChecklist={readinessChecklist}
       />
+
+      <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-4 shadow-[0_16px_50px_rgba(15,23,42,0.45)]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-foreground">Resumo rápido do dia</p>
+            <p className="text-sm text-muted-foreground">Foque onde o vendedor ganha tempo e evita bloqueios.</p>
+          </div>
+          <Badge variant="outline" className="rounded-full border-slate-800/80 bg-slate-900 px-3 py-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+            {instancesReady ? `Atualizado ${summary.lastSyncLabel}` : 'Sincronizando painéis'}
+          </Badge>
+        </div>
+
+        <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-5">
+          {instancesReady
+            ? daySummaryCards.map((card) => {
+                const toneClass =
+                  card.tone === 'success'
+                    ? 'border-emerald-500/30 bg-emerald-500/5'
+                    : card.tone === 'warning'
+                      ? 'border-amber-500/30 bg-amber-500/5'
+                      : card.tone === 'destructive'
+                        ? 'border-rose-500/30 bg-rose-500/5'
+                        : 'border-slate-800/70 bg-slate-950/60';
+                return (
+                  <div
+                    key={card.key}
+                    className={cn(
+                      'rounded-2xl border px-4 py-3 text-sm text-muted-foreground transition hover:border-indigo-400/40 hover:bg-slate-900/70',
+                      toneClass,
+                    )}
+                  >
+                    <p className="text-[0.65rem] uppercase tracking-wide text-slate-400">{card.label}</p>
+                    <p className="text-lg font-semibold text-foreground">{card.value}</p>
+                    <p className="text-[0.75rem] text-muted-foreground">{card.meta}</p>
+                  </div>
+                );
+              })
+            : Array.from({ length: 5 }).map((_, index) => (
+                <div key={index} className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="mt-2 h-4 w-12" />
+                  <Skeleton className="mt-2 h-3 w-24" />
+                </div>
+              ))}
+        </div>
+
+        {priorityInstance ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" />
+              <div className="space-y-0.5">
+                <p className="text-xs uppercase tracking-wide text-indigo-200">Próxima ação prioritária</p>
+                <p className="font-semibold text-foreground">
+                  {priorityInstance.displayName}{' '}
+                  <span className="text-sm text-indigo-100/80">
+                    — fila {formatMetricValue(priorityInstance.queueSize)} | falhas{' '}
+                    {formatMetricValue(priorityInstance.failureCount)}
+                  </span>
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {priorityInstance?.connectionState === 'disconnected' ? (
+                <Badge variant="outline" className="border-amber-400/40 bg-amber-500/10 text-amber-100">
+                  Conectar antes de atender
+                </Badge>
+              ) : null}
+              <Button size="sm" variant="secondary" onClick={handleGoToPriorityInstance}>
+                Ir para o canal
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_16px_50px_rgba(15,23,42,0.45)]">
         <div className="space-y-6">

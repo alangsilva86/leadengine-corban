@@ -18,6 +18,9 @@ import {
   Plus,
   RefreshCcw,
   Zap,
+  CheckCircle2,
+  Clock3,
+  CircleDot,
 } from 'lucide-react';
 
 const QR_STATUS_VARIANTS = {
@@ -49,6 +52,7 @@ const SelectedInstanceBanner = ({
   countdownMessage,
   journeySteps,
   canContinue,
+  readinessChecklist,
 }) => {
   const selectedName = selectedInstance?.name || selectedInstance?.id || 'Selecione um canal';
   const formattedPhone = selectedInstance ? formatPhoneNumber(selectedInstancePhone) : null;
@@ -68,6 +72,17 @@ const SelectedInstanceBanner = ({
   const qrBadgeClass = QR_STATUS_VARIANTS[localStatus] ?? QR_STATUS_VARIANTS.fallback;
 
   const timeline = Array.isArray(journeySteps) && journeySteps.length > 0 ? journeySteps : null;
+  const checklist = Array.isArray(readinessChecklist) && readinessChecklist.length > 0 ? readinessChecklist : null;
+
+  const renderChecklistIcon = (state) => {
+    if (state === 'done') {
+      return <CheckCircle2 className="h-4 w-4 text-emerald-300" />;
+    }
+    if (state === 'progress') {
+      return <Clock3 className="h-4 w-4 text-amber-200" />;
+    }
+    return <CircleDot className="h-4 w-4 text-slate-300" />;
+  };
 
   const renderSummaryContent = () => {
     if (normalizedSummary.state === 'ready') {
@@ -145,6 +160,34 @@ const SelectedInstanceBanner = ({
       ) : null}
 
       {renderSummaryContent()}
+
+      {checklist ? (
+        <div className="grid gap-2 md:grid-cols-3">
+          {checklist.map((item) => {
+            const toneClass =
+              item.state === 'done'
+                ? 'border-emerald-500/40 bg-emerald-500/5'
+                : item.state === 'progress'
+                  ? 'border-amber-500/40 bg-amber-500/5'
+                  : 'border-slate-800/70 bg-slate-950/70';
+            return (
+              <div
+                key={item.key || item.label}
+                className={cn(
+                  'flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm text-muted-foreground transition',
+                  toneClass,
+                )}
+              >
+                <div className="mt-0.5 shrink-0">{renderChecklistIcon(item.state)}</div>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-foreground">{item.label}</p>
+                  {item.meta ? <p className="text-[0.8rem] leading-relaxed text-muted-foreground">{item.meta}</p> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-4 shadow-[0_10px_40px_rgba(15,23,42,0.35)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

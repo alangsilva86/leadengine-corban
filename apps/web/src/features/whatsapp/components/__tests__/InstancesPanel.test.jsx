@@ -95,10 +95,11 @@ describe('InstancesPanel', () => {
     const user = userEvent.setup();
     render(<InstancesPanel {...baseProps} />);
 
-    expect(screen.getByText('Instância Alpha')).toBeInTheDocument();
+    expect(screen.getAllByText('Instância Alpha')[0]).toBeInTheDocument();
     expect(screen.getByText(/1 instância/i)).toBeInTheDocument();
     expect(screen.getByText(/Fila total:/i)).toBeInTheDocument();
     expect(screen.getByText(/Uso médio: 50%/i)).toBeInTheDocument();
+    expect(screen.getByText(/Resumo rápido do dia/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Manter saudável/i })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /Manter saudável/i }));
