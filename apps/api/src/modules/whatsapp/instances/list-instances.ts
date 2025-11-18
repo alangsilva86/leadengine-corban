@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { collectInstancesForTenant } from '.';
 import type { NormalizedInstance } from './types';
+import { normalizeQueryValue } from '../../../utils/request-parsers';
 
 const modeSchema = z.enum(['db', 'snapshot', 'sync']).optional();
 const fieldsSchema = z.enum(['basic', 'metrics', 'full']).optional();
@@ -12,17 +13,6 @@ const rawQuerySchema = z.object({
 });
 
 const NORMALIZE_TRUE = new Set(['1', 'true', 'yes', 'y', 'on']);
-
-const normalizeQueryValue = (value: unknown): string | undefined => {
-  if (Array.isArray(value)) {
-    return normalizeQueryValue(value[0]);
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }
-  return undefined;
-};
 
 export type ListInstancesQuery = {
   mode: 'db' | 'snapshot' | 'sync';

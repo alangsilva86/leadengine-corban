@@ -1,5 +1,6 @@
 import { body, param, query } from 'express-validator';
 import type { Request } from 'express';
+import { normalizeQueryValue } from '../utils/request-parsers';
 
 export const CAMPAIGN_STATUSES = ['draft', 'active', 'paused', 'ended'] as const;
 export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
@@ -85,26 +86,6 @@ export const readNumericField = (source: Record<string, unknown>, key: string): 
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
-};
-
-const normalizeQueryValue = (value: unknown): string | undefined => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }
-
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      if (typeof entry === 'string') {
-        const trimmed = entry.trim();
-        if (trimmed.length > 0) {
-          return trimmed;
-        }
-      }
-    }
-  }
-
-  return undefined;
 };
 
 const extractStatuses = (value: unknown): CampaignStatus[] => {
