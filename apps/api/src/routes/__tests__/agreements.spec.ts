@@ -1,8 +1,6 @@
 import express, { type Request, type RequestHandler } from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
 
 const serviceMocks = vi.hoisted(() => ({
   listAgreementsMock: vi.fn(),
@@ -15,7 +13,6 @@ const serviceMocks = vi.hoisted(() => ({
   removeWindowMock: vi.fn(),
   upsertRateMock: vi.fn(),
   removeRateMock: vi.fn(),
-  requestImportMock: vi.fn(),
 }));
 
 const {
@@ -29,7 +26,6 @@ const {
   removeWindowMock,
   upsertRateMock,
   removeRateMock,
-  requestImportMock,
 } = serviceMocks;
 
 vi.mock('../../modules/agreements/service', () => ({
@@ -44,28 +40,19 @@ vi.mock('../../modules/agreements/service', () => ({
     removeWindow: serviceMocks.removeWindowMock,
     upsertRate: serviceMocks.upsertRateMock,
     removeRate: serviceMocks.removeRateMock,
-    requestImport: serviceMocks.requestImportMock,
   })),
 }));
 
-const metricsMocks = vi.hoisted(() => ({
-  incrementAgreementImportEnqueuedMock: vi.fn(),
+const importServiceMocks = vi.hoisted(() => ({
+  enqueueImportMock: vi.fn(),
 }));
 
-const { incrementAgreementImportEnqueuedMock } = metricsMocks;
+const { enqueueImportMock } = importServiceMocks;
 
-vi.mock('../../lib/metrics', () => ({
-  incrementAgreementImportEnqueued: metricsMocks.incrementAgreementImportEnqueuedMock,
-}));
-
-const workerMocks = vi.hoisted(() => ({
-  processAgreementImportJobsMock: vi.fn().mockResolvedValue(undefined),
-}));
-
-const { processAgreementImportJobsMock } = workerMocks;
-
-vi.mock('../../workers/agreements-import', () => ({
-  processAgreementImportJobs: workerMocks.processAgreementImportJobsMock,
+vi.mock('../../services/agreements-import-service', () => ({
+  AgreementsImportService: vi.fn().mockImplementation(() => ({
+    enqueueImport: importServiceMocks.enqueueImportMock,
+  })),
 }));
 
 import { agreementsRouter } from '../agreements';
@@ -101,7 +88,7 @@ describe('agreementsRouter', () => {
     removeWindowMock.mockResolvedValue(undefined);
     upsertRateMock.mockResolvedValue({});
     removeRateMock.mockResolvedValue(undefined);
-    requestImportMock.mockResolvedValue({
+    enqueueImportMock.mockResolvedValue({
       id: 'job-1',
       agreementId: 'agreement-1',
       status: 'pending',
@@ -115,7 +102,6 @@ describe('agreementsRouter', () => {
       finishedAt: null,
       errorMessage: null,
     });
-    processAgreementImportJobsMock.mockResolvedValue(undefined);
   });
 
   it('validates agreement payload before creation', async () => {
@@ -161,38 +147,26 @@ describe('agreementsRouter', () => {
     expect(updateAgreementMock).not.toHaveBeenCalled();
   });
 
-  it('stores import file and schedules worker', async () => {
-    vi.useFakeTimers();
-    const mkdirSpy = vi.spyOn(fs, 'mkdir').mockResolvedValue(undefined as unknown as void);
-    const writeFileSpy = vi.spyOn(fs, 'writeFile').mockResolvedValue(undefined);
+  it('delegates imports to the agreements import service', async () => {
+    const app = buildApp();
+    const fileBuffer = Buffer.from('first\nsecond');
 
-    try {
-      const app = buildApp();
-      const fileBuffer = Buffer.from('first\nsecond');
-      const expectedChecksum = createHash('sha256').update(fileBuffer).digest('hex');
+    const response = await request(app)
+      .post('/api/v1/agreements/agreement-1/import')
+      .attach('file', fileBuffer, { filename: 'rates.csv', contentType: 'text/csv' });
 
-      const response = await request(app)
-        .post('/api/v1/agreements/agreement-1/import')
-        .attach('file', fileBuffer, { filename: 'rates.csv', contentType: 'text/csv' });
-
-      await vi.runAllTimersAsync();
-
-      expect(response.status).toBe(202);
-      expect(writeFileSpy).toHaveBeenCalled();
-      expect(requestImportMock).toHaveBeenCalledWith('tenant-1', 'agreement-1', expect.objectContaining({
-        checksum: expectedChecksum,
-        fileName: 'rates.csv',
-      }));
-      expect(incrementAgreementImportEnqueuedMock).toHaveBeenCalledWith({
-        tenantId: 'tenant-1',
-        agreementId: 'agreement-1',
-        origin: 'agreements-api',
-      });
-      expect(processAgreementImportJobsMock).toHaveBeenCalledWith({ limit: 1 });
-    } finally {
-      vi.useRealTimers();
-      mkdirSpy.mockRestore();
-      writeFileSpy.mockRestore();
-    }
+    expect(response.status).toBe(202);
+    expect(enqueueImportMock).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      agreementId: 'agreement-1',
+      actor: expect.objectContaining({ id: 'user-1', name: 'User' }),
+      origin: 'agreements-api',
+      file: {
+        buffer: expect.any(Buffer),
+        originalName: 'rates.csv',
+        size: expect.any(Number),
+        mimeType: 'text/csv',
+      },
+    });
   });
 });
