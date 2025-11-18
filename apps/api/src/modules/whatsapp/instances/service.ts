@@ -19,7 +19,6 @@ import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import { whatsappHttpRequestsCounter } from '../../../lib/metrics';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../../../utils/phone';
-import { getMvpBypassTenantId } from '../../../config/feature-flags';
 import { invalidateCampaignCache } from '../../../features/whatsapp-inbound/services/inbound-lead-service';
 import {
   hasErrorName,
@@ -201,19 +200,6 @@ export const removeCachedSnapshot = async (
   }
 };
 
-export const normalizeQueryValue = (value: unknown): string | undefined => {
-  if (Array.isArray(value)) {
-    return normalizeQueryValue(value[0]);
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
-  }
-
-  return undefined;
-};
-
 export const normalizeBooleanValue = (value: unknown): boolean | null => {
   if (typeof value === 'boolean') {
     return value;
@@ -251,35 +237,6 @@ export const readInstanceIdParam = (req: Request): string | null => {
   }
   const trimmed = raw.trim();
   return trimmed.length > 0 ? trimmed : null;
-};
-
-export const resolveRequestTenantId = (req: Request): string => {
-  const queryTenant = normalizeQueryValue(req.query.tenantId);
-  if (queryTenant) {
-    return queryTenant;
-  }
-
-  const headerTenant = normalizeQueryValue(req.headers['x-tenant-id']);
-  if (headerTenant) {
-    return headerTenant;
-  }
-
-  const userTenant = typeof req.user?.tenantId === 'string' ? req.user.tenantId.trim() : '';
-  if (userTenant.length > 0) {
-    return userTenant;
-  }
-
-  const fallbackTenant = getMvpBypassTenantId();
-  if (fallbackTenant) {
-    return fallbackTenant;
-  }
-
-  return 'demo-tenant';
-};
-
-export const resolveRequestActorId = (req: Request): string => {
-  const userId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
-  return userId.length > 0 ? userId : 'system';
 };
 
 export const respondWhatsAppNotConfigured = (res: Response, error: unknown): boolean => {

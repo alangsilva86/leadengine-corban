@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WhatsAppTransport } from '../../features/whatsapp-transport';
 import { errorHandler } from '../../middleware/error-handler';
 
-import { resolveRequestTenantId } from '../../modules/whatsapp/instances/service';
+import { resolveRequestTenantId } from '../../services/tenant-service';
 
 const sendAdHocMock = vi.fn();
 const rateKeyForInstanceMock = vi.fn();

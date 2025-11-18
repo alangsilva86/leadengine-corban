@@ -7,6 +7,7 @@ import { assertTenantConsistency, ensureTenantFromUser, normalizeTenantId } from
 import { prisma } from '../lib/prisma';
 import { toSlug } from '../lib/slug';
 import { logger } from '../config/logger';
+import { getMvpBypassTenantId } from '../config/feature-flags';
 
 export type TenantLogContext = Record<string, unknown>;
 
@@ -143,20 +144,106 @@ const buildTenantLogContext = (req: Request, source: string): Record<string, unk
   userId: req.user?.id ?? null,
 });
 
+export interface TenantResolutionHookContext {
+  req: Request;
+  requestedTenantId: string | null;
+  headerTenantId: string | null;
+  queryTenantId: string | null;
+  userTenantId: string | null;
+}
+
+export type TenantResolutionHook = (context: TenantResolutionHookContext) => string | null | undefined;
+
+const tenantResolutionHooks: TenantResolutionHook[] = [];
+
+const legacyMvpBypassTenantHook: TenantResolutionHook = ({ userTenantId }) => {
+  if (userTenantId) {
+    return null;
+  }
+
+  return getMvpBypassTenantId() ?? 'demo-tenant';
+};
+
+const registerDefaultTenantHooks = () => {
+  tenantResolutionHooks.push(legacyMvpBypassTenantHook);
+};
+
+registerDefaultTenantHooks();
+
+export const registerTenantResolutionHook = (hook: TenantResolutionHook): (() => void) => {
+  tenantResolutionHooks.push(hook);
+  return () => {
+    const index = tenantResolutionHooks.indexOf(hook);
+    if (index >= 0) {
+      tenantResolutionHooks.splice(index, 1);
+    }
+  };
+};
+
+export const resetTenantResolutionHooks = (): void => {
+  tenantResolutionHooks.splice(0, tenantResolutionHooks.length);
+  registerDefaultTenantHooks();
+};
+
+const resolveTenantFromHooks = (context: TenantResolutionHookContext): string | null => {
+  for (const hook of tenantResolutionHooks) {
+    try {
+      const result = hook(context);
+      const normalized = normalizeTenantId(result);
+      if (normalized) {
+        return normalized;
+      }
+    } catch (error) {
+      logger.warn('[Tenant] Tenant resolution hook failed', {
+        ...buildTenantLogContext(context.req, 'hook'),
+        error: logErrorPayload(error),
+      });
+    }
+  }
+
+  return null;
+};
+
 export const resolveRequestTenantId = (req: Request, requestedTenantId?: unknown): string => {
   const payloadTenant = normalizeTenantId(requestedTenantId);
+  const headerTenant = readTenantHeader(req);
+  const queryTenant = readTenantQuery(req);
+  const userTenantId = normalizeTenantId(req.user?.tenantId);
+
+  const resolvedByHook = resolveTenantFromHooks({
+    req,
+    requestedTenantId: payloadTenant,
+    headerTenantId: headerTenant,
+    queryTenantId: queryTenant,
+    userTenantId,
+  });
+
+  if (resolvedByHook) {
+    if (payloadTenant) {
+      assertTenantConsistency(resolvedByHook, payloadTenant, buildTenantLogContext(req, 'payload'));
+    }
+
+    if (headerTenant) {
+      assertTenantConsistency(resolvedByHook, headerTenant, buildTenantLogContext(req, 'header'));
+    }
+
+    if (queryTenant) {
+      assertTenantConsistency(resolvedByHook, queryTenant, buildTenantLogContext(req, 'query'));
+    }
+
+    return resolvedByHook;
+  }
+
   const tenantId = ensureTenantFromUser(req.user, buildTenantLogContext(req, 'user'));
 
   if (payloadTenant) {
     assertTenantConsistency(tenantId, payloadTenant, buildTenantLogContext(req, 'payload'));
   }
 
-  const headerTenant = readTenantHeader(req);
   if (headerTenant) {
     assertTenantConsistency(tenantId, headerTenant, buildTenantLogContext(req, 'header'));
   }
 
-  const queryTenant = readTenantQuery(req);
   if (queryTenant) {
     assertTenantConsistency(tenantId, queryTenant, buildTenantLogContext(req, 'query'));
   }
@@ -167,4 +254,9 @@ export const resolveRequestTenantId = (req: Request, requestedTenantId?: unknown
 export const ensureTenantParamAccess = (req: Request, tenantId?: string | null): string => {
   const normalized = normalizeTenantId(tenantId);
   return resolveRequestTenantId(req, normalized ?? undefined);
+};
+
+export const resolveRequestActorId = (req: Request): string => {
+  const userId = typeof req.user?.id === 'string' ? req.user.id.trim() : '';
+  return userId.length > 0 ? userId : 'system';
 };

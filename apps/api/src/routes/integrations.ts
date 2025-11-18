@@ -20,10 +20,7 @@ import { whatsappHttpRequestsCounter } from '../lib/metrics';
 import { getWhatsAppTransport } from '../features/whatsapp-transport';
 import { z, type ZodIssue } from 'zod';
 import {
-  normalizeQueryValue,
   normalizeBooleanValue,
-  resolveRequestTenantId,
-  resolveRequestActorId,
   resolveDefaultInstanceId,
   looksLikeWhatsAppJid,
   readInstanceIdParam,
@@ -69,6 +66,8 @@ import {
 import { parseListInstancesQuery, listInstancesUseCase } from '../modules/whatsapp/instances/list-instances';
 import { metaOfflineRouter } from './integrations/meta-offline-router';
 import type { InstanceOperationContext, StoredInstance } from '../modules/whatsapp/instances/service';
+import { resolveRequestTenantId, resolveRequestActorId } from '../services/tenant-service';
+import { normalizeQueryValue } from '../utils/request-parsers';
 
 
 const router: Router = Router();
@@ -186,11 +185,10 @@ router.post(
 const instancesRateWindow = new Map<string, number[]>();
 const rateLimitInstances = (req: Request, res: Response, next: Function) => {
   const tenantId = resolveRequestTenantId(req);
-  const refreshQuery = req.query.refresh;
-  const refreshToken = Array.isArray(refreshQuery) ? refreshQuery[0] : refreshQuery;
-  const normalizedRefresh = typeof refreshToken === 'string' ? refreshToken.trim().toLowerCase() : null;
+  const refreshToken = normalizeQueryValue(req.query.refresh);
+  const normalizedRefresh = refreshToken?.toLowerCase() ?? null;
   const forced = normalizedRefresh === '1' || normalizedRefresh === 'true' || normalizedRefresh === 'yes';
-  const mode = typeof req.query.mode === 'string' ? req.query.mode : 'db';
+  const mode = normalizeQueryValue(req.query.mode) ?? 'db';
   const key = `${tenantId}|${forced ? 'refresh' : mode}`;
   const now = Date.now();
   const windowMs = forced ? 60_000 : mode === 'sync' ? 30_000 : 15_000;
