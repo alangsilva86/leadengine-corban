@@ -19,7 +19,6 @@ import {
   AlertCircle,
   ArrowLeft,
   Check,
-  CheckCircle2,
   Clock,
   Loader2,
   QrCode,
@@ -496,39 +495,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
             ) : null}
           </section>
 
-          <section className="glass-surface space-y-4 rounded-[var(--radius)] border border-border/60 px-5 py-6 shadow-sm">
-            <div className="flex flex-col gap-2">
-              <span className="text-xs uppercase tracking-wide text-muted-foreground">Checklist de configuração</span>
-              <h2 className="text-lg font-semibold text-white">Próximas ações</h2>
-              <p className="text-sm text-muted-foreground">
-                Cada item indica o estado atual da jornada. Priorize o que estiver pendente.
-              </p>
-            </div>
-            <ol className="space-y-3">
-              {checklistItems.map((item, index) => (
-                <li
-                  key={item.id}
-                  className="flex flex-col gap-2 rounded-[calc(var(--radius)_-_2px)] border border-border/60 bg-surface-overlay-quiet p-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-full border border-border/60 px-3 py-1 text-xs font-semibold">{index + 1}</div>
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-white">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.description}</p>
-                    </div>
-                    {item.state === 'done' ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                    ) : item.state === 'in_progress' ? (
-                      <Clock className="h-4 w-4 text-amber-300" />
-                    ) : null}
-                  </div>
-                  <Button size="sm" variant={item.state === 'done' ? 'ghost' : 'secondary'}>
-                    {item.actionLabel}
-                  </Button>
-                </li>
-              ))}
-            </ol>
-          </section>
         </div>
 
         <aside className="space-y-6">

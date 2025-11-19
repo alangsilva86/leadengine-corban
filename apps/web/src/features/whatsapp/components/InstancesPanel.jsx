@@ -10,7 +10,7 @@ import { formatMetricValue } from '../lib/formatting';
 import SelectedInstanceBanner from './SelectedInstanceBanner.jsx';
 import InstanceFiltersBar from './InstanceFiltersBar.jsx';
 import InstanceGrid from './InstanceGrid.jsx';
-import { AlertCircle, Sparkles } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import useInstanceMetrics from '../hooks/useInstanceMetrics';
 
 const STATUS_FILTERS = [
@@ -78,7 +78,6 @@ const InstancesPanel = ({
     filteredInstances,
     providerOptions,
     summary,
-    priorityInstance,
     searchTerm,
     setSearchTerm,
     statusFilter,
@@ -220,11 +219,6 @@ const InstancesPanel = ({
     ];
   }, [summary.healthScore, summary.lastSyncLabel, summary.queueTotal, summary.totals.attention, summary.totals.connected, summary.total, summary.failureTotal]);
 
-  const handleGoToPriorityInstance = () => {
-    if (!priorityInstance) return;
-    onSelectInstance?.(priorityInstance.instance, { skipAutoQr: true });
-  };
-
   const selectedInstanceHealthy = Boolean(
     selectedInstance && (localStatus === 'connected' || selectedInstanceStatusInfo?.variant === 'success'),
   );
@@ -311,33 +305,6 @@ const InstancesPanel = ({
               ))}
         </div>
 
-        {priorityInstance ? (
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              <div className="space-y-0.5">
-                <p className="text-xs uppercase tracking-wide text-indigo-200">Próxima ação prioritária</p>
-                <p className="font-semibold text-foreground">
-                  {priorityInstance.displayName}{' '}
-                  <span className="text-sm text-indigo-100/80">
-                    — fila {formatMetricValue(priorityInstance.queueSize)} | falhas{' '}
-                    {formatMetricValue(priorityInstance.failureCount)}
-                  </span>
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {priorityInstance?.connectionState === 'disconnected' ? (
-                <Badge variant="outline" className="border-amber-400/40 bg-amber-500/10 text-amber-100">
-                  Conectar antes de atender
-                </Badge>
-              ) : null}
-              <Button size="sm" variant="secondary" onClick={handleGoToPriorityInstance}>
-                Ir para o canal
-              </Button>
-            </div>
-          </div>
-        ) : null}
       </div>
 
       <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-6 shadow-[0_16px_50px_rgba(15,23,42,0.45)]">
