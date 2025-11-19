@@ -635,7 +635,7 @@ const normalizeInstance = (instance: BrokerWhatsAppInstance | null | undefined):
   }
 
   const status: NormalizedInstance['status'] = (() => {
-    const rawStatus = typeof instance.status === 'string' ? instance.status : null;
+    const rawStatus: string | null = typeof instance.status === 'string' ? instance.status : null;
     switch (rawStatus) {
       case 'connected':
         return 'connected';

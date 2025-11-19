@@ -166,13 +166,28 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     };
   }, [instanceViewModels, instancesReady]);
 
-  const [wizardState, setWizardState] = useState({
+  type WizardMode = 'session' | 'number';
+  type WizardState = {
+    mode: WizardMode | null;
+    agentInstalled: boolean;
+    qrConfirmed: boolean;
+    validationDone: boolean;
+  };
+
+  const [wizardState, setWizardState] = useState<WizardState>(() => ({
+    mode: null,
+    agentInstalled: localStatus === 'connecting' || localStatus === 'connected',
     qrConfirmed: localStatus === 'connected',
-    validationDone: false,
-  });
+    validationDone: localStatus === 'connected',
+  }));
 
   useEffect(() => {
-    setWizardState((prev) => ({ ...prev, qrConfirmed: localStatus === 'connected' }));
+    setWizardState((prev) => ({
+      ...prev,
+      agentInstalled: prev.agentInstalled || localStatus === 'connecting' || localStatus === 'connected',
+      qrConfirmed: localStatus === 'connected',
+      validationDone: prev.validationDone || localStatus === 'connected',
+    }));
   }, [localStatus]);
 
   const [showInstanceManager, setShowInstanceManager] = useState(!selectedInstance);
@@ -235,6 +250,18 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     (typeof instanceRecord?.plan === 'string' && instanceRecord.plan) ||
     (typeof instanceRecord?.tier === 'string' && instanceRecord.tier) ||
     'Plano padrão';
+  const rawMetrics =
+    instanceRecord &&
+    typeof (instanceRecord as { metrics?: unknown }).metrics === 'object' &&
+    !Array.isArray((instanceRecord as { metrics?: unknown }).metrics)
+      ? ((instanceRecord as { metrics?: Record<string, unknown> }).metrics ?? null)
+      : null;
+  const uptimeLabel =
+    (rawMetrics && typeof rawMetrics['uptime'] === 'string' && rawMetrics['uptime']) || '99,9%';
+  const latencyLabel =
+    (rawMetrics && typeof rawMetrics['latency'] === 'string' && rawMetrics['latency']) ||
+    (rawMetrics && typeof rawMetrics['latency'] === 'number' && `${rawMetrics['latency']}ms`) ||
+    '320ms';
   const rateUsage = currentInstance?.rateUsage ?? currentInstance?.metrics?.rateUsage ?? null;
   const usageLabel = rateUsage
     ? `${rateUsage.used ?? 0}/${rateUsage.limit ?? 0} msgs hoje`
@@ -454,11 +481,11 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
               </div>
             </div>
             {showInstanceManager ? (
-          <div className="space-y-4">
-            <Suspense fallback={<SectionFallback />}>
-              <InstancesPanel
-                surfaceStyles={surfaceStyles}
-                selectedInstance={selectedInstance}
+            <div className="space-y-4">
+              <Suspense fallback={<SectionFallback />}>
+                <InstancesPanel
+                  surfaceStyles={surfaceStyles}
+                  selectedInstance={selectedInstance}
                 selectedInstanceStatusInfo={selectedInstanceStatusInfo}
                 selectedInstancePhone={selectedInstancePhone}
                 instancesReady={instancesReady}
@@ -482,14 +509,16 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                     onViewQr={handleViewQr}
                     onRequestDelete={setInstancePendingDelete}
                     deletingInstanceId={deletingInstanceId}
-                    statusCodeMeta={statusCodeMeta}
-                    qrStatusMessage={qrStatusMessage}
-                    countdownMessage={countdownMessage}
-                    canContinue={canContinue}
-                    canCreateCampaigns={canCreateCampaigns}
-                  />
-                </Suspense>
-              </div>
+                  statusCodeMeta={statusCodeMeta}
+                  qrStatusMessage={qrStatusMessage}
+                  countdownMessage={countdownMessage}
+                  canContinue={canContinue}
+                  canCreateCampaigns={canCreateCampaigns}
+                  onViewLogs={undefined}
+                  onRenameInstance={undefined}
+                />
+              </Suspense>
+            </div>
             ) : null}
           </section>
 
@@ -574,12 +603,12 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="rounded-xl border border-border/60 bg-surface-overlay-quiet p-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Uptime</p>
-                <p className="text-2xl font-semibold text-white">{currentInstance?.metrics?.uptime ?? '99,9%'}</p>
+                <p className="text-2xl font-semibold text-white">{uptimeLabel}</p>
                 <p className="text-xs text-muted-foreground">Últimas 24h</p>
               </div>
               <div className="rounded-xl border border-border/60 bg-surface-overlay-quiet p-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Latência média</p>
-                <p className="text-2xl font-semibold text-white">{currentInstance?.metrics?.latency ?? '320ms'}</p>
+                <p className="text-2xl font-semibold text-white">{latencyLabel}</p>
                 <p className="text-xs text-muted-foreground">Envios recentes</p>
               </div>
               <div className="rounded-xl border border-border/60 bg-surface-overlay-quiet p-4">

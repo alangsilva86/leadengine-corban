@@ -542,7 +542,7 @@ const useWhatsAppConnect = ({
   }, [instance, liveEvents]);
 
   const handleRefreshInstances = useCallback(() => {
-    void loadInstances({ forceRefresh: true });
+    void loadInstances();
   }, [loadInstances]);
 
   const handleCreateInstance = useCallback(() => {
@@ -684,7 +684,7 @@ const useWhatsAppConnect = ({
     loadInstances,
     reloadCampaigns,
     showAllInstances: state.showAllInstances,
-    handleRetry: () => loadInstances({ forceRefresh: true }),
+    handleRetry: () => loadInstances(),
     setCreateInstanceOpen,
     setCreateCampaignOpen,
     isCreateInstanceOpen: state.isCreateInstanceOpen,
