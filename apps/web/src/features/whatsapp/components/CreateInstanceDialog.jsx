@@ -25,6 +25,39 @@ const CreateInstanceDialog = ({
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const normalizeIdentifier = (value) =>
+    value
+      .trim()
+      .replace(/\s+/g, '-')
+      .toLowerCase();
+
+  const identifierValidation = useMemo(() => {
+    const normalized = normalizeIdentifier(identifier);
+    const trimmed = identifier.trim();
+
+    if (!trimmed) {
+      return {
+        normalized: '',
+        isValid: true,
+        message: null,
+        hasSuggestion: false,
+      };
+    }
+
+    const regex = /^[a-z0-9-_.]+$/;
+    const isValid = regex.test(normalized);
+    const message = isValid
+      ? null
+      : 'Use apenas letras minúsculas, números, hífen, ponto ou sublinhado.';
+
+    return {
+      normalized,
+      isValid,
+      message,
+      hasSuggestion: normalized !== trimmed,
+    };
+  }, [identifier]);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -35,8 +68,8 @@ const CreateInstanceDialog = ({
   }, [open, suggestedName]);
 
   const canSubmit = useMemo(() => {
-    return name.trim().length > 0;
-  }, [name]);
+    return name.trim().length > 0 && identifierValidation.isValid;
+  }, [identifierValidation.isValid, name]);
 
   const handleClose = (nextOpen) => {
     if (submitting) {
@@ -57,7 +90,7 @@ const CreateInstanceDialog = ({
     try {
       await onSubmit?.({
         name: name.trim(),
-        id: identifier ? identifier : undefined,
+        id: identifierValidation.normalized || undefined,
       });
       onOpenChange?.(false);
     } catch (err) {
@@ -119,6 +152,14 @@ const CreateInstanceDialog = ({
             <p className="text-xs text-muted-foreground">
               Esse identificador será enviado para as integrações exatamente como você digitar.
             </p>
+            {identifierValidation.message ? (
+              <p className="text-xs text-destructive">{identifierValidation.message}</p>
+            ) : null}
+            {!identifierValidation.message && identifierValidation.hasSuggestion ? (
+              <p className="text-xs text-muted-foreground">
+                Sugestão automática: <strong>{identifierValidation.normalized}</strong>
+              </p>
+            ) : null}
           </div>
 
           {error ? (
