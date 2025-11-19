@@ -16,7 +16,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog.jsx';
 import {
-  Activity,
   AlertCircle,
   ArrowLeft,
   Check,
@@ -24,11 +23,9 @@ import {
   Clock,
   Loader2,
   QrCode,
-  Rocket,
   MessageSquare,
   Plus,
   Server,
-  Shield,
 } from 'lucide-react';
 
 import useWhatsAppConnect from './useWhatsAppConnect';
@@ -45,27 +42,6 @@ const SectionFallback = () => (
 );
 
 const DialogFallback = () => null;
-
-const connectionStepsCopy = [
-  {
-    id: 'secure',
-    label: 'Conexão segura',
-    description: 'Validar ambiente e autenticar o agente que irá parear o WhatsApp.',
-    Icon: Shield,
-  },
-  {
-    id: 'stable',
-    label: 'Canal estável',
-    description: 'Sincronizar eventos e garantir que o canal permaneça online.',
-    Icon: Activity,
-  },
-  {
-    id: 'ready',
-    label: 'Pronto para iniciar',
-    description: 'Fila validada e disparos autorizados para começar a operar.',
-    Icon: Rocket,
-  },
-] as const;
 
 const wizardSteps = [
   {
@@ -207,29 +183,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
   const assistantRef = useRef<HTMLDivElement | null>(null);
   const scrollToAssistant = () => assistantRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  const activeStepIndex = useMemo(() => {
-    switch (localStatus) {
-      case 'connected':
-        return 2;
-      case 'connecting':
-        return 1;
-      default:
-        return 0;
-    }
-  }, [localStatus]);
-
-  const connectionSteps = useMemo(() => {
-    return connectionStepsCopy.map((step, index) => {
-      let state: 'done' | 'active' | 'pending' | 'blocked' = 'pending';
-      if (index < activeStepIndex) {
-        state = 'done';
-      } else if (index === activeStepIndex) {
-        state = localStatus === 'qr_required' && index > 0 ? 'blocked' : 'active';
-      }
-      return { ...step, state };
-    });
-  }, [activeStepIndex, localStatus]);
 
   const updateWizardState = (patch: Partial<typeof wizardState>) => {
     setWizardState((prev) => ({ ...prev, ...patch }));
@@ -381,57 +334,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <div className="space-y-6">
-          <section className="glass-surface rounded-[var(--radius)] border border-border/60 px-5 py-6 shadow-sm">
-            <div className="flex flex-col gap-2">
-              <span className="text-xs uppercase tracking-wide text-muted-foreground">Linha do tempo do canal</span>
-              <h2 className="text-lg font-semibold text-white">Acompanhe o progresso</h2>
-              <p className="text-sm text-muted-foreground">As próximas etapas são desbloqueadas automaticamente conforme a conexão avança.</p>
-            </div>
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
-              {connectionSteps.map((step) => (
-                <div
-                  key={step.id}
-                  className={`rounded-xl border p-4 transition-colors ${
-                    step.state === 'done'
-                      ? 'border-emerald-500/50 bg-emerald-500/10'
-                      : step.state === 'active'
-                        ? 'border-primary/60 bg-primary/5'
-                        : step.state === 'blocked'
-                          ? 'border-destructive/60 bg-destructive/5'
-                          : 'border-border/60 bg-surface-overlay-quiet'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`rounded-full p-2 ${
-                        step.state === 'done'
-                          ? 'bg-emerald-500/20 text-emerald-200'
-                          : step.state === 'active'
-                            ? 'bg-primary/20 text-primary-foreground'
-                            : 'bg-muted/30 text-muted-foreground'
-                      }`}
-                    >
-                      <step.Icon className="h-4 w-4" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-white">{step.label}</p>
-                      <p className="text-xs text-muted-foreground">{step.description}</p>
-                    </div>
-                  </div>
-                  <div className="mt-4 text-xs uppercase tracking-wide text-muted-foreground">
-                    {step.state === 'done'
-                      ? 'Concluído'
-                      : step.state === 'active'
-                        ? 'Em andamento'
-                        : step.state === 'blocked'
-                          ? 'Aguardando etapa anterior'
-                          : 'Pendente'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
           <section
             ref={assistantRef}
             id="assistente-de-conexao"
