@@ -25,9 +25,10 @@ import {
   MessageSquare,
   Plus,
   Server,
+  Shield,
 } from 'lucide-react';
 
-import useWhatsAppConnect from './useWhatsAppConnect';
+import useWhatsAppConnect, { type WhatsAppInstanceViewModel } from './useWhatsAppConnect';
 
 const InstancesPanel = lazy(() => import('../components/InstancesPanel.jsx'));
 const CreateInstanceDialog = lazy(() => import('../components/CreateInstanceDialog.jsx'));
@@ -129,6 +130,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     onboardingDescription,
     canCreateCampaigns,
   } = useWhatsAppConnect(props);
+  const currentInstance = (selectedInstance as WhatsAppInstanceViewModel | null) ?? null;
 
   const instanceHealth = useMemo(() => {
     const totals = { connected: 0, connecting: 0, needsAttention: 0, offline: 0 };
@@ -225,17 +227,21 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
   const metricsAvailable = localStatus === 'connected';
   const timelinePreview = timelineItems.slice(0, 4);
+  const instanceRecord =
+    currentInstance?.instance && typeof currentInstance.instance === 'object'
+      ? (currentInstance.instance as Record<string, unknown>)
+      : null;
   const planLabel =
-    (selectedInstance?.instance && selectedInstance.instance.plan) ||
-    (selectedInstance?.instance && selectedInstance.instance.tier) ||
+    (typeof instanceRecord?.plan === 'string' && instanceRecord.plan) ||
+    (typeof instanceRecord?.tier === 'string' && instanceRecord.tier) ||
     'Plano padrão';
-  const rateUsage = selectedInstance?.rateUsage ?? selectedInstance?.metrics?.rateUsage;
+  const rateUsage = currentInstance?.rateUsage ?? currentInstance?.metrics?.rateUsage ?? null;
   const usageLabel = rateUsage
     ? `${rateUsage.used ?? 0}/${rateUsage.limit ?? 0} msgs hoje`
-    : `${Math.round(selectedInstance?.ratePercentage ?? 0)}% do limite`;
-  const numberLabel = selectedInstancePhone || selectedInstance?.phoneLabel || 'Sem número definido';
-  const instanceName = selectedInstance?.displayName ?? defaultInstanceName;
-  const modeLabel = 'Instância por número';
+    : `${Math.round(currentInstance?.ratePercentage ?? 0)}% do limite`;
+  const numberLabel = selectedInstancePhone || currentInstance?.phoneLabel || 'Sem número definido';
+  const instanceName = currentInstance?.displayName ?? defaultInstanceName;
+  const modeLabel = wizardState.mode === 'number' ? 'Instância por número' : 'Instância por sessão';
 
   const backLabel = 'Voltar';
 
@@ -448,29 +454,21 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
               </div>
             </div>
             {showInstanceManager ? (
-              <div className="space-y-4">
-                <Suspense fallback={<SectionFallback />}>
-                  <InstancesPanel
-                    surfaceStyles={surfaceStyles}
-                    hasAgreement={hasAgreement}
-                    agreementDisplayName={agreementDisplayName}
-                    selectedAgreementRegion={selectedAgreement?.region ?? null}
-                    selectedAgreementId={selectedAgreement?.id ?? null}
-                    selectedInstance={selectedInstance}
-                    selectedInstanceStatusInfo={selectedInstanceStatusInfo}
-                    selectedInstancePhone={selectedInstancePhone}
-                    hasCampaign={hasCampaign}
-                    campaign={campaign}
-                    instancesReady={instancesReady}
-                    hasHiddenInstances={hasHiddenInstances}
-                    hasRenderableInstances={hasRenderableInstances}
-                    instanceViewModels={instanceViewModels}
-                    instanceHealth={instanceHealth}
-                    showFilterNotice={showFilterNotice}
-                    showAllInstances={showAllInstances}
-                    instancesCountLabel={instancesCountLabel}
-                    errorState={errorState}
-                    isBusy={isBusy}
+          <div className="space-y-4">
+            <Suspense fallback={<SectionFallback />}>
+              <InstancesPanel
+                surfaceStyles={surfaceStyles}
+                selectedInstance={selectedInstance}
+                selectedInstanceStatusInfo={selectedInstanceStatusInfo}
+                selectedInstancePhone={selectedInstancePhone}
+                instancesReady={instancesReady}
+                hasHiddenInstances={hasHiddenInstances}
+                hasRenderableInstances={hasRenderableInstances}
+                instanceViewModels={instanceViewModels}
+                showFilterNotice={showFilterNotice}
+                instancesCountLabel={instancesCountLabel}
+                errorState={errorState}
+                isBusy={isBusy}
                     isAuthenticated={isAuthenticated}
                     loadingInstances={loadingInstances}
                     copy={copy}
@@ -576,17 +574,17 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="rounded-xl border border-border/60 bg-surface-overlay-quiet p-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Uptime</p>
-                <p className="text-2xl font-semibold text-white">{selectedInstance?.metrics?.uptime ?? '99,9%'}</p>
+                <p className="text-2xl font-semibold text-white">{currentInstance?.metrics?.uptime ?? '99,9%'}</p>
                 <p className="text-xs text-muted-foreground">Últimas 24h</p>
               </div>
               <div className="rounded-xl border border-border/60 bg-surface-overlay-quiet p-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Latência média</p>
-                <p className="text-2xl font-semibold text-white">{selectedInstance?.metrics?.latency ?? '320ms'}</p>
+                <p className="text-2xl font-semibold text-white">{currentInstance?.metrics?.latency ?? '320ms'}</p>
                 <p className="text-xs text-muted-foreground">Envios recentes</p>
               </div>
               <div className="rounded-xl border border-border/60 bg-surface-overlay-quiet p-4">
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Fila</p>
-                <p className="text-2xl font-semibold text-white">{selectedInstance?.metrics?.status?.queued ?? 0}</p>
+                <p className="text-2xl font-semibold text-white">{currentInstance?.metrics?.status?.queued ?? 0}</p>
                 <p className="text-xs text-muted-foreground">Mensagens aguardando</p>
               </div>
             </div>
@@ -661,7 +659,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           <AdvancedOperationsPanel
             surfaceStyles={surfaceStyles}
             open={qrPanelOpen}
-            onOpenChange={(value) => setQrPanelOpen(value)}
+            onOpenChange={(value: boolean) => setQrPanelOpen(value)}
             qrStatusMessage={qrStatusMessage}
             pairingPhoneInput={pairingPhoneInput}
             onPairingPhoneChange={handlePairingPhoneChange}
@@ -676,22 +674,29 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
       </section>
 
       <Suspense fallback={<DialogFallback />}>
-        <CreateInstanceDialog open={isCreateInstanceOpen} onOpenChange={setCreateInstanceOpen} defaultName={defaultInstanceName} onSubmit={submitCreateInstance} />
+        <CreateInstanceDialog
+          open={isCreateInstanceOpen}
+          onOpenChange={setCreateInstanceOpen}
+          defaultName={defaultInstanceName}
+          onSubmit={submitCreateInstance}
+        />
       </Suspense>
 
       <Suspense fallback={<DialogFallback />}>
-        <Dialog open={isQrDialogOpen} onOpenChange={setQrDialogOpen}>
+        <Dialog open={isQrDialogOpen} onOpenChange={(value) => setQrDialogOpen(value)}>
           <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>QR Code ativo</DialogTitle>
-              <DialogDescription>Escaneie com o aplicativo oficial para concluir a sincronização.</DialogDescription>
+            <DialogHeader className="">
+              <DialogTitle className="">QR Code ativo</DialogTitle>
+              <DialogDescription className="">
+                Escaneie com o aplicativo oficial para concluir a sincronização.
+              </DialogDescription>
             </DialogHeader>
             <QrPreview
-              src={qrImageSrc}
-              statusMessage={qrStatusMessage}
+              src={qrImageSrc ?? undefined}
+              statusMessage={qrStatusMessage ?? undefined}
               isGenerating={isGeneratingQrImage}
-              onGenerate={handleGenerateQr}
-              onOpen={() => setQrDialogOpen(true)}
+              onGenerate={handleGenerateQr as any}
+              onOpen={(() => setQrDialogOpen(true)) as any}
               generateDisabled={isBusy}
               openDisabled={false}
               className="rounded-xl border border-dashed border-border/60 p-6"
@@ -701,11 +706,20 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         </Dialog>
       </Suspense>
 
-      <AlertDialog open={deletionDialog.open} onOpenChange={(value) => !value && setInstancePendingDelete(null)}>
+      <AlertDialog
+        open={deletionDialog.open}
+        onOpenChange={(value: boolean) => {
+          if (!value) {
+            setInstancePendingDelete(null);
+          }
+        }}
+      >
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{deletionDialog.title}</AlertDialogTitle>
-            <AlertDialogDescription>Confirme para remover {deletionDialog.targetLabel}.</AlertDialogDescription>
+          <AlertDialogHeader className="">
+            <AlertDialogTitle className="">{deletionDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription className="">
+              Confirme para remover {deletionDialog.targetLabel}.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
