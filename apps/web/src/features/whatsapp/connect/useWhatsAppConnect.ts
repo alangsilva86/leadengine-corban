@@ -163,7 +163,6 @@ export interface UseWhatsAppConnectParams {
   onboarding?: any;
   onStatusChange?: (status: string) => void;
   onCampaignReady?: (campaign: any | null) => void;
-  onContinue?: () => void;
   onBack?: () => void;
 }
 
@@ -218,7 +217,6 @@ const useWhatsAppConnect = ({
   onboarding,
   onStatusChange,
   onCampaignReady,
-  onContinue,
   onBack,
 }: UseWhatsAppConnectParams) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
@@ -357,7 +355,6 @@ const useWhatsAppConnect = ({
     selectInstance,
     generateQr,
     markConnected,
-    onContinue,
     setQrPanelOpen,
     setQrDialogOpen,
   });
@@ -403,13 +400,10 @@ const useWhatsAppConnect = ({
     qrImageSrc,
     isGeneratingQrImage,
     qrStatusMessage,
-    confirmLabel,
-    confirmDisabled,
     isBusy,
     canContinue,
     qrPanelOpen,
     isQrDialogOpen,
-    handleConfirm,
     handleViewQr,
     handleGenerateQr,
     handleMarkConnected,
@@ -627,8 +621,6 @@ const useWhatsAppConnect = ({
     statusCopy: copy,
     statusTone,
     countdownMessage,
-    confirmLabel,
-    confirmDisabled,
     qrImageSrc,
     isGeneratingQrImage,
     qrStatusMessage,
@@ -649,7 +641,6 @@ const useWhatsAppConnect = ({
     copy,
     localStatus,
     onBack,
-    onContinue: handleConfirm,
     handleRefreshInstances,
     handleCreateInstance,
     submitCreateInstance,

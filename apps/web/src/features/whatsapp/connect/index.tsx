@@ -25,8 +25,8 @@ import {
   Loader2,
   QrCode,
   Rocket,
-  Download,
   MessageSquare,
+  Plus,
   Server,
   Shield,
 } from 'lucide-react';
@@ -70,20 +70,20 @@ const connectionStepsCopy = [
 const wizardSteps = [
   {
     id: 1,
-    title: 'Instale o agente/serviço',
-    description: 'Baixe e execute o agente no ambiente aprovado antes de gerar o QR.',
+    title: 'Criar nova instância',
+    description: 'Abra uma nova instância antes de prosseguir com o pareamento.',
     Icon: Server,
   },
   {
     id: 2,
-    title: 'Leia o QR Code oficial',
-    description: 'Acesse Dispositivos Conectados no WhatsApp e escaneie o código.',
+    title: 'Ler QR Code',
+    description: 'Escaneie o código no WhatsApp oficial para conectar.',
     Icon: QrCode,
   },
   {
     id: 3,
-    title: 'Valide o canal',
-    description: 'Envie uma mensagem de teste para confirmar eventos de entrada/saída.',
+    title: 'Validar canal',
+    description: 'Envie uma mensagem de teste e confirme o retorno.',
     Icon: MessageSquare,
   },
 ] as const;
@@ -94,8 +94,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     statusCopy,
     statusTone,
     countdownMessage,
-    confirmLabel,
-    confirmDisabled,
     qrImageSrc,
     isGeneratingQrImage,
     qrStatusMessage,
@@ -116,7 +114,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     copy,
     localStatus,
     onBack,
-    onContinue,
     handleRefreshInstances,
     handleCreateInstance,
     submitCreateInstance,
@@ -194,8 +191,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
   const [wizardState, setWizardState] = useState({
     qrConfirmed: localStatus === 'connected',
-    agentInstalled: false,
-    qrConfirmed: localStatus === 'connected',
     validationDone: false,
   });
 
@@ -240,45 +235,38 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     setWizardState((prev) => ({ ...prev, ...patch }));
   };
 
+  const hasInstanceReady = Boolean(selectedInstance || instanceViewModels.length > 0);
+
   const checklistItems = useMemo(() => {
-    const agentReady =
-      wizardState.agentInstalled || localStatus === 'connecting' || localStatus === 'connected';
     const qrReady = wizardState.qrConfirmed;
     const validationReady = wizardState.validationDone || localStatus === 'connected';
 
     return [
       {
-        id: 'agent',
-        title: 'Instalar agente/serviço',
-        description: 'Faça o download e instale o agente de pareamento autorizado.',
-        state: agentReady ? 'done' : 'in_progress',
-        actionLabel: agentReady ? 'Instalado' : 'Baixar agente',
+        id: 'instance',
+        title: 'Nova instância',
+        description: 'Crie ou selecione um canal antes de continuar.',
+        state: hasInstanceReady ? 'done' : 'in_progress',
+        actionLabel: hasInstanceReady ? 'Instância pronta' : 'Nova instância',
       },
       {
         id: 'qr',
-        title: 'Ler QR Code do WhatsApp',
-        description: 'Escaneie o QR dentro de Dispositivos Conectados no app oficial.',
-        state: qrReady ? 'done' : agentReady ? 'in_progress' : 'pending',
+        title: 'Ler QR Code oficial',
+        description: 'Gere o QR e escaneie pelo WhatsApp.',
+        state: qrReady ? 'done' : hasInstanceReady ? 'in_progress' : 'pending',
         actionLabel: qrReady ? 'Conectado' : 'Gerar QR',
       },
       {
         id: 'events',
-        title: 'Validar eventos e fila',
-        description: 'Confira se as mensagens entrantes e a fila estão sincronizadas.',
+        title: 'Validar canal',
+        description: 'Envie uma mensagem de teste e confirme a volta.',
         state: qrReady ? (validationReady ? 'done' : 'in_progress') : 'pending',
-        actionLabel: validationReady ? 'Validado' : 'Ver fila',
-      },
-      {
-        id: 'test',
-        title: 'Testar envio/recebimento',
-        description: 'Envie uma mensagem de teste e confirme o recebimento de volta.',
-        state: validationReady ? 'done' : qrReady ? 'in_progress' : 'pending',
-        actionLabel: validationReady ? 'Teste concluído' : 'Testar agora',
+        actionLabel: validationReady ? 'Validado' : 'Testar agora',
       },
     ];
   }, [
+    hasInstanceReady,
     localStatus,
-    wizardState.agentInstalled,
     wizardState.qrConfirmed,
     wizardState.validationDone,
   ]);
@@ -460,10 +448,10 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
               {wizardSteps.map((step) => {
                 const stepState = (() => {
                   if (step.id === 1) {
-                    return wizardState.agentInstalled ? 'done' : 'active';
+                    return hasInstanceReady ? 'done' : 'active';
                   }
                   if (step.id === 2) {
-                    return wizardState.qrConfirmed ? 'done' : wizardState.agentInstalled ? 'active' : 'blocked';
+                    return wizardState.qrConfirmed ? 'done' : hasInstanceReady ? 'active' : 'blocked';
                   }
                   if (step.id === 3) {
                     return wizardState.validationDone ? 'done' : wizardState.qrConfirmed ? 'active' : 'blocked';
@@ -472,8 +460,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                 })();
 
                 const isBlocked =
-                  (step.id === 2 && !wizardState.agentInstalled) ||
-                  (step.id === 3 && !wizardState.qrConfirmed);
+                  (step.id === 2 && !hasInstanceReady) || (step.id === 3 && !wizardState.qrConfirmed);
                 const stateClasses =
                   stepState === 'done'
                     ? 'border-emerald-500/60'
@@ -500,19 +487,14 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                         <p className="text-sm text-muted-foreground">{step.description}</p>
                       </div>
                       {stepState === 'done' ? <Check className="h-4 w-4 text-emerald-400" /> : null}
-                      {step.id === 2 && wizardState.agentInstalled ? <Check className="h-4 w-4 text-emerald-400" /> : null}
-                      {step.id === 3 && wizardState.qrConfirmed ? <Check className="h-4 w-4 text-emerald-400" /> : null}
                     </div>
                     {step.id === 1 ? (
                       <div className="flex flex-wrap gap-3">
-                        <Button size="sm" variant="secondary" onClick={() => updateWizardState({ agentInstalled: true })}>
-                          <Download className="mr-2 h-4 w-4" /> Baixar para Windows
+                        <Button size="sm" variant="secondary" onClick={handleCreateInstance}>
+                          <Plus className="mr-2 h-4 w-4" /> Nova instância
                         </Button>
-                        <Button size="sm" variant="secondary" onClick={() => updateWizardState({ agentInstalled: true })}>
-                          <Download className="mr-2 h-4 w-4" /> Baixar para Linux
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => updateWizardState({ agentInstalled: false })}>
-                          Reverter status
+                        <Button size="sm" variant="ghost" onClick={() => setShowInstanceManager(true)}>
+                          Ver instâncias
                         </Button>
                       </div>
                     ) : null}
@@ -592,9 +574,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                     loadingInstances={loadingInstances}
                     copy={copy}
                     localStatus={localStatus}
-                    confirmLabel={confirmLabel}
-                    confirmDisabled={confirmDisabled}
-                    onConfirm={onContinue}
                     onMarkConnected={handleMarkConnected}
                     onRefresh={handleRefreshInstances}
                     onCreateInstance={handleCreateInstance}
@@ -827,13 +806,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           />
         </Suspense>
       </section>
-
-      <footer className="flex flex-wrap items-center justify-end gap-2">
-        <Button size="sm" variant="secondary" onClick={onContinue} disabled={confirmDisabled}>
-          {confirmDisabled ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-          {confirmLabel}
-        </Button>
-      </footer>
 
       <Suspense fallback={<DialogFallback />}>
         <CreateInstanceDialog open={isCreateInstanceOpen} onOpenChange={setCreateInstanceOpen} defaultName={defaultInstanceName} onSubmit={submitCreateInstance} />

@@ -38,9 +38,6 @@ const SelectedInstanceBanner = ({
   selectedInstanceStatusInfo,
   selectedInstancePhone,
   instancesCountLabel,
-  confirmLabel,
-  confirmDisabled,
-  onConfirm,
   onMarkConnected,
   localStatus,
   onRefresh,
@@ -213,27 +210,16 @@ const SelectedInstanceBanner = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
+            {showMarkConnected ? (
               <Button
-                onClick={onConfirm}
-                size="default"
-                disabled={confirmDisabled}
-                className="gap-2 rounded-full px-5 py-2 text-sm font-semibold"
+                onClick={onMarkConnected}
+                size="sm"
+                variant="outline"
+                className="rounded-full"
               >
-                <Inbox className="h-4 w-4" /> {confirmLabel || 'Ir para a Inbox'}
+                Marcar como conectado
               </Button>
-              {showMarkConnected ? (
-                <Button
-                  onClick={onMarkConnected}
-                  size="sm"
-                  variant="outline"
-                  disabled={confirmDisabled}
-                  className="rounded-full"
-                >
-                  Marcar como conectado
-                </Button>
-              ) : null}
-            </div>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full border border-slate-800/80">

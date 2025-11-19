@@ -51,7 +51,6 @@ interface UseWhatsappSessionStateParams {
   selectInstance: (inst: any, options?: { skipAutoQr?: boolean }) => Promise<void>;
   generateQr: (id: string) => Promise<void>;
   markConnected: () => Promise<boolean>;
-  onContinue?: () => void;
   setQrPanelOpen: (value: boolean) => void;
   setQrDialogOpen: (value: boolean) => void;
 }
@@ -72,7 +71,6 @@ const useWhatsappSessionState = ({
   selectInstance,
   generateQr,
   markConnected,
-  onContinue,
   setQrPanelOpen,
   setQrDialogOpen,
 }: UseWhatsappSessionStateParams) => {
@@ -134,8 +132,6 @@ const useWhatsappSessionState = ({
 
   const isBusy = loadingInstances || loadingQr || isGeneratingQrImage || requestingPairingCode;
   const canContinue = localStatus === 'connected' && Boolean(instance);
-  const confirmLabel = 'Ir para a inbox de leads';
-  const confirmDisabled = !canContinue || isBusy;
 
   const qrStatusMessage =
     localStatus === 'connected'
@@ -166,13 +162,6 @@ const useWhatsappSessionState = ({
     }
   }, [markConnected, setQrDialogOpen]);
 
-  const handleConfirm = useCallback(() => {
-    if (!canContinue) {
-      return;
-    }
-    onContinue?.();
-  }, [canContinue, onContinue]);
-
   const statusTone = statusCopy.tone || STATUS_TONES.fallback;
 
   return {
@@ -182,13 +171,10 @@ const useWhatsappSessionState = ({
     qrImageSrc,
     isGeneratingQrImage,
     qrStatusMessage,
-    confirmLabel,
-    confirmDisabled,
     isBusy,
     canContinue,
     qrPanelOpen: state.qrPanelOpen,
     isQrDialogOpen: state.isQrDialogOpen,
-    handleConfirm,
     handleViewQr,
     handleGenerateQr,
     handleMarkConnected,
