@@ -1392,6 +1392,11 @@ class WhatsAppBrokerClient {
   }): Promise<WhatsAppInstance> {
     const config = this.resolveConfig();
 
+    const normalizedTenantId = typeof args.tenantId === 'string' ? args.tenantId.trim() : '';
+    const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
+      ? { searchParams: { tenantId: normalizedTenantId } }
+      : {};
+
     const requestedInstanceId = (() => {
       const explicitId = typeof args.instanceId === 'string' ? args.instanceId.trim() : '';
       if (explicitId.length > 0) {
@@ -1419,7 +1424,7 @@ class WhatsAppBrokerClient {
           webhookUrl,
           verifyToken: config.verifyToken,
         }),
-      });
+      }, requestOptions);
     } catch (error) {
       logger.warn('Unable to create WhatsApp instance via broker', {
         tenantId: args.tenantId,

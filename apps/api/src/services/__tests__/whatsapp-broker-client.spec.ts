@@ -114,7 +114,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances');
+    expect(url).toBe('https://broker.test/instances?tenantId=tenant-1');
 
     const headers = init?.headers as Headers;
     expect(headers.get('X-API-Key')).toBe('test-key');
