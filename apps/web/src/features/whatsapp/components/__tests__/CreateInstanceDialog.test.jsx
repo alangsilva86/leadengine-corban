@@ -61,7 +61,7 @@ describe('CreateInstanceDialog', () => {
       expect(onSubmit).toHaveBeenCalledTimes(1);
     });
 
-    expect(onSubmit).toHaveBeenCalledWith({ name: 'WhatsApp Vendas', id: '  vendas-principal  ' });
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'WhatsApp Vendas', id: 'vendas-principal' });
 
     expect(onOpenChange).toHaveBeenLastCalledWith(false);
   });
@@ -83,5 +83,66 @@ describe('CreateInstanceDialog', () => {
 
     expect(await screen.findByText('Falha ao criar instância')).toBeInTheDocument();
     expect(submitButton).toBeEnabled();
+  });
+
+  it('bloqueia submissão quando o identificador é inválido e informa o erro', async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+
+    render(<CreateInstanceDialog open onSubmit={onSubmit} />);
+
+    const nameInput = screen.getByLabelText('Nome do canal');
+    const idInput = screen.getByLabelText('Identificador do canal (opcional)');
+    const submitButton = screen.getByRole('button', { name: /Criar canal/i });
+
+    await user.type(nameInput, 'Canal principal');
+    await user.type(idInput, 'inválido!');
+
+    expect(await screen.findByText('Use apenas letras minúsculas, números, hífen, ponto ou sublinhado.')).toBeVisible();
+    expect(submitButton).toBeDisabled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('envia payload sem identificador quando o campo fica vazio', async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+
+    render(<CreateInstanceDialog open onSubmit={onSubmit} />);
+
+    const nameInput = screen.getByLabelText('Nome do canal');
+    const submitButton = screen.getByRole('button', { name: /Criar canal/i });
+
+    await user.type(nameInput, 'Canal sem id');
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'Canal sem id', id: undefined });
+  });
+
+  it('normaliza o identificador com espaços e maiúsculas e exibe sugestão automática', async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+
+    render(<CreateInstanceDialog open onSubmit={onSubmit} />);
+
+    const nameInput = screen.getByLabelText('Nome do canal');
+    const idInput = screen.getByLabelText('Identificador do canal (opcional)');
+    const submitButton = screen.getByRole('button', { name: /Criar canal/i });
+
+    await user.type(nameInput, 'Canal com sugestão');
+    await user.type(idInput, ' Minha Instancia VIP ');
+
+    expect(await screen.findByText(/Sugestão automática:/i)).toBeVisible();
+
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'Canal com sugestão', id: 'minha-instancia-vip' });
   });
 });
