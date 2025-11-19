@@ -44,7 +44,7 @@ import SimulationOfferList, { TABLE_FILTER_ALL } from './SimulationOfferList.jsx
 
 const DEFAULT_BASE_VALUE = '350';
 const DEFAULT_SELECTED_TERMS = [72, 84];
-const DEFAULT_TERM_POOL = [12, 24, 36, 48, 60, 72, 84];
+const DEFAULT_TERM_POOL = [12, 24, 36, 48, 60, 72, 84, 96, 120];
 
 const SimulationModal = ({
   open,

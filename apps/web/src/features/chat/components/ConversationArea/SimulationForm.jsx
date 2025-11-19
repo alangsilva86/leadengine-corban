@@ -237,63 +237,6 @@ const SimulationForm = ({
       </div>
     </div>
 
-    <Accordion type="single" collapsible className="rounded-xl border border-border/60 bg-muted/10">
-      <AccordionItem value="advanced">
-        <AccordionTrigger className="px-4">Opções avançadas</AccordionTrigger>
-        <AccordionContent className="px-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Etapa (opcional)</Label>
-              <Select value={stage} onValueChange={onStageChange} disabled={fieldsDisabled || stageOptions.length === 0}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione uma etapa" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem key="__none__" value={NO_STAGE_VALUE}>
-                    Sem alteração
-                  </SelectItem>
-                  {stageOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Lead (opcional)</Label>
-              <Input
-                value={leadId}
-                onChange={onLeadIdChange}
-                placeholder="Identificador do lead"
-                disabled={fieldsDisabled}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Simulação (opcional)</Label>
-              <Input
-                value={simulationId}
-                onChange={onSimulationIdChange}
-                placeholder="Identificador da simulação"
-                disabled={fieldsDisabled}
-              />
-            </div>
-          </div>
-          <div className="mt-4 space-y-2">
-            <Label>Metadata (JSON opcional)</Label>
-            <Textarea
-              value={metadataText}
-              onChange={onMetadataChange}
-              placeholder="{ }"
-              className="font-mono text-xs"
-              rows={4}
-              disabled={fieldsDisabled}
-            />
-            {errors.metadata ? <p className="text-sm text-destructive">{errors.metadata}</p> : null}
-          </div>
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
   </div>
 );
 

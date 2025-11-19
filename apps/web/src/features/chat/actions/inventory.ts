@@ -1,20 +1,9 @@
 import type { LucideIcon } from 'lucide-react';
-import {
-  CalendarClock,
-  ClipboardList,
-  FileText,
-  MessageSquare,
-  Paperclip,
-  Pencil,
-  Phone,
-  Sparkles,
-  UserPlus,
-} from 'lucide-react';
+import { CalendarClock, ClipboardList, MessageSquare, Paperclip, Pencil, Phone, Sparkles, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatAiSuggestionNote } from '../utils/aiSuggestions.js';
 
 export type CommandActionId =
-  | 'generate-proposal'
   | 'assign-owner'
   | 'register-result'
   | 'ask-ai-help'
@@ -54,7 +43,6 @@ export type ChatActionCapabilities = {
 };
 
 export type CommandActionHandlers = {
-  onGenerateProposal?: (ticket: unknown) => void;
   onOpenSimulation?: (ticket: unknown) => void;
   onAssign?: (ticket: unknown, userId?: string | null) => void;
   onRegisterResult?: (payload: unknown) => void | Promise<void>;
@@ -127,20 +115,6 @@ const buildReturnFocusOption = (returnFocus: HTMLElement | null | undefined) =>
   returnFocus === undefined ? undefined : { returnFocus };
 
 export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
-  {
-    id: 'generate-proposal',
-    label: 'Simular proposta',
-    icon: FileText,
-    shortcut: 'g',
-    shortcutDisplay: '/g',
-    intent: 'primary',
-    run: ({ ticket, handlers }) => {
-      if (!ticket || !handlers?.onOpenSimulation) return;
-      handlers.onOpenSimulation(ticket);
-    },
-    canExecute: ({ ticket, handlers, capabilities }) =>
-      Boolean(ticket && handlers?.onOpenSimulation && isCapabilityEnabled(capabilities?.canGenerateProposal)),
-  },
   {
     id: 'assign-owner',
     label: 'Atribuir',
