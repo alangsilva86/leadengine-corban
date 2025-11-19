@@ -22,6 +22,9 @@ import {
   Check,
   CheckCircle2,
   Clock,
+  Loader2,
+  QrCode,
+  Rocket,
   Download,
   Loader2,
   MessageSquare,
@@ -206,6 +209,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
   const [wizardState, setWizardState] = useState({
     mode: selectedInstance?.instance?.mode === 'number' ? 'number' : 'session',
+    qrConfirmed: localStatus === 'connected',
     agentInstalled: false,
     qrConfirmed: localStatus === 'connected',
     validationDone: false,
@@ -263,6 +267,9 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
   const checklistItems = useMemo(() => {
     const isModeSelected = Boolean(wizardState.mode);
+    const qrReady = wizardState.qrConfirmed;
+    const agentReady = localStatus === 'connecting' || localStatus === 'connected';
+    const validationReady = localStatus === 'connected';
     const agentReady = wizardState.agentInstalled;
     const qrReady = wizardState.qrConfirmed;
     const validationReady = wizardState.validationDone;
@@ -304,6 +311,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         actionLabel: validationReady ? 'Teste concluído' : 'Testar agora',
       },
     ];
+  }, [localStatus, wizardState.mode, wizardState.qrConfirmed]);
   }, [wizardState.mode, wizardState.agentInstalled, wizardState.qrConfirmed, wizardState.validationDone]);
 
   const metricsAvailable = localStatus === 'connected';
@@ -496,6 +504,27 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
             </div>
             <div className="grid gap-4">
               {wizardSteps.map((step) => {
+                const stepState = (() => {
+                  if (step.id === 1) {
+                    return wizardState.mode ? 'done' : 'active';
+                  }
+                  if (step.id === 2) {
+                    if (!wizardState.mode) {
+                      return 'blocked';
+                    }
+                    return wizardState.qrConfirmed ? 'done' : 'active';
+                  }
+                  return 'pending';
+                })();
+
+                const stateClasses =
+                  stepState === 'done'
+                    ? 'border-emerald-500/60'
+                    : stepState === 'active'
+                      ? 'border-primary/40'
+                      : 'border-border/60';
+
+                const isDisabled = stepState === 'blocked';
                 const isDisabled =
                   (step.id === 2 && !wizardState.mode) ||
                   (step.id === 3 && !wizardState.agentInstalled) ||
@@ -529,6 +558,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                         </div>
                         <p className="text-sm text-muted-foreground">{step.description}</p>
                       </div>
+                      {stepState === 'done' ? <Check className="h-4 w-4 text-emerald-400" /> : null}
                       {step.id <= 2 && wizardState.agentInstalled && step.id !== 1 ? (
                         <Check className="h-4 w-4 text-emerald-400" />
                       ) : null}
@@ -583,6 +613,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                           {qrImageSrc ? (
                             <img src={qrImageSrc} alt="QR Code" className="mx-auto h-40 w-40 rounded" />
                           ) : (
+                            'Sem QR Code ativo · Gere um novo código quando estiver pronto.'
                             'Sem QR Code ativo · Gere um novo código após instalar o agente.'
                           )}
                         </div>
