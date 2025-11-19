@@ -520,6 +520,10 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                   return 'pending';
                 })();
 
+                const isBlocked =
+                  (step.id === 2 && !wizardState.mode) ||
+                  (step.id === 3 && !wizardState.agentInstalled) ||
+                  (step.id === 4 && !wizardState.qrConfirmed);
                 const stateClasses =
                   stepState === 'done'
                     ? 'border-emerald-500/60'
@@ -527,27 +531,11 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                       ? 'border-primary/40'
                       : 'border-border/60';
 
-                const isDisabled = stepState === 'blocked';
-                const isDisabled =
-                  (step.id === 2 && !wizardState.mode) ||
-                  (step.id === 3 && !wizardState.agentInstalled) ||
-                  (step.id === 4 && !wizardState.qrConfirmed);
-                const stateClasses =
-                  step.id === 1
-                    ? 'border-primary/40'
-                    : step.id === 2 && wizardState.agentInstalled
-                      ? 'border-emerald-500/60'
-                      : step.id === 3 && wizardState.qrConfirmed
-                        ? 'border-emerald-500/60'
-                        : step.id === 4 && wizardState.validationDone
-                          ? 'border-emerald-500/60'
-                          : 'border-border/60';
-
                 return (
                   <div
                     key={step.id}
                     className={`flex flex-col gap-4 rounded-[calc(var(--radius)_-_2px)] border px-4 py-4 ${stateClasses} ${
-                      isDisabled ? 'opacity-60' : ''
+                      isBlocked ? 'opacity-60' : ''
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -616,7 +604,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                           {qrImageSrc ? (
                             <img src={qrImageSrc} alt="QR Code" className="mx-auto h-40 w-40 rounded" />
                           ) : (
-                            'Sem QR Code ativo · Gere um novo código quando estiver pronto.'
                             'Sem QR Code ativo · Gere um novo código após instalar o agente.'
                           )}
                         </div>
