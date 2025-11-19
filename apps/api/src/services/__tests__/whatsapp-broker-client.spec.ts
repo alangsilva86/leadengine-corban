@@ -69,6 +69,17 @@ describe('WhatsAppBrokerClient', () => {
       }
     });
 
+    it('falls back to the API key when the verify token is missing', async () => {
+      delete process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+      refreshWhatsAppEnv();
+
+      const { resolveWhatsAppBrokerConfig } = await import('../whatsapp-broker-client');
+
+      const config = resolveWhatsAppBrokerConfig();
+
+      expect(config.verifyToken).toBe('test-key');
+    });
+
     it('wraps invalid URLs in WhatsAppBrokerNotConfiguredError', async () => {
       process.env.WHATSAPP_BROKER_URL = 'ftp://broker.test';
       refreshWhatsAppEnv();

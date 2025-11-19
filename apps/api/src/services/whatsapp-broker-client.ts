@@ -284,7 +284,9 @@ export const resolveWhatsAppBrokerConfig = (): WhatsAppBrokerResolvedConfig => {
     );
   }
 
-  const missing = Object.entries({ baseUrl, apiKey, verifyToken })
+  const resolvedVerifyToken = verifyToken ?? apiKey ?? null;
+
+  const missing = Object.entries({ baseUrl, apiKey, verifyToken: resolvedVerifyToken })
     .filter(([, value]) => !value)
     .map(([key]) => REQUIRED_ENV_VARS[key as keyof typeof REQUIRED_ENV_VARS]);
 
@@ -298,12 +300,20 @@ export const resolveWhatsAppBrokerConfig = (): WhatsAppBrokerResolvedConfig => {
   }
 
   const normalizedBaseUrl = normalizeBrokerBaseUrl(baseUrl!);
+  const normalizedVerifyToken = resolvedVerifyToken!;
+
+  if (!verifyToken && resolvedVerifyToken) {
+    logger.warn('whatsapp.broker.verifyToken.fallback', {
+      reason: 'missing',
+      fallback: 'apiKey',
+    });
+  }
 
   return {
     baseUrl: normalizedBaseUrl,
     apiKey: apiKey!,
     webhookUrl,
-    verifyToken: verifyToken!,
+    verifyToken: normalizedVerifyToken,
     timeoutMs,
   };
 };
