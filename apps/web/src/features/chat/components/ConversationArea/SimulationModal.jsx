@@ -714,11 +714,6 @@ const SimulationModal = ({
             onTableFilterChange={setTableFilter}
           />
 
-          <div className="space-y-2">
-            <Label>Pré-visualização do payload</Label>
-            <Textarea value={snapshotPreview} readOnly className="font-mono text-xs" rows={10} />
-          </div>
-
           {isProposalMode ? (
             <div className="rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4">
               <div className="space-y-2">

@@ -399,6 +399,7 @@ const ConversationHeader = ({
     () => ({
       ticket,
       handlers: {
+        onOpenSimulation,
         onGenerateProposal,
         onAssign,
         onRegisterResult,
@@ -411,7 +412,7 @@ const ConversationHeader = ({
         onCreateNote,
       },
       capabilities: {
-        canGenerateProposal: Boolean(ticket),
+        canGenerateProposal: Boolean(ticket && onOpenSimulation),
         canAssign: Boolean(ticket),
         canRegisterResult: Boolean(ticket),
         canCall: Boolean(rawPhone),
@@ -442,6 +443,7 @@ const ConversationHeader = ({
       onEditContact,
       onGenerateProposal,
       onRegisterCallResult,
+      onOpenSimulation,
       onRegisterResult,
       onScheduleFollowUp,
       openDialog,

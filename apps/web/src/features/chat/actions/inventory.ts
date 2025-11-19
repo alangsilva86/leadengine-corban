@@ -55,6 +55,7 @@ export type ChatActionCapabilities = {
 
 export type CommandActionHandlers = {
   onGenerateProposal?: (ticket: unknown) => void;
+  onOpenSimulation?: (ticket: unknown) => void;
   onAssign?: (ticket: unknown, userId?: string | null) => void;
   onRegisterResult?: (payload: unknown) => void | Promise<void>;
   onRegisterCallResult?: (payload: unknown) => void | Promise<void>;
@@ -128,17 +129,17 @@ const buildReturnFocusOption = (returnFocus: HTMLElement | null | undefined) =>
 export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
   {
     id: 'generate-proposal',
-    label: 'Gerar proposta',
+    label: 'Simular proposta',
     icon: FileText,
     shortcut: 'g',
     shortcutDisplay: '/g',
     intent: 'primary',
     run: ({ ticket, handlers }) => {
-      if (!ticket || !handlers?.onGenerateProposal) return;
-      handlers.onGenerateProposal(ticket);
+      if (!ticket || !handlers?.onOpenSimulation) return;
+      handlers.onOpenSimulation(ticket);
     },
     canExecute: ({ ticket, handlers, capabilities }) =>
-      Boolean(ticket && handlers?.onGenerateProposal && isCapabilityEnabled(capabilities?.canGenerateProposal)),
+      Boolean(ticket && handlers?.onOpenSimulation && isCapabilityEnabled(capabilities?.canGenerateProposal)),
   },
   {
     id: 'assign-owner',
