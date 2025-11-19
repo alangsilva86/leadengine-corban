@@ -26,13 +26,9 @@ import {
   QrCode,
   Rocket,
   Download,
-  Loader2,
   MessageSquare,
-  QrCode,
-  Rocket,
   Server,
   Shield,
-  Smartphone,
 } from 'lucide-react';
 
 import useWhatsAppConnect from './useWhatsAppConnect';
@@ -49,11 +45,6 @@ const SectionFallback = () => (
 );
 
 const DialogFallback = () => null;
-
-const modeDescriptions = {
-  session: 'Ideal para times que compartilham a mesma sessão conectada em múltiplos dispositivos.',
-  number: 'Modo dedicado para um único número fixo. Use quando houver apenas um operador.',
-} as const;
 
 const connectionStepsCopy = [
   {
@@ -79,24 +70,18 @@ const connectionStepsCopy = [
 const wizardSteps = [
   {
     id: 1,
-    title: 'Selecione o modo de conexão',
-    description: 'Escolha entre sessão compartilhada ou número dedicado para continuar.',
-    Icon: Smartphone,
-  },
-  {
-    id: 2,
     title: 'Instale o agente/serviço',
     description: 'Baixe e execute o agente no ambiente aprovado antes de gerar o QR.',
     Icon: Server,
   },
   {
-    id: 3,
+    id: 2,
     title: 'Leia o QR Code oficial',
     description: 'Acesse Dispositivos Conectados no WhatsApp e escaneie o código.',
     Icon: QrCode,
   },
   {
-    id: 4,
+    id: 3,
     title: 'Valide o canal',
     description: 'Envie uma mensagem de teste para confirmar eventos de entrada/saída.',
     Icon: MessageSquare,
@@ -208,21 +193,11 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
   }, [instanceViewModels, instancesReady]);
 
   const [wizardState, setWizardState] = useState({
-    mode: selectedInstance?.instance?.mode === 'number' ? 'number' : 'session',
     qrConfirmed: localStatus === 'connected',
     agentInstalled: false,
     qrConfirmed: localStatus === 'connected',
     validationDone: false,
   });
-
-  useEffect(() => {
-    if (selectedInstance?.instance?.mode) {
-      setWizardState((prev) => ({
-        ...prev,
-        mode: selectedInstance.instance.mode === 'number' ? 'number' : 'session',
-      }));
-    }
-  }, [selectedInstance?.instance?.mode]);
 
   useEffect(() => {
     setWizardState((prev) => ({ ...prev, qrConfirmed: localStatus === 'connected' }));
@@ -266,7 +241,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
   };
 
   const checklistItems = useMemo(() => {
-    const isModeSelected = Boolean(wizardState.mode);
     const agentReady =
       wizardState.agentInstalled || localStatus === 'connecting' || localStatus === 'connected';
     const qrReady = wizardState.qrConfirmed;
@@ -274,17 +248,10 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
     return [
       {
-        id: 'mode',
-        title: 'Definir modo de conexão',
-        description: 'Escolha se a instância será por sessão ou por número.',
-        state: isModeSelected ? 'done' : 'pending',
-        actionLabel: isModeSelected ? 'Configurado' : 'Selecionar modo',
-      },
-      {
         id: 'agent',
         title: 'Instalar agente/serviço',
         description: 'Faça o download e instale o agente de pareamento autorizado.',
-        state: agentReady ? 'done' : isModeSelected ? 'in_progress' : 'pending',
+        state: agentReady ? 'done' : 'in_progress',
         actionLabel: agentReady ? 'Instalado' : 'Baixar agente',
       },
       {
@@ -312,7 +279,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
   }, [
     localStatus,
     wizardState.agentInstalled,
-    wizardState.mode,
     wizardState.qrConfirmed,
     wizardState.validationDone,
   ]);
@@ -329,7 +295,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     : `${Math.round(selectedInstance?.ratePercentage ?? 0)}% do limite`;
   const numberLabel = selectedInstancePhone || selectedInstance?.phoneLabel || 'Sem número definido';
   const instanceName = selectedInstance?.displayName ?? defaultInstanceName;
-  const modeLabel = wizardState.mode === 'number' ? 'Instância por número' : 'Instância por sessão';
+  const modeLabel = 'Instância por número';
 
   const backLabel = 'Voltar';
 
@@ -407,27 +373,12 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
               {usageLabel}
             </Badge>
           </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-              <span className="text-xs uppercase tracking-wide">Modo atual</span>
-              <div className="flex items-center gap-2">
-                {(['session', 'number'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => updateWizardState({ mode })}
-                    className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                      wizardState.mode === mode
-                        ? 'border-primary/60 bg-primary/10 text-white'
-                        : 'border-border/60 text-muted-foreground hover:border-primary/40'
-                    }`}
-                  >
-                    {mode === 'session' ? 'Instância por sessão' : 'Instância por número'}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">{modeDescriptions[wizardState.mode]}</p>
+          <div className="flex flex-col gap-1 text-right">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">Modo atual</span>
+            <Badge variant="secondary">Instância por número</Badge>
+            <p className="text-xs text-muted-foreground">
+              Modo único e liberado para todos os usuários da conta.
+            </p>
           </div>
           <div className="flex flex-col gap-2">
             <Button onClick={scrollToAssistant} className="justify-center">
@@ -509,21 +460,20 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
               {wizardSteps.map((step) => {
                 const stepState = (() => {
                   if (step.id === 1) {
-                    return wizardState.mode ? 'done' : 'active';
+                    return wizardState.agentInstalled ? 'done' : 'active';
                   }
                   if (step.id === 2) {
-                    if (!wizardState.mode) {
-                      return 'blocked';
-                    }
-                    return wizardState.qrConfirmed ? 'done' : 'active';
+                    return wizardState.qrConfirmed ? 'done' : wizardState.agentInstalled ? 'active' : 'blocked';
                   }
-                  return 'pending';
+                  if (step.id === 3) {
+                    return wizardState.validationDone ? 'done' : wizardState.qrConfirmed ? 'active' : 'blocked';
+                  }
+                  return 'active';
                 })();
 
                 const isBlocked =
-                  (step.id === 2 && !wizardState.mode) ||
-                  (step.id === 3 && !wizardState.agentInstalled) ||
-                  (step.id === 4 && !wizardState.qrConfirmed);
+                  (step.id === 2 && !wizardState.agentInstalled) ||
+                  (step.id === 3 && !wizardState.qrConfirmed);
                 const stateClasses =
                   stepState === 'done'
                     ? 'border-emerald-500/60'
@@ -550,42 +500,10 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                         <p className="text-sm text-muted-foreground">{step.description}</p>
                       </div>
                       {stepState === 'done' ? <Check className="h-4 w-4 text-emerald-400" /> : null}
-                      {step.id <= 2 && wizardState.agentInstalled && step.id !== 1 ? (
-                        <Check className="h-4 w-4 text-emerald-400" />
-                      ) : null}
-                      {step.id === 3 && wizardState.qrConfirmed ? (
-                        <Check className="h-4 w-4 text-emerald-400" />
-                      ) : null}
-                      {step.id === 4 && wizardState.validationDone ? (
-                        <Check className="h-4 w-4 text-emerald-400" />
-                      ) : null}
+                      {step.id === 2 && wizardState.agentInstalled ? <Check className="h-4 w-4 text-emerald-400" /> : null}
+                      {step.id === 3 && wizardState.qrConfirmed ? <Check className="h-4 w-4 text-emerald-400" /> : null}
                     </div>
                     {step.id === 1 ? (
-                      <div className="grid gap-3 md:grid-cols-2">
-                        {(['session', 'number'] as const).map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => updateWizardState({ mode })}
-                            className={`flex flex-col gap-2 rounded-xl border px-4 py-3 text-left transition ${
-                              wizardState.mode === mode
-                                ? 'border-primary/70 bg-primary/10 text-white'
-                                : 'border-border/60 text-muted-foreground hover:border-primary/40'
-                            }`}
-                          >
-                            <span className="text-sm font-semibold">
-                              {mode === 'session' ? 'Instância por sessão' : 'Instância por número'}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {mode === 'session'
-                                ? 'Compartilhe a sessão em diferentes navegadores.'
-                                : 'Cada agente usa um único número dedicado.'}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                    {step.id === 2 ? (
                       <div className="flex flex-wrap gap-3">
                         <Button size="sm" variant="secondary" onClick={() => updateWizardState({ agentInstalled: true })}>
                           <Download className="mr-2 h-4 w-4" /> Baixar para Windows
@@ -598,7 +516,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                         </Button>
                       </div>
                     ) : null}
-                    {step.id === 3 ? (
+                    {step.id === 2 ? (
                       <div className="space-y-3">
                         <div className="rounded-xl border border-dashed border-border/70 bg-surface-overlay-quiet p-4 text-center text-sm text-muted-foreground">
                           {qrImageSrc ? (
@@ -622,7 +540,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                         </div>
                       </div>
                     ) : null}
-                    {step.id === 4 ? (
+                    {step.id === 3 ? (
                       <div className="flex flex-wrap gap-3">
                         <Button size="sm" onClick={() => updateWizardState({ validationDone: true })}>
                           <MessageSquare className="mr-2 h-4 w-4" /> Enviar mensagem de teste
