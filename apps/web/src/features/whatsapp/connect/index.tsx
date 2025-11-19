@@ -25,6 +25,12 @@ import {
   Loader2,
   QrCode,
   Rocket,
+  Download,
+  Loader2,
+  MessageSquare,
+  QrCode,
+  Rocket,
+  Server,
   Shield,
   Smartphone,
 } from 'lucide-react';
@@ -79,9 +85,21 @@ const wizardSteps = [
   },
   {
     id: 2,
+    title: 'Instale o agente/serviço',
+    description: 'Baixe e execute o agente no ambiente aprovado antes de gerar o QR.',
+    Icon: Server,
+  },
+  {
+    id: 3,
     title: 'Leia o QR Code oficial',
     description: 'Acesse Dispositivos Conectados no WhatsApp e escaneie o código.',
     Icon: QrCode,
+  },
+  {
+    id: 4,
+    title: 'Valide o canal',
+    description: 'Envie uma mensagem de teste para confirmar eventos de entrada/saída.',
+    Icon: MessageSquare,
   },
 ] as const;
 
@@ -192,6 +210,9 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
   const [wizardState, setWizardState] = useState({
     mode: selectedInstance?.instance?.mode === 'number' ? 'number' : 'session',
     qrConfirmed: localStatus === 'connected',
+    agentInstalled: false,
+    qrConfirmed: localStatus === 'connected',
+    validationDone: false,
   });
 
   useEffect(() => {
@@ -249,6 +270,11 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     const qrReady = wizardState.qrConfirmed;
     const channelConnecting = localStatus === 'connecting';
     const channelOnline = localStatus === 'connected';
+    const agentReady = localStatus === 'connecting' || localStatus === 'connected';
+    const validationReady = localStatus === 'connected';
+    const agentReady = wizardState.agentInstalled;
+    const qrReady = wizardState.qrConfirmed;
+    const validationReady = wizardState.validationDone;
 
     return [
       {
@@ -264,12 +290,15 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         description: 'Faça o download e instale o agente de pareamento autorizado.',
         state: channelConnecting || channelOnline ? 'done' : isModeSelected ? 'in_progress' : 'pending',
         actionLabel: channelConnecting || channelOnline ? 'Instalado' : 'Baixar agente',
+        state: agentReady ? 'done' : isModeSelected ? 'in_progress' : 'pending',
+        actionLabel: agentReady ? 'Instalado' : 'Baixar agente',
       },
       {
         id: 'qr',
         title: 'Ler QR Code do WhatsApp',
         description: 'Escaneie o QR dentro de Dispositivos Conectados no app oficial.',
         state: qrReady ? 'done' : channelConnecting || channelOnline ? 'in_progress' : 'pending',
+        state: qrReady ? 'done' : agentReady ? 'in_progress' : 'pending',
         actionLabel: qrReady ? 'Conectado' : 'Gerar QR',
       },
       {
@@ -278,6 +307,8 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         description: 'Confira se as mensagens entrantes e a fila estão sincronizadas.',
         state: qrReady ? (channelOnline ? 'done' : 'in_progress') : 'pending',
         actionLabel: channelOnline ? 'Validado' : 'Ver fila',
+        state: qrReady ? (validationReady ? 'done' : 'in_progress') : 'pending',
+        actionLabel: validationReady ? 'Validado' : 'Ver fila',
       },
       {
         id: 'test',
@@ -288,6 +319,12 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
       },
     ];
   }, [localStatus, wizardState.mode, wizardState.qrConfirmed]);
+        state: validationReady ? 'done' : qrReady ? 'in_progress' : 'pending',
+        actionLabel: validationReady ? 'Teste concluído' : 'Testar agora',
+      },
+    ];
+  }, [localStatus, wizardState.mode, wizardState.qrConfirmed]);
+  }, [wizardState.mode, wizardState.agentInstalled, wizardState.qrConfirmed, wizardState.validationDone]);
 
   const metricsAvailable = localStatus === 'connected';
   const timelinePreview = timelineItems.slice(0, 4);
@@ -500,6 +537,20 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                       : 'border-border/60';
 
                 const isDisabled = stepState === 'blocked';
+                const isDisabled =
+                  (step.id === 2 && !wizardState.mode) ||
+                  (step.id === 3 && !wizardState.agentInstalled) ||
+                  (step.id === 4 && !wizardState.qrConfirmed);
+                const stateClasses =
+                  step.id === 1
+                    ? 'border-primary/40'
+                    : step.id === 2 && wizardState.agentInstalled
+                      ? 'border-emerald-500/60'
+                      : step.id === 3 && wizardState.qrConfirmed
+                        ? 'border-emerald-500/60'
+                        : step.id === 4 && wizardState.validationDone
+                          ? 'border-emerald-500/60'
+                          : 'border-border/60';
 
                 return (
                   <div
@@ -520,6 +571,15 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                         <p className="text-sm text-muted-foreground">{step.description}</p>
                       </div>
                       {stepState === 'done' ? <Check className="h-4 w-4 text-emerald-400" /> : null}
+                      {step.id <= 2 && wizardState.agentInstalled && step.id !== 1 ? (
+                        <Check className="h-4 w-4 text-emerald-400" />
+                      ) : null}
+                      {step.id === 3 && wizardState.qrConfirmed ? (
+                        <Check className="h-4 w-4 text-emerald-400" />
+                      ) : null}
+                      {step.id === 4 && wizardState.validationDone ? (
+                        <Check className="h-4 w-4 text-emerald-400" />
+                      ) : null}
                     </div>
                     {step.id === 1 ? (
                       <div className="grid gap-3 md:grid-cols-2">
@@ -547,12 +607,26 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                       </div>
                     ) : null}
                     {step.id === 2 ? (
+                      <div className="flex flex-wrap gap-3">
+                        <Button size="sm" variant="secondary" onClick={() => updateWizardState({ agentInstalled: true })}>
+                          <Download className="mr-2 h-4 w-4" /> Baixar para Windows
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => updateWizardState({ agentInstalled: true })}>
+                          <Download className="mr-2 h-4 w-4" /> Baixar para Linux
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => updateWizardState({ agentInstalled: false })}>
+                          Reverter status
+                        </Button>
+                      </div>
+                    ) : null}
+                    {step.id === 3 ? (
                       <div className="space-y-3">
                         <div className="rounded-xl border border-dashed border-border/70 bg-surface-overlay-quiet p-4 text-center text-sm text-muted-foreground">
                           {qrImageSrc ? (
                             <img src={qrImageSrc} alt="QR Code" className="mx-auto h-40 w-40 rounded" />
                           ) : (
                             'Sem QR Code ativo · Gere um novo código quando estiver pronto.'
+                            'Sem QR Code ativo · Gere um novo código após instalar o agente.'
                           )}
                         </div>
                         <div className="flex flex-wrap gap-3">
@@ -568,6 +642,16 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                             Marcar como lido
                           </Button>
                         </div>
+                      </div>
+                    ) : null}
+                    {step.id === 4 ? (
+                      <div className="flex flex-wrap gap-3">
+                        <Button size="sm" onClick={() => updateWizardState({ validationDone: true })}>
+                          <MessageSquare className="mr-2 h-4 w-4" /> Enviar mensagem de teste
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => handleMarkConnected()}>
+                          Confirmar manualmente
+                        </Button>
                       </div>
                     ) : null}
                   </div>
