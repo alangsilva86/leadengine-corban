@@ -51,9 +51,6 @@ const InstancesPanel = ({
   loadingInstances,
   copy,
   localStatus,
-  confirmLabel,
-  confirmDisabled,
-  onConfirm,
   onMarkConnected,
   onRefresh,
   onCreateInstance,
@@ -255,9 +252,6 @@ const InstancesPanel = ({
         selectedInstanceStatusInfo={selectedInstanceStatusInfo}
         selectedInstancePhone={selectedInstancePhone}
         instancesCountLabel={instancesCountLabel}
-        confirmLabel={confirmLabel}
-        confirmDisabled={confirmDisabled}
-        onConfirm={onConfirm}
         onMarkConnected={onMarkConnected}
         localStatus={localStatus}
         onRefresh={onRefresh}
