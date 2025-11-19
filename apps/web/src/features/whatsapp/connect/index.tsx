@@ -267,14 +267,10 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
   const checklistItems = useMemo(() => {
     const isModeSelected = Boolean(wizardState.mode);
+    const agentReady =
+      wizardState.agentInstalled || localStatus === 'connecting' || localStatus === 'connected';
     const qrReady = wizardState.qrConfirmed;
-    const channelConnecting = localStatus === 'connecting';
-    const channelOnline = localStatus === 'connected';
-    const agentReady = localStatus === 'connecting' || localStatus === 'connected';
-    const validationReady = localStatus === 'connected';
-    const agentReady = wizardState.agentInstalled;
-    const qrReady = wizardState.qrConfirmed;
-    const validationReady = wizardState.validationDone;
+    const validationReady = wizardState.validationDone || localStatus === 'connected';
 
     return [
       {
@@ -288,8 +284,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         id: 'agent',
         title: 'Instalar agente/serviço',
         description: 'Faça o download e instale o agente de pareamento autorizado.',
-        state: channelConnecting || channelOnline ? 'done' : isModeSelected ? 'in_progress' : 'pending',
-        actionLabel: channelConnecting || channelOnline ? 'Instalado' : 'Baixar agente',
         state: agentReady ? 'done' : isModeSelected ? 'in_progress' : 'pending',
         actionLabel: agentReady ? 'Instalado' : 'Baixar agente',
       },
@@ -297,7 +291,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         id: 'qr',
         title: 'Ler QR Code do WhatsApp',
         description: 'Escaneie o QR dentro de Dispositivos Conectados no app oficial.',
-        state: qrReady ? 'done' : channelConnecting || channelOnline ? 'in_progress' : 'pending',
         state: qrReady ? 'done' : agentReady ? 'in_progress' : 'pending',
         actionLabel: qrReady ? 'Conectado' : 'Gerar QR',
       },
@@ -305,8 +298,6 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         id: 'events',
         title: 'Validar eventos e fila',
         description: 'Confira se as mensagens entrantes e a fila estão sincronizadas.',
-        state: qrReady ? (channelOnline ? 'done' : 'in_progress') : 'pending',
-        actionLabel: channelOnline ? 'Validado' : 'Ver fila',
         state: qrReady ? (validationReady ? 'done' : 'in_progress') : 'pending',
         actionLabel: validationReady ? 'Validado' : 'Ver fila',
       },
@@ -314,17 +305,17 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
         id: 'test',
         title: 'Testar envio/recebimento',
         description: 'Envie uma mensagem de teste e confirme o recebimento de volta.',
-        state: channelOnline ? 'done' : qrReady ? 'in_progress' : 'pending',
-        actionLabel: channelOnline ? 'Teste concluído' : 'Testar agora',
-      },
-    ];
-  }, [localStatus, wizardState.mode, wizardState.qrConfirmed]);
         state: validationReady ? 'done' : qrReady ? 'in_progress' : 'pending',
         actionLabel: validationReady ? 'Teste concluído' : 'Testar agora',
       },
     ];
-  }, [localStatus, wizardState.mode, wizardState.qrConfirmed]);
-  }, [wizardState.mode, wizardState.agentInstalled, wizardState.qrConfirmed, wizardState.validationDone]);
+  }, [
+    localStatus,
+    wizardState.agentInstalled,
+    wizardState.mode,
+    wizardState.qrConfirmed,
+    wizardState.validationDone,
+  ]);
 
   const metricsAvailable = localStatus === 'connected';
   const timelinePreview = timelineItems.slice(0, 4);
