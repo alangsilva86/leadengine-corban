@@ -69,6 +69,17 @@ describe('WhatsAppBrokerClient', () => {
       }
     });
 
+    it('falls back to the API key when the verify token is missing', async () => {
+      delete process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+      refreshWhatsAppEnv();
+
+      const { resolveWhatsAppBrokerConfig } = await import('../whatsapp-broker-client');
+
+      const config = resolveWhatsAppBrokerConfig();
+
+      expect(config.verifyToken).toBe('test-key');
+    });
+
     it('wraps invalid URLs in WhatsAppBrokerNotConfiguredError', async () => {
       process.env.WHATSAPP_BROKER_URL = 'ftp://broker.test';
       refreshWhatsAppEnv();
@@ -103,7 +114,7 @@ describe('WhatsAppBrokerClient', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://broker.test/instances');
+    expect(url).toBe('https://broker.test/instances?tenantId=tenant-1');
 
     const headers = init?.headers as Headers;
     expect(headers.get('X-API-Key')).toBe('test-key');
