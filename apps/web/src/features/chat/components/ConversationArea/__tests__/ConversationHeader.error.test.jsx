@@ -1,7 +1,17 @@
 /* @vitest-environment jsdom */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import ConversationHeader from '../ConversationHeader.jsx';
+
+vi.mock('../../hooks/useTicketJro.js', () => ({
+  __esModule: true,
+  default: () => ({ state: 'neutral', label: 'Em andamento', progress: 0.5 }),
+}));
+
+vi.mock('@/features/chat/hooks/useInstancePresentation.js', () => ({
+  __esModule: true,
+  default: () => ({ label: 'Instância mock', color: '#94A3B8', phone: null, number: null }),
+}));
 
 describe('ConversationHeader', () => {
   it('renders without crashing for basic ticket', () => {

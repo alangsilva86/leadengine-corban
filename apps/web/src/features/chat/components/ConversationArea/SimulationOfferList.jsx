@@ -3,6 +3,8 @@ import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx';
 import { formatCurrency } from '@/features/agreements/utils/dailyCoefficient.js';
 
+export const TABLE_FILTER_ALL = '__all__';
+
 const SimulationOfferList = ({
   offers,
   currentParameters,
@@ -10,7 +12,7 @@ const SimulationOfferList = ({
   errors,
   onToggleOfferSelection,
   tableOptions = [],
-  tableFilter = '',
+  tableFilter = TABLE_FILTER_ALL,
   onTableFilterChange = () => {},
 }) => (
   <div className="space-y-4">
@@ -28,7 +30,7 @@ const SimulationOfferList = ({
               <SelectValue placeholder="Todas as tabelas" />
             </SelectTrigger>
             <SelectContent align="end">
-              <SelectItem value="">Todas as tabelas</SelectItem>
+              <SelectItem value={TABLE_FILTER_ALL}>Todas as tabelas</SelectItem>
               {tableOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}

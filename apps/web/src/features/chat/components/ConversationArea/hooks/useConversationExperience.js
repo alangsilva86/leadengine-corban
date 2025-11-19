@@ -1084,6 +1084,7 @@ export const useConversationExperience = ({
       onGiveBackToAi,
       onOpenSimulation: canOpenSimulation ? handleOpenSimulation : undefined,
       onOpenDeal: canOpenDeal ? handleOpenDeal : undefined,
+      primaryActionOverride: salesJourney?.nextAction ?? null,
     }),
     [
       aiAssistant,
@@ -1120,6 +1121,7 @@ export const useConversationExperience = ({
       ticket,
       queueId,
       augmentedTypingAgents,
+      salesJourney,
     ],
   );
 

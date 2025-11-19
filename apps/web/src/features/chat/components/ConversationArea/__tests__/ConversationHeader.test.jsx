@@ -57,6 +57,11 @@ vi.mock('../../hooks/useTicketJro.js', () => ({
   default: () => ({ state: 'neutral', label: 'Em andamento', progress: 0.5 }),
 }));
 
+vi.mock('@/features/chat/hooks/useInstancePresentation.js', () => ({
+  __esModule: true,
+  default: () => ({ label: 'Instância mock', color: '#94A3B8', phone: null, number: null }),
+}));
+
 afterEach(() => {
   cleanup();
 });

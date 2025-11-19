@@ -236,6 +236,7 @@ const ConversationHeader = ({
   detailsOpen = false,
   onRequestDetails,
   nextStepEditorRef: externalNextStepEditorRef,
+  primaryActionOverride = null,
 }) => {
   const [activeDialog, setActiveDialog] = useState(null);
   const [outcomeMode, setOutcomeMode] = useState('success');
@@ -271,7 +272,12 @@ const ConversationHeader = ({
 
   const dialogReturnFocusRef = useRef(null);
   const jro = useTicketJro(ticket);
-  const { stageKey, stageInfo, primaryAction } = useTicketStageInfo(ticket);
+  const {
+    stageKey,
+    stageInfo,
+    primaryAction: derivedPrimaryAction,
+  } = useTicketStageInfo(ticket);
+  const primaryAction = primaryActionOverride ?? derivedPrimaryAction;
 
   useEffect(() => {
     emitInboxTelemetry('chat.header.viewed', {

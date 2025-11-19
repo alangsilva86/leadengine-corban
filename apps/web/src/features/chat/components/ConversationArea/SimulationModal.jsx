@@ -40,7 +40,7 @@ import {
 import { QUEUE_ALERTS_ACTIONS, queueAlertsReducer } from './utils/simulationReducers.js';
 import useSimulationCalculation from './hooks/useSimulationCalculation.js';
 import useProposalSelection from './hooks/useProposalSelection.js';
-import SimulationOfferList from './SimulationOfferList.jsx';
+import SimulationOfferList, { TABLE_FILTER_ALL } from './SimulationOfferList.jsx';
 
 const DEFAULT_BASE_VALUE = '350';
 const DEFAULT_SELECTED_TERMS = [72, 84];
@@ -90,7 +90,7 @@ const SimulationModal = ({
   const [initialSelection, setInitialSelection] = useState([]);
   const [normalizedAlerts, dispatchQueueAlerts] = useReducer(queueAlertsReducer, []);
   const [errors, setErrors] = useState({});
-  const [tableFilter, setTableFilter] = useState('');
+  const [tableFilter, setTableFilter] = useState(TABLE_FILTER_ALL);
 
   const alertsActive = normalizedAlerts.length > 0;
   const fieldsDisabled = disabled || alertsActive;
@@ -197,14 +197,14 @@ const SimulationModal = ({
       return;
     }
     if (tableOptions.length === 0) {
-      if (tableFilter !== '') {
-        setTableFilter('');
+      if (tableFilter !== TABLE_FILTER_ALL) {
+        setTableFilter(TABLE_FILTER_ALL);
       }
       return;
     }
     const hasSelected = tableOptions.some((option) => option.value === tableFilter);
     if (!hasSelected) {
-      const fallbackValue = tableOptions.length === 1 ? tableOptions[0].value : '';
+      const fallbackValue = tableOptions.length === 1 ? tableOptions[0].value : TABLE_FILTER_ALL;
       if (tableFilter !== fallbackValue) {
         setTableFilter(fallbackValue);
       }
@@ -212,6 +212,9 @@ const SimulationModal = ({
   }, [open, tableFilter, tableOptions]);
 
   const filteredActiveTaxes = useMemo(() => {
+    if (!tableFilter || tableFilter === TABLE_FILTER_ALL) {
+      return activeTaxes;
+    }
     const normalizedFilter = normalizeString(tableFilter);
     if (!normalizedFilter) {
       return activeTaxes;
