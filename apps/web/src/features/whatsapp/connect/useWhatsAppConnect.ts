@@ -479,7 +479,7 @@ const useWhatsAppConnect = ({
 
   const hasConnectedInstances =
     renderInstances.some(isInstanceConnected) || (instance ? isInstanceConnected(instance) : false);
-  const connectionHealthy = realtimeConnected && localStatus === 'connected';
+  const connectionHealthy = localStatus === 'connected';
   const canCreateCampaigns = hasConnectedInstances && connectionHealthy;
   const instanceViewModels = useMemo<WhatsAppInstanceViewModel[]>(() => {
     return renderInstances.map((entry, index) => {

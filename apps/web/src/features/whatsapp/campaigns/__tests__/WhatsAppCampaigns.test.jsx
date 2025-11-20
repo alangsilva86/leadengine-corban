@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Suspense } from 'react';
 
 import WhatsAppCampaigns from '../index';
 
-const useWhatsAppConnectMock = vi.fn();
+const useWhatsAppConnectMock = vi.hoisted(() => vi.fn());
 
 const setCreateCampaignOpenMock = vi.fn();
 const reloadCampaignsMock = vi.fn();
@@ -127,7 +128,7 @@ describe('WhatsAppCampaigns', () => {
 
     expect(await screen.findByText('Gerencie suas campanhas')).toBeInTheDocument();
     expect(screen.getByText('Os leads continuam chegando normalmente.')).toBeInTheDocument();
-    expect(screen.getByTestId('campaigns-panel')).toBeInTheDocument();
+    expect(await screen.findByTestId('campaigns-panel')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Nova campanha'));
     expect(setCreateCampaignOpenMock).toHaveBeenCalledWith(true);
@@ -187,5 +188,29 @@ describe('WhatsAppCampaigns', () => {
 
     expect(screen.getByRole('button', { name: 'Nova campanha' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Ir para a Inbox|Continuar/ })).toBeDisabled();
+  });
+
+  it('keeps creation enabled when realtime is offline but the instance remains connected', async () => {
+    useWhatsAppConnectMock.mockReturnValue({
+      ...defaultHookValue,
+      realtimeConnected: false,
+      connectionHealthy: true,
+      canCreateCampaigns: true,
+    });
+
+    render(
+      <Suspense fallback={<span>loading</span>}>
+        <WhatsAppCampaigns />
+      </Suspense>,
+    );
+
+    expect(
+      await screen.findByText(
+        'Tempo real está offline. Você ainda pode criar ou ajustar campanhas, mas métricas instantâneas ficarão indisponíveis até restabelecer a conexão.',
+      ),
+    ).toBeInTheDocument();
+
+    expect(screen.getByRole('button', { name: 'Nova campanha' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Ir para a Inbox|Continuar/ })).toBeEnabled();
   });
 });

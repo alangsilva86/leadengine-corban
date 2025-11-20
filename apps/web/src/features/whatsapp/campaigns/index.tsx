@@ -97,12 +97,17 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
       ? 'Conecte uma instância ativa e com tempo real para gerenciar as campanhas.'
       : 'Tempo real está offline. Reative a conexão para gerenciar as campanhas.';
 
-  const statusBadgeTone = connectionHealthy ? statusTone : 'warning';
+  const realtimeWarningMessage =
+    connectionHealthy && !realtimeConnected
+      ? 'Tempo real está offline. Você ainda pode criar ou ajustar campanhas, mas métricas instantâneas ficarão indisponíveis até restabelecer a conexão.'
+      : null;
+
+  const statusBadgeTone = connectionHealthy && realtimeConnected ? statusTone : 'warning';
   const statusBadgeLabel = connectionHealthy
-    ? statusCopy.badge
-    : connectionStatus === 'connected'
-      ? 'Tempo real offline'
-      : 'Desconectado';
+    ? realtimeConnected
+      ? statusCopy.badge
+      : 'Tempo real offline'
+    : 'Desconectado';
 
   const handlePrimaryAction = () => {
     if (primaryAction === 'create') {
@@ -215,6 +220,12 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
       {connectionBlockedMessage ? (
         <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
           {connectionBlockedMessage}
+        </NoticeBanner>
+      ) : null}
+
+      {realtimeWarningMessage ? (
+        <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
+          {realtimeWarningMessage}
         </NoticeBanner>
       ) : null}
 
