@@ -131,7 +131,6 @@ const useWhatsappCampaignActions = ({
       margin,
       strategy,
       status: requestedStatus = 'active',
-      leadSource,
       segments,
     }: {
       name: string;
@@ -144,8 +143,6 @@ const useWhatsappCampaignActions = ({
       strategy: string;
       segments?: string[];
       status?: string;
-      leadSource: string;
-      segments?: string[];
     }) => {
       const parsed = createCampaignSchema.safeParse({
         name,
@@ -157,7 +154,6 @@ const useWhatsappCampaignActions = ({
         margin,
         strategy,
         status: requestedStatus,
-        leadSource,
         segments,
       });
       if (!parsed.success) {
