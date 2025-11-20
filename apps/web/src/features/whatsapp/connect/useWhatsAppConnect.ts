@@ -210,6 +210,8 @@ const initialState = (status: string | undefined, activeCampaign: any | undefine
   persistentWarning: null,
 });
 
+type SessionStateParams = Parameters<typeof useWhatsappSessionState>[0];
+
 const useWhatsAppConnect = ({
   selectedAgreement,
   status = 'disconnected',
@@ -339,21 +341,20 @@ const useWhatsAppConnect = ({
     ...(onCampaignReady ? { onCampaignReady } : {}),
   });
 
-  const selectInstanceAsync = useCallback(
-    async (target: any, options?: { skipAutoQr?: boolean }) => {
+  const selectInstanceAsync = useCallback<SessionStateParams['selectInstance']>(
+    async (target, options) => {
       await Promise.resolve(selectInstance(target, options));
     },
     [selectInstance],
   );
 
-  const sessionState = useWhatsappSessionState({
+  const sessionStateParams: SessionStateParams = {
     state,
     localStatus,
     qrData,
     secondsLeft,
     setSecondsLeft,
     setInstanceStatus,
-    ...(onStatusChange ? { onStatusChange } : {}),
     setGeneratingQrState,
     loadingInstances,
     loadingQr,
@@ -364,7 +365,13 @@ const useWhatsAppConnect = ({
     markConnected,
     setQrPanelOpen,
     setQrDialogOpen,
-  });
+  };
+
+  if (onStatusChange) {
+    sessionStateParams.onStatusChange = onStatusChange;
+  }
+
+  const sessionState = useWhatsappSessionState(sessionStateParams);
 
   const pairingState = useWhatsappPairing({
     state,
