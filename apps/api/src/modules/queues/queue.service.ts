@@ -1,0 +1,101 @@
+import { Prisma } from '@prisma/client';
+
+import { prisma as defaultPrisma } from '../../lib/prisma';
+import type { QueueEntity, QueueInput, QueueReorderItem, QueueUpdateInput } from './queue.types';
+
+const queueSelect = {
+  id: true,
+  tenantId: true,
+  name: true,
+  description: true,
+  color: true,
+  isActive: true,
+  orderIndex: true,
+  settings: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+export class QueueService {
+  constructor(private readonly prisma = defaultPrisma) {}
+
+  async listQueues(tenantId: string): Promise<QueueEntity[]> {
+    return this.prisma.queue.findMany({
+      where: { tenantId },
+      orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+      select: queueSelect,
+    });
+  }
+
+  async createQueue(tenantId: string, input: QueueInput): Promise<QueueEntity> {
+    const nextOrderIndex =
+      typeof input.orderIndex === 'number'
+        ? input.orderIndex
+        : await this.prisma.queue.count({ where: { tenantId } });
+
+    return this.prisma.queue.create({
+      data: {
+        tenantId,
+        name: input.name,
+        description: input.description ?? undefined,
+        color: input.color ?? undefined,
+        isActive: typeof input.isActive === 'boolean' ? input.isActive : true,
+        orderIndex: nextOrderIndex,
+        settings:
+          typeof input.settings === 'object' && input.settings !== null
+            ? (input.settings as Prisma.JsonObject)
+            : undefined,
+      },
+      select: queueSelect,
+    });
+  }
+
+  async updateQueue(tenantId: string, queueId: string, updates: QueueUpdateInput): Promise<QueueEntity | null> {
+    const updatedCount = await this.prisma.queue.updateMany({
+      where: { id: queueId, tenantId },
+      data: updates,
+    });
+
+    if (updatedCount.count === 0) {
+      return null;
+    }
+
+    return this.prisma.queue.findUnique({
+      where: { id: queueId },
+      select: queueSelect,
+    });
+  }
+
+  async reorderQueues(tenantId: string, items: QueueReorderItem[]): Promise<QueueEntity[]> {
+    const queueIds = await this.prisma.queue.findMany({
+      where: { tenantId, id: { in: items.map((item) => item.id) } },
+      select: { id: true },
+    });
+
+    const allowedIds = new Set(queueIds.map((item) => item.id));
+    const updates = items.filter((item) => allowedIds.has(item.id));
+
+    if (updates.length === 0) {
+      return [];
+    }
+
+    await this.prisma.$transaction(
+      updates.map((item) =>
+        this.prisma.queue.updateMany({
+          where: { id: item.id, tenantId },
+          data: { orderIndex: item.orderIndex },
+        })
+      )
+    );
+
+    return this.listQueues(tenantId);
+  }
+
+  async deleteQueue(tenantId: string, queueId: string): Promise<boolean> {
+    const deleted = await this.prisma.queue.deleteMany({
+      where: { id: queueId, tenantId },
+    });
+
+    return deleted.count > 0;
+  }
+}
