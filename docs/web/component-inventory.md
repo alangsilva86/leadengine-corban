@@ -19,7 +19,6 @@ The onboarding journey loads the following pages on demand:
 5. `components/Reports.jsx`
 6. `components/Settings.jsx`
 7. `features/debug/BaileysLogs.jsx`
-8. `features/debug/WhatsAppDebug.jsx`
 
 ## Shared UI widgets
 
@@ -105,6 +104,7 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 - `features/chat/hooks/useManualConversationLauncher.js`
 - `features/chat/hooks/useRealtimeTickets.js`
 - `features/chat/hooks/useTypingIndicator.js`
+- `features/debug/hooks/useBaileysEvents.ts`
 - `features/onboarding/useOnboardingJourney.js`
 - `features/onboarding/useOnboardingStepLabel.js`
 - `features/shared/usePlayfulLogger.js`
