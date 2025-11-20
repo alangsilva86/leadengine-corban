@@ -547,8 +547,6 @@ export const shouldDisplayInstance = (instance: unknown): boolean => {
     return true;
   }
 
-  const status = resolveInstanceStatus(instance)?.toLowerCase();
-  return status ? VISIBLE_INSTANCE_STATUSES.has(status) : false;
   const status = resolveInstanceStatus(instance);
   const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : null;
   return normalizedStatus ? VISIBLE_INSTANCE_STATUSES.has(normalizedStatus) : false;
