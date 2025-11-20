@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import { createSignedGetUrl, uploadObject } from './supabase-storage';
+import { createSignedGetUrl, uploadObject, validateSupabaseS3Connectivity } from './supabase-storage';
 
 const DEFAULT_SIGNED_URL_TTL_SECONDS = (() => {
   const configured = process.env.WHATSAPP_MEDIA_SIGNED_URL_TTL_SECONDS;
@@ -134,6 +134,8 @@ export const saveWhatsAppMedia = async ({
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
     throw new Error('Arquivo inválido para upload.');
   }
+
+  await validateSupabaseS3Connectivity();
 
   const safeTenant = sanitizeSegment(tenantId, 'tenant');
   const safeInstance = sanitizeSegment(instanceId, 'instance');
