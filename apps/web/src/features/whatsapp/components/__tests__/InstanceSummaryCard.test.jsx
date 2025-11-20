@@ -57,15 +57,18 @@ describe('InstanceSummaryCard', () => {
     );
 
     expect(screen.getByText('Instância Alpha')).toBeInTheDocument();
+    expect(screen.getByText(/Instância instance-1/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /detalhes/i }));
     expect(screen.getByText('(11) 9999-9999')).toBeInTheDocument();
     expect(screen.getByText('alpha@whatsapp.net')).toBeInTheDocument();
-    expect(screen.getByText('Atualizado: 01/01/2024 12:00')).toBeInTheDocument();
+    expect(screen.getByText(/01\/01\/2024 12:00/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Selecionar instância/i }));
+    await user.click(screen.getByRole('button', { name: /Pausar/i }));
     expect(onSelectInstance).toHaveBeenCalledWith(expect.objectContaining({ id: 'instance-1' }));
 
     await user.click(screen.getByLabelText('Ações da instância'));
-    await user.click(await screen.findByRole('menuitem', { name: /Ver QR Code/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /Ver QR em tela cheia/i }));
     expect(onViewQr).toHaveBeenCalledWith(expect.objectContaining({ id: 'instance-1' }));
 
     await user.click(screen.getByLabelText('Ações da instância'));
