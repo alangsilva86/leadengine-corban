@@ -1,6 +1,7 @@
 import http from 'http'
 import handler from 'serve-handler'
 import { URL } from 'node:url'
+import { extname } from 'node:path'
 import httpProxy from 'http-proxy'
 
 import { createProxyPathNormalizer } from './server.proxy-helpers.mjs'
@@ -108,6 +109,27 @@ const buildProxyTarget = (url) => {
   } catch (error) {
     console.warn('⚠️  Failed to resolve proxy URL', { url, reason: error?.message })
     return null
+  }
+}
+
+const STATIC_HANDLER_OPTIONS = {
+  public: 'dist',
+  cleanUrls: true,
+}
+
+const SPA_HANDLER_OPTIONS = {
+  ...STATIC_HANDLER_OPTIONS,
+  rewrites: [{ source: '**', destination: '/index.html' }],
+}
+
+const shouldUseSpaFallback = (url) => {
+  if (typeof url !== 'string') return true
+
+  try {
+    const { pathname } = new URL(url, 'http://localhost')
+    return !extname(pathname)
+  } catch {
+    return true
   }
 }
 
@@ -273,11 +295,7 @@ const server = http.createServer((req, res) => {
       }
     }
 
-    handler(req, res, {
-      public: 'dist',
-      cleanUrls: true,
-      rewrites: [{ source: '**', destination: '/index.html' }],
-    })
+    handler(req, res, shouldUseSpaFallback(req.url ?? '') ? SPA_HANDLER_OPTIONS : STATIC_HANDLER_OPTIONS)
   }
 
   processRequest().catch((error) => {
