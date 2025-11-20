@@ -1225,6 +1225,31 @@ const toPublicInstance = (
   return publicInstance;
 };
 
+const buildFallbackContextFromStored = (
+  stored: StoredInstance
+): InstanceOperationContext => {
+  const serialized = serializeStoredInstance(stored, null);
+  const instance = toPublicInstance(serialized);
+  const status = normalizeInstanceStatusResponse(null);
+  const qr = normalizeQr({
+    qr: status.qr,
+    qrCode: status.qrCode,
+    qrExpiresAt: status.qrExpiresAt,
+    expiresAt: status.expiresAt,
+  });
+
+  return {
+    stored,
+    entry: null,
+    brokerStatus: null,
+    serialized,
+    instance,
+    status,
+    qr,
+    instances: [instance],
+  };
+};
+
 const buildFallbackInstancesFromSnapshots = (
   tenantId: string,
   snapshots: WhatsAppBrokerInstanceSnapshot[]
@@ -1560,7 +1585,25 @@ export const fetchStatusWithBrokerQr = async (
     contextOptions.fetchSnapshots = fetchSnapshots;
   }
 
-  const context = await resolveInstanceOperationContext(tenantId, stored, contextOptions);
+  let context: InstanceOperationContext | null = null;
+  try {
+    context = await resolveInstanceOperationContext(tenantId, stored, contextOptions);
+  } catch (error) {
+    const storageErrorLogged = logWhatsAppStorageError('instances.context', error, {
+      tenantId,
+      instanceId: stored.id,
+      refresh,
+      fetchSnapshots,
+    });
+
+    if (!storageErrorLogged) {
+      throw error;
+    }
+
+    context = buildFallbackContextFromStored(stored);
+  }
+
+  const safeContext = context ?? buildFallbackContextFromStored(stored);
 
   try {
     try {
@@ -1574,10 +1617,10 @@ export const fetchStatusWithBrokerQr = async (
     });
     const qr = normalizeQr(brokerQr);
 
-    return { context, qr };
+    return { context: safeContext, qr };
   } catch (error) {
     // ensure context is returned alongside broker errors when needed
-    (error as { __context__?: InstanceOperationContext }).__context__ = context;
+    (error as { __context__?: InstanceOperationContext }).__context__ = safeContext;
     throw error;
   }
 };

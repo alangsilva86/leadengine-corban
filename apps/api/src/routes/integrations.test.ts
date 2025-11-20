@@ -2472,6 +2472,68 @@ describe('WhatsApp integration routes with configured broker', () => {
     }
   });
 
+  it('returns the QR code when storage fails while handling snapshots', async () => {
+    const { server, url } = await startTestServer({ configureWhatsApp: true });
+    const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
+    const { prisma } = await import('../lib/prisma');
+
+    const storedInstance = {
+      id: 'instance-storage-degraded',
+      tenantId: 'tenant-123',
+      name: 'Instance degraded storage',
+      brokerId: 'broker-degraded',
+      phoneNumber: '+5511988888888',
+      status: 'connected',
+      connected: true,
+      lastSeenAt: null,
+      createdAt: new Date('2024-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      metadata: { history: [] },
+    } as Awaited<ReturnType<typeof prisma.whatsAppInstance.findFirst>>;
+
+    prisma.whatsAppInstance.findFirst.mockResolvedValue(storedInstance);
+    prisma.whatsAppInstance.findMany.mockRejectedValue(
+      Object.assign(new Error('storage unavailable'), { code: 'P1001' })
+    );
+
+    const qrSpy = vi.spyOn(whatsappBrokerClient, 'getQrCode').mockResolvedValue({
+      qr: 'data:image/png;base64,QR-STORAGE-DEGRADED',
+      qrCode: 'data:image/png;base64,QR-STORAGE-DEGRADED',
+      qrExpiresAt: '2024-01-03T00:00:00.000Z',
+      expiresAt: '2024-01-03T00:00:00.000Z',
+    });
+
+    try {
+      const response = await fetch(
+        `${url}/api/integrations/whatsapp/instances/instance-storage-degraded/qr`,
+        {
+          method: 'GET',
+          headers: { 'x-tenant-id': 'tenant-123' },
+        }
+      );
+
+      const body = await response.json();
+
+      expect(qrSpy).toHaveBeenCalledWith('broker-degraded', {
+        instanceId: 'instance-storage-degraded',
+      });
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({
+        success: true,
+        data: {
+          qr: {
+            qr: 'data:image/png;base64,QR-STORAGE-DEGRADED',
+            qrCode: 'data:image/png;base64,QR-STORAGE-DEGRADED',
+          },
+          instance: expect.objectContaining({ id: 'instance-storage-degraded' }),
+        },
+      });
+      expect(body.data.qr.available).toBe(true);
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('fetches the default WhatsApp instance QR code', async () => {
     const { server, url } = await startTestServer({ configureWhatsApp: true });
     const { whatsappBrokerClient } = await import('../services/whatsapp-broker-client');
