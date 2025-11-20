@@ -7,6 +7,7 @@ import { createCoreSlice } from './coreSlice';
 import { createQrSlice } from './qrSlice';
 import { createRealtimeSlice } from './realtimeSlice';
 import { createMutationsSlice } from './mutationsSlice';
+import { resolveNormalizedInstanceStatus } from '../../lib/instances';
 
 export const createInstancesStore = (
   deps: InstancesStoreDependencies,
@@ -19,7 +20,14 @@ export const createInstancesStore = (
     ...createMutationsSlice(events, set, get),
   }));
 
-  return { store, events, deps };
+  return {
+    store,
+    events,
+    deps,
+    selectRealtimeConnected: (state) => state.realtimeConnected,
+    selectSelectedInstanceStatus: (state) =>
+      resolveNormalizedInstanceStatus(state.currentInstance),
+  };
 };
 
 const InstancesStoreContext = createContext<InstancesStoreBundle | null>(null);

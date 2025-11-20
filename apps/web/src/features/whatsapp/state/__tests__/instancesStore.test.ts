@@ -114,4 +114,16 @@ describe('instancesStore', () => {
     expect(state.authDeferred).toBe(true);
     expect(clearCache).toHaveBeenCalled();
   });
+
+  it('exposes realtime and status selectors on the bundle', () => {
+    const bundle = createStore();
+    bundle.store.setState({
+      currentInstance: makeInstance('inst-1', { status: 'CONNECTED' }),
+      realtimeConnected: true,
+    });
+
+    const state = bundle.store.getState();
+    expect(bundle.selectRealtimeConnected(state)).toBe(true);
+    expect(bundle.selectSelectedInstanceStatus(state)).toBe('connected');
+  });
 });

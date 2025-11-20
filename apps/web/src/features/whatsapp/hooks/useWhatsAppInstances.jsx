@@ -234,6 +234,7 @@ export default function useWhatsAppInstances(options = {}) {
   } = options;
 
   const controller = useServices();
+  const { selectRealtimeConnected, selectSelectedInstanceStatus } = useInstancesStoreBundle();
   const { store, services, logger } = controller;
 
   const instances = useInstancesStore((state) => state.instances);
@@ -250,7 +251,8 @@ export default function useWhatsAppInstances(options = {}) {
   const authDeferred = useInstancesStore((state) => state.authDeferred);
   const deletingInstanceId = useInstancesStore((state) => state.deletingInstanceId);
   const liveEvents = useInstancesStore((state) => state.liveEvents);
-  const realtimeConnected = useInstancesStore((state) => state.realtimeConnected);
+  const realtimeConnected = useInstancesStore(selectRealtimeConnected);
+  const selectedInstanceStatus = useInstancesStore(selectSelectedInstanceStatus);
   const preferredInstanceId = useInstancesStore((state) => state.preferredInstanceId);
   const rateLimitUntil = useInstancesStore((state) => state.rateLimitUntil);
   const lastForcedAt = useInstancesStore((state) => state.lastForcedAt);
@@ -611,6 +613,7 @@ export default function useWhatsAppInstances(options = {}) {
     deletingInstanceId,
     liveEvents,
     realtimeConnected,
+    selectedInstanceStatus,
     setQrData: setQr,
     setSecondsLeft: setSeconds,
     loadInstances,

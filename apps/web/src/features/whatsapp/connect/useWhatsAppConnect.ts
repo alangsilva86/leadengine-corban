@@ -232,7 +232,7 @@ const useWhatsAppConnect = ({
     instances,
     instancesReady,
     currentInstance: instance,
-    status: localStatus,
+    status: rawStatus,
     qrData,
     secondsLeft,
     loadingInstances,
@@ -252,6 +252,7 @@ const useWhatsAppConnect = ({
     setGeneratingQrState,
     setStatus: setInstanceStatus,
     realtimeConnected,
+    selectedInstanceStatus,
   } = useWhatsAppInstances({
     selectedAgreement,
     status,
@@ -274,6 +275,8 @@ const useWhatsAppConnect = ({
     logger: { log, warn, error: logError },
     campaignInstanceId: activeCampaign?.instanceId ?? null,
   });
+
+  const localStatus = (selectedInstanceStatus || rawStatus || 'disconnected').toLowerCase();
 
   useEffect(() => {
     persistShowAllPreference(state.showAllInstances);
@@ -365,6 +368,7 @@ const useWhatsAppConnect = ({
     loadingQr,
     requestingPairingCode: state.requestingPairingCode,
     instance,
+    realtimeConnected,
     selectInstance: selectInstanceAsync,
     generateQr,
     markConnected,
@@ -475,7 +479,8 @@ const useWhatsAppConnect = ({
 
   const hasConnectedInstances =
     renderInstances.some(isInstanceConnected) || (instance ? isInstanceConnected(instance) : false);
-  const canCreateCampaigns = hasConnectedInstances;
+  const connectionHealthy = realtimeConnected && localStatus === 'connected';
+  const canCreateCampaigns = hasConnectedInstances && connectionHealthy;
   const instanceViewModels = useMemo<WhatsAppInstanceViewModel[]>(() => {
     return renderInstances.map((entry, index) => {
       const statusInfo = getStatusInfo(entry);
@@ -682,6 +687,7 @@ const useWhatsAppConnect = ({
     loadingInstances,
     isAuthenticated,
     copy,
+    connectionStatus: localStatus,
     localStatus,
     onBack,
     handleRefreshInstances,
@@ -708,6 +714,7 @@ const useWhatsAppConnect = ({
     handleRequestPairingCode,
     timelineItems,
     realtimeConnected,
+    connectionHealthy,
     handleInstanceSelect,
     handleViewQr,
     handleGenerateQr,
