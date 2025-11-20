@@ -156,7 +156,7 @@ const useWhatsappSessionState = ({
     async (inst: any) => {
       const targetId = resolveInstanceId(inst);
       if (!targetId) return;
-      await selectInstance(inst, { skipAutoQr: true });
+      await selectInstance(targetId, { skipAutoQr: true });
       await generateQr(targetId);
       setQrDialogOpen(true);
     },

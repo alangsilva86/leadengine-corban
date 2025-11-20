@@ -336,8 +336,15 @@ const useWhatsAppConnect = ({
     instances,
     handleAuthFallback,
     logError,
-    onCampaignReady,
+    ...(onCampaignReady ? { onCampaignReady } : {}),
   });
+
+  const selectInstanceAsync = useCallback(
+    async (target: any, options?: { skipAutoQr?: boolean }) => {
+      await Promise.resolve(selectInstance(target, options));
+    },
+    [selectInstance],
+  );
 
   const sessionState = useWhatsappSessionState({
     state,
@@ -352,7 +359,7 @@ const useWhatsAppConnect = ({
     loadingQr,
     requestingPairingCode: state.requestingPairingCode,
     instance,
-    selectInstance,
+    selectInstance: selectInstanceAsync,
     generateQr,
     markConnected,
     setQrPanelOpen,
@@ -572,17 +579,30 @@ const useWhatsAppConnect = ({
     [createInstanceAction, setCreateInstanceOpen, setErrorMessage]
   );
 
+  const resolveInstanceId = useCallback((target: any): string | null => {
+    if (!target) return null;
+    if (typeof target === 'string') return target;
+    if (typeof target.id === 'string' && target.id.trim().length > 0) {
+      return target.id.trim();
+    }
+    if (target.instance && typeof target.instance.id === 'string') {
+      return target.instance.id.trim();
+    }
+    return null;
+  }, []);
+
   const handleInstanceSelect = useCallback(
     async (inst: any, { skipAutoQr = false } = {}) => {
-      if (!inst) return;
+      const targetId = resolveInstanceId(inst);
+      if (!targetId) return;
 
       if (campaign && campaign.instanceId !== inst.id) {
         clearCampaign();
       }
 
-      await selectInstance(inst, { skipAutoQr });
+      await selectInstance(targetId, { skipAutoQr });
     },
-    [campaign, clearCampaign, selectInstance]
+    [campaign, clearCampaign, selectInstance, resolveInstanceId]
   );
 
   const handleDeleteInstance = useCallback(
