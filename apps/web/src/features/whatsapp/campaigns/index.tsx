@@ -7,6 +7,7 @@ import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, Check } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
+import { toast } from 'sonner';
 
 import useWhatsAppConnect from '../connect/useWhatsAppConnect';
 
@@ -85,10 +86,14 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
   const hasCampaigns = (campaigns?.length ?? 0) > 0;
   const primaryAction = hasCampaigns ? 'continue' : 'create';
   const primaryLabel = hasCampaigns ? confirmLabel ?? 'Continuar' : 'Criar campanha';
-  const isPrimaryDisabled = hasCampaigns ? confirmDisabled : !canCreateCampaigns;
+  const isPrimaryDisabled = hasCampaigns ? confirmDisabled : false;
 
   const handlePrimaryAction = () => {
     if (primaryAction === 'create') {
+      if (!canCreateCampaigns) {
+        toast.error('Conecte uma instância ativa para criar campanhas de WhatsApp.');
+        return;
+      }
       setCreateCampaignOpen(true);
       return;
     }

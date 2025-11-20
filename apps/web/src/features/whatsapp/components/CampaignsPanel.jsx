@@ -1,5 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
+import { toast } from 'sonner';
+
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import {
@@ -104,6 +106,15 @@ const CampaignsPanel = ({
     setInstanceFilter(ALL_FILTER_VALUE);
   }, [handleAgreementFilterChange, setInstanceFilter]);
 
+  const handleCreateClick = useCallback(() => {
+    if (!canCreateCampaigns) {
+      toast.error('Conecte uma instância ativa para criar campanhas de WhatsApp.');
+      return;
+    }
+
+    onCreateClick?.();
+  }, [canCreateCampaigns, onCreateClick]);
+
   return (
     <Card className="border border-[var(--border)]/60 bg-[rgba(15,23,42,0.45)]">
       <CardHeader className="flex flex-col gap-3">
@@ -139,7 +150,7 @@ const CampaignsPanel = ({
               Use os atalhos abaixo para criar novas campanhas ou abrir filtros adicionais.
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" onClick={onCreateClick} disabled={!canCreateCampaigns}>
+              <Button size="sm" onClick={handleCreateClick} aria-disabled={!canCreateCampaigns}>
                 <Plus className="mr-2 h-4 w-4" /> Nova campanha
               </Button>
               <Drawer>
