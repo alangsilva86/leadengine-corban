@@ -56,6 +56,7 @@ describe('InstanceSummaryCard', () => {
       />
     );
 
+    expect(screen.getByText('Conectado')).toBeInTheDocument();
     expect(screen.getByText('Instância Alpha')).toBeInTheDocument();
     expect(screen.getByText(/Instância instance-1/i)).toBeInTheDocument();
 
@@ -74,5 +75,40 @@ describe('InstanceSummaryCard', () => {
     await user.click(screen.getByLabelText('Ações da instância'));
     await user.click(await screen.findByRole('menuitem', { name: /Remover instância/i }));
     expect(onRequestDelete).toHaveBeenCalledWith(expect.objectContaining({ id: 'instance-1' }));
+  });
+
+  it('diferencia estado de reconexão do estado desconectado', () => {
+    render(
+      <InstanceSummaryCard
+        surfaceStyles={surfaceStyles}
+        statusCodeMeta={statusCodeMeta}
+        isBusy={false}
+        isAuthenticated
+        deletingInstanceId={null}
+        onSelectInstance={vi.fn()}
+        onViewQr={vi.fn()}
+        onRequestDelete={vi.fn()}
+        viewModel={{
+          key: 'instance-2',
+          id: 'instance-2',
+          displayName: 'Instância Beta',
+          phoneLabel: '+551188887777',
+          formattedPhone: '(11) 8888-7777',
+          addressLabel: 'beta@whatsapp.net',
+          statusInfo: { label: 'Reconectando', variant: 'info' },
+          metrics: { sent: 0, queued: 0, failed: 0, status: {}, rateUsage: {} },
+          statusValues: {},
+          rateUsage: {},
+          ratePercentage: 0,
+          lastUpdatedLabel: 'Ontem',
+          user: 'Operador 2',
+          instance: { id: 'instance-2' },
+          isCurrent: false,
+        }}
+      />
+    );
+
+    expect(screen.getByText('Reconectando')).toBeInTheDocument();
+    expect(screen.queryByText('Desconectado')).not.toBeInTheDocument();
   });
 });

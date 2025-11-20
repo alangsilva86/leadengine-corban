@@ -27,6 +27,31 @@ export const extractQrImageBuffer = (qr: NormalizedQr): Buffer | null => {
   }
 };
 
+type StatusInfo = { label: string; variant: string };
+
+const resolveStatusInfo = (status: string | null, connected: boolean): StatusInfo => {
+  const statusMap: Record<string, StatusInfo> = {
+    connected: { label: 'Conectado', variant: 'success' },
+    connecting: { label: 'Conectando', variant: 'info' },
+    reconnecting: { label: 'Reconectando', variant: 'info' },
+    pending: { label: 'Pendente', variant: 'info' },
+    qr_required: { label: 'QR necessário', variant: 'warning' },
+    failed: { label: 'Falhou', variant: 'destructive' },
+    error: { label: 'Erro', variant: 'destructive' },
+    disconnected: { label: 'Desconectado', variant: 'secondary' },
+  };
+
+  if (status && statusMap[status]) {
+    return statusMap[status];
+  }
+
+  if (connected) {
+    return statusMap.connected;
+  }
+
+  return statusMap.disconnected;
+};
+
 export const normalizeInstanceStatusResponse = (
   status: WhatsAppStatus | null | undefined
 ): {
@@ -38,6 +63,7 @@ export const normalizeInstanceStatusResponse = (
   qrExpiresAt: string | null;
   qrAvailable: boolean;
   qrReason: NormalizedQr['reason'];
+  statusInfo: StatusInfo;
 } => {
   if (!status) {
     return {
@@ -49,6 +75,7 @@ export const normalizeInstanceStatusResponse = (
       qrExpiresAt: null,
       qrAvailable: false,
       qrReason: 'UNAVAILABLE',
+      statusInfo: resolveStatusInfo('disconnected', false),
     };
   }
 
@@ -61,5 +88,6 @@ export const normalizeInstanceStatusResponse = (
     qrExpiresAt: status.qrExpiresAt,
     qrAvailable: Boolean((status.qr ?? status.qrCode)?.trim?.()),
     qrReason: null,
+    statusInfo: resolveStatusInfo(status.status, Boolean(status.connected)),
   };
 };
