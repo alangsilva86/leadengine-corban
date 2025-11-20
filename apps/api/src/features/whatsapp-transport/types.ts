@@ -1,4 +1,3 @@
-import type { WhatsAppTransportMode } from '../../config/whatsapp';
 import type { WhatsAppMessageResult } from '../../services/whatsapp-broker-client';
 
 export type WhatsAppTransportSendMessagePayload = {
@@ -21,7 +20,6 @@ export type WhatsAppTransportSendMessagePayload = {
 };
 
 export interface WhatsAppTransport {
-  readonly mode: WhatsAppTransportMode;
   sendMessage(
     instanceId: string,
     payload: WhatsAppTransportSendMessagePayload,

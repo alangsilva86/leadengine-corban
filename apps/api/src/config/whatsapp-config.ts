@@ -1,7 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
-export type WhatsAppTransportMode = 'http';
-
 type Booleanish = string | undefined | null;
 
 type WhatsAppBrokerConfig = {
@@ -25,16 +21,10 @@ type WhatsAppDefaultsConfig = {
   tenantId: string;
 };
 
-type WhatsAppRuntimeConfig = {
-  mode: WhatsAppTransportMode;
-  correlationSeed: string;
-};
-
 type WhatsAppConfig = {
   broker: WhatsAppBrokerConfig;
   webhook: WhatsAppWebhookConfig;
   defaults: WhatsAppDefaultsConfig;
-  runtime: WhatsAppRuntimeConfig;
 };
 
 const DEFAULT_TENANT_FALLBACK = 'demo-tenant';
@@ -87,17 +77,6 @@ const DEFAULT_BROKER_TIMEOUT_MS = 15_000;
 const DEFAULT_WEBHOOK_URL =
   'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
 
-const assertWhatsAppModeUnset = () => {
-  const normalized = normalizeString(process.env.WHATSAPP_MODE);
-  if (!normalized) {
-    return;
-  }
-
-  throw new Error(
-    'WHATSAPP_MODE has been removed. Remove the environment variable; HTTP transport is always active.'
-  );
-};
-
 const buildWhatsAppConfig = (): WhatsAppConfig => {
   const timeoutCandidates = [
     process.env.WHATSAPP_BROKER_TIMEOUT_MS,
@@ -120,8 +99,6 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
     normalizeString(process.env.WHATSAPP_WEBHOOK_URL) ??
     normalizeString(process.env.WEBHOOK_URL) ??
     DEFAULT_WEBHOOK_URL;
-
-  assertWhatsAppModeUnset();
 
   return {
     broker: {
@@ -157,10 +134,6 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
       instanceId: normalizeString(process.env.WHATSAPP_DEFAULT_INSTANCE_ID),
       tenantId: normalizeString(process.env.AUTH_MVP_TENANT_ID) ?? DEFAULT_TENANT_FALLBACK,
     },
-    runtime: {
-      mode: 'http',
-      correlationSeed: normalizeString(process.env.WHATSAPP_CORRELATION_SEED) ?? randomUUID(),
-    },
   };
 };
 
@@ -184,7 +157,6 @@ export const __private = {
   normalizeBoolean,
   normalizeString,
   normalizePositiveInteger,
-  assertWhatsAppModeUnset,
 };
 
 export type { WhatsAppConfig };
