@@ -13,6 +13,7 @@ const setPendingReassignMock = vi.fn();
 const setReassignIntentMock = vi.fn();
 const reassignCampaignMock = vi.fn();
 const onContinueMock = vi.fn();
+const onNavigateStageMock = vi.fn();
 
 const stubCampaign = { id: 'campaign-1', name: 'Campanha Demo' };
 
@@ -106,6 +107,7 @@ describe('WhatsAppCampaigns', () => {
     setReassignIntentMock.mockClear();
     reassignCampaignMock.mockClear();
     onContinueMock.mockClear();
+    onNavigateStageMock.mockClear();
   });
 
   it('renders the campaigns dashboard and handles actions', async () => {
@@ -132,5 +134,26 @@ describe('WhatsAppCampaigns', () => {
 
     fireEvent.click(screen.getByText('Ir para a Inbox'));
     expect(onContinueMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('navigates between stages when the stepper is clicked', async () => {
+    render(
+      <Suspense fallback={<span>loading</span>}>
+        <WhatsAppCampaigns
+          onboarding={{
+            stages: [
+              { id: 'channels', label: 'Canais' },
+              { id: 'campaigns', label: 'Campanhas' },
+              { id: 'inbox', label: 'Inbox' },
+            ],
+            activeStep: 1,
+          }}
+          onNavigateStage={onNavigateStageMock}
+        />
+      </Suspense>
+    );
+
+    fireEvent.click(await screen.findByText('Inbox'));
+    expect(onNavigateStageMock).toHaveBeenCalledWith('inbox');
   });
 });
