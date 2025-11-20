@@ -112,20 +112,14 @@ describe('CampaignsPanel', () => {
       />
     );
 
-    const getHeaderScope = () => {
-      const panelRoot = container.firstElementChild ?? container;
-      const panelScope = within(panelRoot);
-      const panelTitle = panelScope.getByText(/Painel de campanhas/i);
-      const header = panelTitle.closest('[data-slot="card-header"]');
-      expect(header).toBeTruthy();
-      return within(header);
-    };
-
-    const headerScope = getHeaderScope();
-    const refreshButton = headerScope.getByRole('button', { name: /Atualizar/i });
-    const createButton = headerScope.getByRole('button', { name: /Nova campanha/i });
+    const panelScope = within(container.firstElementChild ?? container);
+    const drawerTrigger = panelScope.getByRole('button', { name: /Filtros e atualização/i });
+    const createButton = panelScope.getByRole('button', { name: /Nova campanha/i });
 
     expect(createButton).toBeDisabled();
+
+    await user.click(drawerTrigger);
+    const refreshButton = await screen.findByRole('button', { name: /Atualizar lista/i });
 
     await user.click(refreshButton);
     expect(onRefresh).toHaveBeenCalledTimes(1);
@@ -150,6 +144,7 @@ describe('CampaignsPanel', () => {
       />
     );
 
-    expect(getHeaderScope().getByRole('button', { name: /Atualizar/i })).toBeDisabled();
+    await user.click(panelScope.getByRole('button', { name: /Filtros e atualização/i }));
+    expect(await screen.findByRole('button', { name: /Atualizar lista/i })).toBeDisabled();
   });
 });
