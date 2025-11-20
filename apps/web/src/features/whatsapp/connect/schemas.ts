@@ -46,10 +46,6 @@ export const createCampaignSchema = z
       .string({ required_error: 'Informe o nome da origem.' })
       .trim()
       .min(1, 'Informe o nome da origem.'),
-    leadSource: z
-      .string({ required_error: 'Selecione a fonte da campanha.' })
-      .trim()
-      .min(1, 'Selecione a fonte da campanha.'),
     product: z
       .string({ required_error: 'Selecione o produto principal.' })
       .trim()
@@ -87,14 +83,6 @@ export const createCampaignSchema = z
     segments: z
       .array(z.string().trim().min(1))
       .optional()
-      .transform((value) => (value && value.length > 0 ? Array.from(new Set(value)) : undefined)),
-    tags: z
-      .array(z.string().trim().min(1))
-      .optional()
-      .transform((value) => (value && value.length > 0 ? Array.from(new Set(value)) : undefined)),
-    segments: z
-      .array(z.string().trim().min(1))
-      .optional()
       .transform((value) => {
         if (!value || value.length === 0) {
           return [] as string[];
@@ -104,6 +92,10 @@ export const createCampaignSchema = z
           .filter(Boolean);
         return Array.from(new Set(normalized));
       }),
+    tags: z
+      .array(z.string().trim().min(1))
+      .optional()
+      .transform((value) => (value && value.length > 0 ? Array.from(new Set(value)) : undefined)),
   })
   .transform(
     ({
@@ -117,9 +109,7 @@ export const createCampaignSchema = z
       margin,
       strategy,
       marginType,
-      segments,
       tags,
-      leadSource,
       segments = [],
     }) => ({
       name,
@@ -132,13 +122,10 @@ export const createCampaignSchema = z
       productType: product,
       marginType,
       marginValue: margin,
-      leadSource,
       ...(segments.length ? { segments } : {}),
       ...(tags || segments.length
         ? { tags: Array.from(new Set([...(tags ?? []), ...segments])) }
         : {}),
-      ...(segments ? { segments } : {}),
-      ...(tags || segments ? { tags: Array.from(new Set([...(tags ?? []), ...(segments ?? [])])) } : {}),
     })
   );
 
