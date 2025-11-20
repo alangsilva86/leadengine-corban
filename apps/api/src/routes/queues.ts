@@ -5,6 +5,7 @@ import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { withTenantContext } from '../middleware/tenant-context';
 import { validateRequest } from '../middleware/validation';
+import { QueueHttpSerializer } from '../modules/queues/queue.http';
 import { QueueSerializer } from '../modules/queues/queue.serializer';
 import { QueueService } from '../modules/queues/queue.service';
 
@@ -37,6 +38,7 @@ const router: Router = Router();
 
 const queueService = new QueueService();
 const queueSerializer = new QueueSerializer();
+const queueHttpSerializer = new QueueHttpSerializer(queueSerializer);
 
 router.use(requireTenant, withTenantContext);
 
@@ -46,10 +48,7 @@ router.get(
     const tenantId = req.tenantContext!.tenantId;
     const queues = await queueService.listQueues(tenantId);
 
-    res.json({
-      success: true,
-      data: queueSerializer.serializeList(queues),
-    });
+    queueHttpSerializer.respondWithQueueList(res, queues);
   })
 );
 
@@ -63,10 +62,7 @@ router.post(
 
     const queue = await queueService.createQueue(tenantId, payload);
 
-    res.status(201).json({
-      success: true,
-      data: queueSerializer.serialize(queue),
-    });
+    queueHttpSerializer.respondWithQueue(res, queue, 201);
   })
 );
 
@@ -78,36 +74,21 @@ router.patch(
     const tenantId = req.tenantContext!.tenantId;
     const { queueId } = req.params;
 
-    const { updates, hasUpdates } = queueSerializer.buildUpdateInput(req.body as Record<string, unknown>);
+    const result = queueHttpSerializer.buildQueueUpdates(req.body as Record<string, unknown>);
 
-    if (!hasUpdates) {
-      res.status(400).json({
-        success: false,
-        error: {
-          code: 'QUEUE_NO_UPDATES',
-          message: 'Informe ao menos um campo para atualizar.',
-        },
-      });
+    if ('error' in result) {
+      queueHttpSerializer.respondWithError(res, result.error);
       return;
     }
 
-    const queue = await queueService.updateQueue(tenantId, queueId, updates);
+    const queue = await queueService.updateQueue(tenantId, queueId, result.updates);
 
     if (!queue) {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'QUEUE_NOT_FOUND',
-          message: 'Fila não encontrada para o tenant informado.',
-        },
-      });
+      queueHttpSerializer.respondNotFound(res);
       return;
     }
 
-    res.json({
-      success: true,
-      data: queueSerializer.serialize(queue),
-    });
+    queueHttpSerializer.respondWithQueue(res, queue);
   })
 );
 
@@ -122,20 +103,11 @@ router.patch(
     const reordered = await queueService.reorderQueues(tenantId, items);
 
     if (reordered.length === 0) {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'QUEUE_NOT_FOUND',
-          message: 'Nenhuma fila válida encontrada para reordenar.',
-        },
-      });
+      queueHttpSerializer.respondNotFound(res, 'Nenhuma fila válida encontrada para reordenar.');
       return;
     }
 
-    res.json({
-      success: true,
-      data: queueSerializer.serializeList(reordered),
-    });
+    queueHttpSerializer.respondWithQueueList(res, reordered);
   })
 );
 
@@ -150,17 +122,11 @@ router.delete(
     const deleted = await queueService.deleteQueue(tenantId, queueId);
 
     if (!deleted) {
-      res.status(404).json({
-        success: false,
-        error: {
-          code: 'QUEUE_NOT_FOUND',
-          message: 'Fila não encontrada para o tenant informado.',
-        },
-      });
+      queueHttpSerializer.respondNotFound(res);
       return;
     }
 
-    res.json({ success: true });
+    queueHttpSerializer.respondWithDelete(res);
   })
 );
 
