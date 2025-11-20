@@ -81,11 +81,18 @@ export const respondWhatsAppNotConfigured = (res: ResponseLike, error: unknown):
       res.locals = {};
     }
     res.locals.errorCode = 'WHATSAPP_NOT_CONFIGURED';
+
+    const details = compactRecord({
+      missing:
+        Array.isArray(error.missing) && error.missing.length > 0 ? [...new Set(error.missing)] : undefined,
+    });
+
     res.status(503).json({
       success: false,
       error: {
         code: 'WHATSAPP_NOT_CONFIGURED',
         message: error.message,
+        ...(details ? { details } : {}),
       },
     });
     return true;
