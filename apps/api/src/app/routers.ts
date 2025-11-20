@@ -32,7 +32,7 @@ import { usersRouter } from '../routes/users';
 import { salesRouter } from '../routes/sales';
 import { whatsappDebugRouter } from '../features/debug/routes/whatsapp-debug';
 import { isWhatsappDebugToolsEnabled } from '../config/feature-flags';
-import { tenantAdminRouter } from '../modules/tenant-admin/tenants.routes';
+import { tenantAdminRouterFactory } from '../modules/tenant-admin/tenants.routes';
 import { errorHandler } from '../middleware/error-handler';
 import { getBrokerBaseUrl } from '../config/whatsapp';
 import { logAiConfiguration } from '../config/ai';
@@ -52,6 +52,8 @@ export const buildDebugMessagesRouter = (shouldRegisterWhatsappDebugRoutes: bool
   shouldRegisterWhatsappDebugRoutes ? enabledDebugMessagesRouter : buildDisabledDebugMessagesRouter();
 
 export const registerRouters = (app: Application, { logger, nodeEnv, debugMessagesRouter }: RegisterRoutersDeps) => {
+  const tenantAdminRouter = tenantAdminRouterFactory();
+
   app.get('/metrics', async (_req, res) => {
     const payload = await renderMetrics();
     res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');

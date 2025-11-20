@@ -1389,24 +1389,29 @@ export const collectInstancesForTenant = async (
       storedInstances = syncResult.instances;
       snapshots = syncResult.snapshots;
       if (!storageDegraded) {
-        await cache.setLastSyncAt(tenantId, new Date());
-        // cache snapshots for short TTL to reduce pressure
-        if (snapshots && snapshots.length > 0) {
-          const cacheWrite = await cache.setCachedSnapshots(tenantId, snapshots, 30);
-          cacheBackend ??= cacheWrite.backend;
-          cacheHit = cacheHit ?? false;
-          if (cacheWrite.error) {
-            warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
         const cacheWrites = [
           {
-            name: 'setLastSyncAt',
-            run: () => cache.setLastSyncAt(tenantId, new Date()),
+            name: 'setLastSyncAt' as const,
+            run: async () => {
+              await cache.setLastSyncAt(tenantId, new Date());
+            },
           },
           ...(snapshots && snapshots.length > 0
             ? [
                 {
-                  name: 'setCachedSnapshots',
-                  run: () => cache.setCachedSnapshots(tenantId, snapshots as WhatsAppBrokerInstanceSnapshot[], 30),
+                  name: 'setCachedSnapshots' as const,
+                  run: async () => {
+                    const cacheWrite = await cache.setCachedSnapshots(
+                      tenantId,
+                      snapshots as WhatsAppBrokerInstanceSnapshot[],
+                      30
+                    );
+                    cacheBackend ??= cacheWrite.backend;
+                    cacheHit = cacheHit ?? false;
+                    if (cacheWrite.error) {
+                      warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
+                    }
+                  },
                 },
               ]
             : []),

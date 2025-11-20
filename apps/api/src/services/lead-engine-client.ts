@@ -369,7 +369,6 @@ class LeadEngineClient {
                 lead.agreementCode === agreementCode ||
                 lead.agreementId === (definition?.id ?? agreementCode)
             )
-          )
           : FALLBACK_LEADS;
 
         const isHotQuery =
