@@ -13,7 +13,11 @@ import {
 import { emitToTenant } from '../../../lib/socket-registry';
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
-import { whatsappHttpRequestsCounter } from '../../../lib/metrics';
+import {
+  whatsappHttpRequestsCounter,
+  whatsappQrRequestCounter,
+  whatsappRefreshOutcomeCounter,
+} from '../../../lib/metrics';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../../../utils/phone';
 import { invalidateCampaignCache } from '../../../features/whatsapp-inbound/services/inbound-lead-service';
 import {
@@ -91,6 +95,27 @@ const safeIncrementHttpCounter = (): void => {
     whatsappHttpRequestsCounter.inc();
   } catch {
     // ignore metric failures
+  }
+};
+
+const recordRefreshOutcome = (tenantId: string, outcome: 'success' | 'failure', errorCode?: string | null): void => {
+  try {
+    whatsappRefreshOutcomeCounter.inc({ tenantId, outcome, errorCode: errorCode ?? undefined });
+  } catch {
+    // metrics are best effort
+  }
+};
+
+const recordQrOutcome = (
+  tenantId: string,
+  instanceId: string | null,
+  outcome: 'success' | 'failure',
+  errorCode?: string | null
+): void => {
+  try {
+    whatsappQrRequestCounter.inc({ tenantId, instanceId: instanceId ?? undefined, outcome, errorCode: errorCode ?? undefined });
+  } catch {
+    // metrics are best effort
   }
 };
 
@@ -1364,8 +1389,14 @@ export const collectInstancesForTenant = async (
       if (snapshots && snapshots.length > 0) {
         await setCachedSnapshots(tenantId, snapshots, 30);
       }
+      recordRefreshOutcome(tenantId, 'success');
       synced = true;
     } catch (error) {
+      const errorCode =
+        (error as { code?: string }).code ??
+        (error as { name?: string }).name ??
+        (error instanceof Error ? error.name : null);
+      recordRefreshOutcome(tenantId, 'failure', errorCode);
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         if (options.refresh) {
           throw error;
@@ -1574,8 +1605,15 @@ export const fetchStatusWithBrokerQr = async (
     });
     const qr = normalizeQr(brokerQr);
 
+    recordQrOutcome(tenantId, stored.id, 'success');
+
     return { context, qr };
   } catch (error) {
+    const errorCode =
+      (error as { code?: string }).code ??
+      (error as { name?: string }).name ??
+      (error instanceof Error ? error.name : null);
+    recordQrOutcome(tenantId, stored.id, 'failure', errorCode);
     // ensure context is returned alongside broker errors when needed
     (error as { __context__?: InstanceOperationContext }).__context__ = context;
     throw error;
