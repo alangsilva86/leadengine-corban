@@ -93,6 +93,8 @@ type ListInstancesMeta = {
   durationMs: number;
   storageFallback: boolean;
   warnings: string[];
+  cacheHit?: boolean;
+  cacheBackend?: 'memory' | 'redis';
 };
 
 type ListInstancesPayload = {
@@ -135,6 +137,8 @@ export const listInstancesUseCase = async ({
     durationMs,
     storageFallback: result.storageFallback ?? false,
     warnings: result.warnings ?? [],
+    cacheHit: result.cacheHit,
+    cacheBackend: result.cacheBackend,
   };
 
   return {
@@ -156,6 +160,8 @@ export const listInstancesUseCase = async ({
       shouldRefresh: meta.shouldRefresh,
       fetchSnapshots: meta.fetchSnapshots,
       synced: meta.synced,
+      cacheHit: meta.cacheHit,
+      cacheBackend: meta.cacheBackend,
       instancesCount: meta.instancesCount,
       durationMs,
     },

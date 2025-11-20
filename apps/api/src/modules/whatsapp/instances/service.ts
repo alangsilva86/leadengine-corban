@@ -43,10 +43,13 @@ import {
 } from './archive';
 import { createSyncInstancesFromBroker } from './sync';
 import {
+  invalidateCachedSnapshots,
   removeCachedSnapshot,
   scheduleWhatsAppDisconnectRetry,
   clearWhatsAppDisconnectRetry,
   SYNC_TTL_MS,
+  type SnapshotCacheBackendType,
+  type SnapshotCacheReadResult,
 } from './cache';
 import {
   normalizeInstanceStatusResponse,
@@ -1165,6 +1168,8 @@ type InstanceCollectionResult = {
   rawInstances: Array<ReturnType<typeof serializeStoredInstance>>;
   map: Map<string, InstanceCollectionEntry>;
   snapshots: WhatsAppBrokerInstanceSnapshot[];
+  cacheHit?: boolean;
+  cacheBackend?: SnapshotCacheBackendType;
   // observability
   shouldRefresh?: boolean;
   fetchSnapshots?: boolean;
@@ -1306,6 +1311,19 @@ export const collectInstancesForTenant = async (
   const warnings: string[] = [];
 
   let storageDegraded = false;
+  let cacheHit: boolean | undefined;
+  let cacheBackend: SnapshotCacheBackendType | undefined;
+
+  const recordCacheOutcome = (result: SnapshotCacheReadResult | null): void => {
+    if (!result) return;
+    cacheHit = result.hit;
+    cacheBackend = result.backend;
+    const outcome = result.error ? 'error' : result.hit ? 'hit' : 'miss';
+    metrics.recordSnapshotCacheOutcome(tenantId, result.backend, outcome);
+    if (result.error) {
+      warnings.push('Cache de snapshots indisponível; executando fallback.');
+    }
+  };
 
   // Load stored instances first (DB)
   let storedInstances: StoredInstance[];
@@ -1360,6 +1378,7 @@ export const collectInstancesForTenant = async (
   let synced = false;
 
   if (shouldRefresh) {
+    await cache.invalidateCachedSnapshots(tenantId);
     try {
       metrics.incrementHttpCounter();
       const syncResult = await syncInstances(
@@ -1370,6 +1389,14 @@ export const collectInstancesForTenant = async (
       storedInstances = syncResult.instances;
       snapshots = syncResult.snapshots;
       if (!storageDegraded) {
+        await cache.setLastSyncAt(tenantId, new Date());
+        // cache snapshots for short TTL to reduce pressure
+        if (snapshots && snapshots.length > 0) {
+          const cacheWrite = await cache.setCachedSnapshots(tenantId, snapshots, 30);
+          cacheBackend ??= cacheWrite.backend;
+          cacheHit = cacheHit ?? false;
+          if (cacheWrite.error) {
+            warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
         const cacheWrites = [
           {
             name: 'setLastSyncAt',
@@ -1435,14 +1462,21 @@ export const collectInstancesForTenant = async (
   } else if (fetchSnapshots) {
     // Snapshot mode (read-only): use cache first, then broker, and cache the result
     if (!snapshots) {
-      snapshots = await cache.getCachedSnapshots(tenantId);
+      const cached = await cache.getCachedSnapshots(tenantId);
+      recordCacheOutcome(cached);
+      snapshots = cached.snapshots;
     }
     if (!snapshots) {
       try {
         metrics.incrementHttpCounter();
         snapshots = await brokerClient.listInstances(tenantId);
         if (snapshots && snapshots.length > 0) {
-          await cache.setCachedSnapshots(tenantId, snapshots, 30);
+          const cacheWrite = await cache.setCachedSnapshots(tenantId, snapshots, 30);
+          cacheBackend ??= cacheWrite.backend;
+          cacheHit = cacheHit ?? false;
+          if (cacheWrite.error) {
+            warnings.push('Cache de snapshots não pôde ser preenchido após leitura direta do broker.');
+          }
         }
       } catch (error) {
         if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -1457,7 +1491,9 @@ export const collectInstancesForTenant = async (
   }
 
   if (storageDegraded && !snapshots) {
-    snapshots = await cache.getCachedSnapshots(tenantId);
+    const cached = await cache.getCachedSnapshots(tenantId);
+    recordCacheOutcome(cached);
+    snapshots = cached.snapshots;
   }
 
   // Index snapshots by id for quick lookups
@@ -1482,6 +1518,8 @@ export const collectInstancesForTenant = async (
       rawInstances: [],
       map: new Map(),
       snapshots: snapshots ?? [],
+      cacheHit,
+      cacheBackend,
       shouldRefresh,
       fetchSnapshots,
       synced,
@@ -1521,6 +1559,8 @@ export const collectInstancesForTenant = async (
     rawInstances: entries.map(({ serialized }) => serialized),
     map,
     snapshots: snapshots ?? [],
+    cacheHit,
+    cacheBackend,
     shouldRefresh,
     fetchSnapshots,
     synced,

@@ -2,11 +2,17 @@ import {
   whatsappHttpRequestsCounter,
   whatsappQrRequestCounter,
   whatsappRefreshOutcomeCounter,
+  whatsappSnapshotCacheOutcomeCounter,
 } from '../../../lib/metrics';
 
 export type InstanceMetrics = {
   incrementHttpCounter: () => void;
   recordRefreshOutcome: (tenantId: string, outcome: 'success' | 'failure', errorCode?: string | null) => void;
+  recordSnapshotCacheOutcome: (
+    tenantId: string,
+    backend: 'memory' | 'redis',
+    outcome: 'hit' | 'miss' | 'error'
+  ) => void;
   recordQrOutcome: (
     tenantId: string,
     instanceId: string | null,
@@ -20,6 +26,7 @@ export const createInstanceMetrics = (
     http: whatsappHttpRequestsCounter,
     qr: whatsappQrRequestCounter,
     refreshOutcome: whatsappRefreshOutcomeCounter,
+    snapshotCache: whatsappSnapshotCacheOutcomeCounter,
   }
 ): InstanceMetrics => {
   const incrementHttpCounter = (): void => {
@@ -38,6 +45,18 @@ export const createInstanceMetrics = (
   ): void => {
     try {
       counters.refreshOutcome.inc({ tenantId, outcome, errorCode: errorCode ?? undefined });
+    } catch {
+      // metrics are best effort
+    }
+  };
+
+  const recordSnapshotCacheOutcome = (
+    tenantId: string,
+    backend: 'memory' | 'redis',
+    outcome: 'hit' | 'miss' | 'error'
+  ): void => {
+    try {
+      counters.snapshotCache.inc({ tenantId, backend, outcome });
     } catch {
       // metrics are best effort
     }
@@ -64,6 +83,7 @@ export const createInstanceMetrics = (
   return {
     incrementHttpCounter,
     recordRefreshOutcome,
+    recordSnapshotCacheOutcome,
     recordQrOutcome,
   } satisfies InstanceMetrics;
 };

@@ -45,6 +45,11 @@ const WHATSAPP_REFRESH_RESULT_HELP =
   '# HELP whatsapp_refresh_requests_total Taxa de sucesso de refresh de instâncias do WhatsApp por tenant';
 const WHATSAPP_REFRESH_RESULT_TYPE = '# TYPE whatsapp_refresh_requests_total counter';
 
+const WHATSAPP_SNAPSHOT_CACHE_METRIC = 'whatsapp_snapshot_cache_requests_total';
+const WHATSAPP_SNAPSHOT_CACHE_HELP =
+  '# HELP whatsapp_snapshot_cache_requests_total Taxa de acertos/erros de cache de snapshots de instâncias por backend';
+const WHATSAPP_SNAPSHOT_CACHE_TYPE = '# TYPE whatsapp_snapshot_cache_requests_total counter';
+
 const WHATSAPP_QR_RESULT_METRIC = 'whatsapp_qr_requests_total';
 const WHATSAPP_QR_RESULT_HELP =
   '# HELP whatsapp_qr_requests_total Sucesso e falhas em operações de QR do WhatsApp por tenant/instância';
@@ -290,6 +295,7 @@ const wsEmitCounterStore = new Map<string, number>();
 const whatsappStorageUnavailableCounterStore = new Map<string, number>();
 const whatsappStorageLatencyStore = new Map<string, { sum: number; count: number }>();
 const whatsappRefreshOutcomeStore = new Map<string, number>();
+const whatsappSnapshotCacheOutcomeStore = new Map<string, number>();
 const whatsappQrOutcomeStore = new Map<string, number>();
 const inboundMessagesCounterStore = new Map<string, number>();
 const inboundMediaRetryAttemptsStore = new Map<string, number>();
@@ -504,6 +510,14 @@ export const whatsappRefreshOutcomeCounter = {
     const key = buildLabelKey(WHATSAPP_REFRESH_RESULT_METRIC, labels);
     const current = whatsappRefreshOutcomeStore.get(key) ?? 0;
     whatsappRefreshOutcomeStore.set(key, current + value);
+  },
+};
+
+export const whatsappSnapshotCacheOutcomeCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(WHATSAPP_SNAPSHOT_CACHE_METRIC, labels);
+    const current = whatsappSnapshotCacheOutcomeStore.get(key) ?? 0;
+    whatsappSnapshotCacheOutcomeStore.set(key, current + value);
   },
 };
 
@@ -767,6 +781,16 @@ export const renderMetrics = async (): Promise<string> => {
     }
   }
 
+  lines.push(WHATSAPP_SNAPSHOT_CACHE_HELP, WHATSAPP_SNAPSHOT_CACHE_TYPE);
+  if (whatsappSnapshotCacheOutcomeStore.size === 0) {
+    lines.push(`${WHATSAPP_SNAPSHOT_CACHE_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of whatsappSnapshotCacheOutcomeStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_SNAPSHOT_CACHE_METRIC}${suffix} ${value}`);
+    }
+  }
+
   lines.push(WHATSAPP_QR_RESULT_HELP, WHATSAPP_QR_RESULT_TYPE);
   if (whatsappQrOutcomeStore.size === 0) {
     lines.push(`${WHATSAPP_QR_RESULT_METRIC} 0`);
@@ -992,6 +1016,7 @@ export const resetMetrics = (): void => {
   whatsappStorageUnavailableCounterStore.clear();
   whatsappStorageLatencyStore.clear();
   whatsappRefreshOutcomeStore.clear();
+  whatsappSnapshotCacheOutcomeStore.clear();
   whatsappQrOutcomeStore.clear();
   inboundMessagesCounterStore.clear();
   inboundMediaRetryAttemptsStore.clear();
