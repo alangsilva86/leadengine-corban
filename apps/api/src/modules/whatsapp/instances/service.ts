@@ -1397,6 +1397,47 @@ export const collectInstancesForTenant = async (
           cacheHit = cacheHit ?? false;
           if (cacheWrite.error) {
             warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
+        const cacheWrites = [
+          {
+            name: 'setLastSyncAt',
+            run: () => cache.setLastSyncAt(tenantId, new Date()),
+          },
+          ...(snapshots && snapshots.length > 0
+            ? [
+                {
+                  name: 'setCachedSnapshots',
+                  run: () => cache.setCachedSnapshots(tenantId, snapshots as WhatsAppBrokerInstanceSnapshot[], 30),
+                },
+              ]
+            : []),
+        ];
+
+        const cacheWriteResults = await Promise.allSettled(
+          cacheWrites.map(async ({ name, run }) => {
+            const startedAt = Date.now();
+            try {
+              await run();
+              return { name, durationMs: Date.now() - startedAt };
+            } catch (error) {
+              throw { name, error, durationMs: Date.now() - startedAt };
+            }
+          })
+        );
+
+        for (const result of cacheWriteResults) {
+          if (result.status === 'fulfilled') {
+            logger.debug('whatsapp.instances.cache.write.success', {
+              tenantId,
+              operation: result.value.name,
+              durationMs: result.value.durationMs,
+            });
+          } else {
+            logger.warn('whatsapp.instances.cache.write.failure', {
+              tenantId,
+              operation: result.reason.name,
+              durationMs: result.reason.durationMs,
+              error: describeErrorForLog(result.reason.error),
+            });
           }
         }
       }
