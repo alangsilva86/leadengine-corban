@@ -1,7 +1,8 @@
+import { useMemo } from 'react';
 import { Clock, Loader2, QrCode, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { cn } from '@/lib/utils.js';
-import PropTypes from 'prop-types';
+import type { ReactNode } from 'react';
 
 const SIZE_PRESETS = {
   44: {
@@ -18,13 +19,33 @@ const SIZE_PRESETS = {
   },
 };
 
-const resolvePreset = (size) => {
+type SizePresetKey = keyof typeof SIZE_PRESETS;
+
+type QrPreviewProps = {
+  src?: string | null | undefined;
+  isGenerating?: boolean;
+  statusMessage?: ReactNode | null | undefined;
+  onGenerate?: (() => void | Promise<void>) | null | undefined;
+  onOpen?: (() => void | Promise<void>) | null | undefined;
+  generateDisabled?: boolean;
+  openDisabled?: boolean;
+  className?: string;
+  illustrationClassName?: string;
+  size?: SizePresetKey | number | string | null | undefined;
+};
+
+const resolvePreset = (size?: QrPreviewProps['size']) => {
   if (!size) return SIZE_PRESETS[44];
 
-  const parsed = typeof size === 'string' ? Number.parseInt(size, 10) : size;
+  if (typeof size === 'number' && SIZE_PRESETS[size as SizePresetKey]) {
+    return SIZE_PRESETS[size as SizePresetKey];
+  }
 
-  if (typeof parsed === 'number' && SIZE_PRESETS[parsed]) {
-    return SIZE_PRESETS[parsed];
+  if (typeof size === 'string') {
+    const parsed = Number.parseInt(size, 10);
+    if (Number.isFinite(parsed) && SIZE_PRESETS[parsed as SizePresetKey]) {
+      return SIZE_PRESETS[parsed as SizePresetKey];
+    }
   }
 
   return SIZE_PRESETS[44];
@@ -41,8 +62,8 @@ const QrPreview = ({
   className,
   illustrationClassName,
   size = 44,
-}) => {
-  const preset = resolvePreset(size);
+}: QrPreviewProps) => {
+  const preset = useMemo(() => resolvePreset(size), [size]);
   const hasQr = Boolean(src);
   const showStatus = Boolean(statusMessage);
   const showActions = Boolean(onGenerate) || Boolean(onOpen);
@@ -57,7 +78,7 @@ const QrPreview = ({
         )}
       >
         {hasQr ? (
-          <img src={src} alt="QR Code do WhatsApp" className={cn('rounded-lg shadow-inner', preset.image)} />
+          <img src={src ?? undefined} alt="QR Code do WhatsApp" className={cn('rounded-lg shadow-inner', preset.image)} />
         ) : isGenerating ? (
           <Loader2 className={cn('animate-spin', preset.spinner)} />
         ) : (
@@ -93,19 +114,6 @@ const QrPreview = ({
       ) : null}
     </div>
   );
-};
-
-QrPreview.propTypes = {
-  src: PropTypes.string,
-  isGenerating: PropTypes.bool,
-  statusMessage: PropTypes.oneOfType([PropTypes.string, PropTypes.node]),
-  onGenerate: PropTypes.func,
-  onOpen: PropTypes.func,
-  generateDisabled: PropTypes.bool,
-  openDisabled: PropTypes.bool,
-  className: PropTypes.string,
-  illustrationClassName: PropTypes.string,
-  size: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
 };
 
 export default QrPreview;

@@ -42,7 +42,7 @@ afterEach(() => {
 let QrPreview;
 
 beforeAll(async () => {
-  ({ default: QrPreview } = await import('../QrPreview.jsx'));
+  ({ default: QrPreview } = await import('../QrPreview'));
 });
 
 describe('QrPreview', () => {

@@ -117,7 +117,7 @@ vi.mock('../components/CreateInstanceDialog.jsx', () => ({
   default: ({ open }) => (open ? <div data-testid="create-instance-dialog">Criar instância</div> : null),
 }));
 
-vi.mock('../components/QrPreview.jsx', () => ({
+vi.mock('../components/QrPreview', () => ({
   __esModule: true,
   default: () => <div data-testid="qr-preview">QR Preview</div>,
 }));

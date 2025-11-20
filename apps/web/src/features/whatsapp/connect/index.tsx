@@ -32,7 +32,7 @@ import useWhatsAppConnect, { type WhatsAppInstanceViewModel } from './useWhatsAp
 
 const InstancesPanel = lazy(() => import('../components/InstancesPanel.jsx'));
 const CreateInstanceDialog = lazy(() => import('../components/CreateInstanceDialog.jsx'));
-const QrPreview = lazy(() => import('../components/QrPreview.jsx'));
+const QrPreview = lazy(() => import('../components/QrPreview'));
 const AdvancedOperationsPanel = lazy(() => import('../components/AdvancedOperationsPanel.jsx'));
 
 const SectionFallback = () => (
@@ -712,17 +712,17 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
       </Suspense>
 
       <Suspense fallback={<DialogFallback />}>
-        <Dialog open={isQrDialogOpen} onOpenChange={(value) => setQrDialogOpen(value)}>
+        <Dialog open={isQrDialogOpen} onOpenChange={(value: boolean) => setQrDialogOpen(value)}>
           <DialogContent className="max-w-lg">
-            <DialogHeader className="">
-              <DialogTitle className="">QR Code ativo</DialogTitle>
-              <DialogDescription className="">
+            <DialogHeader className="space-y-1">
+              <DialogTitle className="text-lg font-semibold">QR Code ativo</DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
                 Escaneie com o aplicativo oficial para concluir a sincronização.
               </DialogDescription>
             </DialogHeader>
             <QrPreview
-              src={qrImageSrc ?? undefined}
-              statusMessage={qrStatusMessage ?? undefined}
+              src={qrImageSrc ?? null}
+              statusMessage={qrStatusMessage ?? null}
               isGenerating={isGeneratingQrImage}
               onGenerate={handleGenerateQr as any}
               onOpen={(() => setQrDialogOpen(true)) as any}
@@ -743,15 +743,22 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           }
         }}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader className="">
-            <AlertDialogTitle className="">{deletionDialog.title}</AlertDialogTitle>
-            <AlertDialogDescription className="">
+        <AlertDialogContent className="space-y-4">
+          <AlertDialogHeader className="space-y-2">
+            <AlertDialogTitle className="text-lg font-semibold">
+              {deletionDialog.title}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm text-muted-foreground">
               Confirme para remover {deletionDialog.targetLabel}.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setInstancePendingDelete(null)}>Cancelar</AlertDialogCancel>
+          <AlertDialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel
+              className="mt-2 sm:mt-0"
+              onClick={() => setInstancePendingDelete(null)}
+            >
+              Cancelar
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deletionDialog.target && handleDeleteInstance(deletionDialog.target)}
               className="bg-destructive hover:bg-destructive/90"
