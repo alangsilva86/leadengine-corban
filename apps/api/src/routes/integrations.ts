@@ -547,12 +547,12 @@ router.get(
         return;
       }
 
-      logger.error('whatsapp.instances.qr.brokerFailed', {
-        tenantId,
-        instanceId,
-        refresh,
-        fetchSnapshots,
-        status,
+        logger.error('whatsapp.instances.qr.brokerFailed', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+          status,
           code: brokerError.code,
           requestId: brokerError.requestId,
           error: describeErrorForLog(brokerError),
@@ -569,6 +569,14 @@ router.get(
           operationType: 'qr.read',
         })
       ) {
+      } else if (respondWhatsAppStorageUnavailable(res, error)) {
+        logger.error('whatsapp.instances.qr.storageUnavailable', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+          error: describeErrorForLog(error),
+        });
         return;
       }
 
@@ -737,6 +745,14 @@ router.get(
           operationType: 'qr.read',
         })
       ) {
+      } else if (respondWhatsAppStorageUnavailable(res, error)) {
+        logger.error('whatsapp.instances.qrImage.storageUnavailable', {
+          tenantId,
+          instanceId,
+          refresh,
+          fetchSnapshots,
+          error: describeErrorForLog(error),
+        });
         return;
       }
 
