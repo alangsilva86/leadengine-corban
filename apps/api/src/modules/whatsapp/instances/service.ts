@@ -1,6 +1,6 @@
 // Auto-generated WhatsApp instance services module
-import { Prisma, WhatsAppInstanceStatus } from '@prisma/client';
-import { normalizeWhatsAppStatus, WHATSAPP_STATUS, type WhatsAppStatusValue } from '@leadengine/wa-status';
+import { Prisma } from '@prisma/client';
+import { normalizeWhatsAppStatus, WHATSAPP_STATUS } from '@leadengine/wa-status';
 import { z } from 'zod';
 import {
   whatsappBrokerClient,
@@ -14,11 +14,6 @@ import {
 import { emitToTenant } from '../../../lib/socket-registry';
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
-import {
-  whatsappHttpRequestsCounter,
-  whatsappQrRequestCounter,
-  whatsappRefreshOutcomeCounter,
-} from '../../../lib/metrics';
 import { normalizePhoneNumber, PhoneNormalizationError } from '../../../utils/phone';
 import { invalidateCampaignCache } from '../../../features/whatsapp-inbound/services/inbound-lead-service';
 import {
@@ -48,10 +43,6 @@ import {
 } from './archive';
 import { createSyncInstancesFromBroker } from './sync';
 import {
-  getLastSyncAt,
-  setLastSyncAt,
-  getCachedSnapshots,
-  setCachedSnapshots,
   removeCachedSnapshot,
   scheduleWhatsAppDisconnectRetry,
   clearWhatsAppDisconnectRetry,
@@ -68,6 +59,13 @@ import {
   INVALID_INSTANCE_ID_MESSAGE,
   readBrokerErrorStatus,
 } from './http';
+import { createPrismaInstanceRepository, type InstanceRepository } from './instance-repository';
+import { defaultInstanceMetrics, recordQrOutcome, safeIncrementHttpCounter, type InstanceMetrics } from './metrics';
+import { createSnapshotCache, type SnapshotCache } from './snapshot-cache';
+import {
+  mapBrokerInstanceStatusToDbStatus,
+  mapBrokerStatusToDbStatus,
+} from './status-mapper';
 import type {
   InstanceMetadata,
   NormalizedInstance,
@@ -91,34 +89,12 @@ type BrokerSessionStatus = {
   rate?: Record<string, unknown> | null;
 };
 
-const safeIncrementHttpCounter = (): void => {
-  try {
-    // metrics are best-effort in some environments
-    whatsappHttpRequestsCounter.inc();
-  } catch {
-    // ignore metric failures
-  }
-};
-
-const recordRefreshOutcome = (tenantId: string, outcome: 'success' | 'failure', errorCode?: string | null): void => {
-  try {
-    whatsappRefreshOutcomeCounter.inc({ tenantId, outcome, errorCode: errorCode ?? undefined });
-  } catch {
-    // metrics are best effort
-  }
-};
-
-const recordQrOutcome = (
-  tenantId: string,
-  instanceId: string | null,
-  outcome: 'success' | 'failure',
-  errorCode?: string | null
-): void => {
-  try {
-    whatsappQrRequestCounter.inc({ tenantId, instanceId: instanceId ?? undefined, outcome, errorCode: errorCode ?? undefined });
-  } catch {
-    // metrics are best effort
-  }
+export type InstanceCollectionDependencies = {
+  repository: InstanceRepository;
+  cache: SnapshotCache;
+  metrics: InstanceMetrics;
+  syncInstances: typeof syncInstancesFromBroker;
+  brokerClient: typeof whatsappBrokerClient;
 };
 
 const normalizeKeyName = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -132,55 +108,6 @@ const toNumeric = (value: unknown): number | null => {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
-};
-
-const mapDbStatusToNormalized = (status: WhatsAppInstanceStatus): NormalizedInstance['status'] => {
-  return normalizeWhatsAppStatus({ status }).status;
-};
-
-export const mapNormalizedStatusToDbStatus = (
-  status: WhatsAppStatusValue,
-): WhatsAppInstanceStatus => {
-  switch (status) {
-    case WHATSAPP_STATUS.CONNECTED:
-      return 'connected';
-    case WHATSAPP_STATUS.CONNECTING:
-    case WHATSAPP_STATUS.RECONNECTING:
-    case WHATSAPP_STATUS.QR_REQUIRED:
-      return 'connecting';
-    case WHATSAPP_STATUS.PENDING:
-      return 'pending';
-    case WHATSAPP_STATUS.FAILED:
-      return 'failed';
-    case WHATSAPP_STATUS.ERROR:
-      return 'error';
-    default:
-      return 'disconnected';
-  }
-};
-
-const resolveDbStatusFromRaw = (
-  status: string | null | undefined,
-  connected: boolean | null | undefined,
-): WhatsAppInstanceStatus => {
-  const normalized = normalizeWhatsAppStatus({ status, connected });
-  return mapNormalizedStatusToDbStatus(normalized.status);
-};
-
-export const mapBrokerStatusToDbStatus = (
-  status: WhatsAppStatus | null | undefined,
-): WhatsAppInstanceStatus => {
-  if (!status) {
-    return resolveDbStatusFromRaw(null, null);
-  }
-
-  return resolveDbStatusFromRaw(status.status, status.connected);
-};
-
-export const mapBrokerInstanceStatusToDbStatus = (
-  status: string | null | undefined,
-): WhatsAppInstanceStatus => {
-  return resolveDbStatusFromRaw(status, null);
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
@@ -1072,6 +999,14 @@ export const syncInstancesFromBroker = createSyncInstancesFromBroker({
   mapBrokerInstanceStatusToDbStatus,
 });
 
+export const defaultInstanceCollectionDependencies: InstanceCollectionDependencies = {
+  repository: createPrismaInstanceRepository(prisma),
+  cache: createSnapshotCache(),
+  metrics: defaultInstanceMetrics,
+  syncInstances: syncInstancesFromBroker,
+  brokerClient: whatsappBrokerClient,
+};
+
 const toJsonObject = (value: unknown): Record<string, unknown> => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -1357,8 +1292,15 @@ const buildFallbackInstancesFromSnapshots = (
 
 export const collectInstancesForTenant = async (
   tenantId: string,
-  options: InstanceCollectionOptions = {}
+  options: InstanceCollectionOptions = {},
+  dependencies: Partial<InstanceCollectionDependencies> = {}
 ): Promise<InstanceCollectionResult> => {
+  const deps: InstanceCollectionDependencies = {
+    ...defaultInstanceCollectionDependencies,
+    ...dependencies,
+  };
+  const { cache, metrics, repository, syncInstances, brokerClient } = deps;
+
   const refreshFlag = options.refresh;
   const fetchSnapshots = options.fetchSnapshots ?? false;
   const warnings: string[] = [];
@@ -1371,10 +1313,7 @@ export const collectInstancesForTenant = async (
     storedInstances = options.existing;
   } else {
     try {
-      storedInstances = (await prisma.whatsAppInstance.findMany({
-        where: { tenantId },
-        orderBy: { createdAt: 'asc' },
-      })) as StoredInstance[];
+      storedInstances = await repository.findByTenant(tenantId);
     } catch (error) {
       const { isStorageError } = resolveWhatsAppStorageError(error);
       if (!isStorageError) {
@@ -1412,7 +1351,7 @@ export const collectInstancesForTenant = async (
 
   // TTL: only applies when refresh wasn't explicitly forced
   if (shouldRefresh && refreshFlag !== true) {
-    const last = await getLastSyncAt(tenantId);
+    const last = await cache.getLastSyncAt(tenantId);
     if (last && Date.now() - last.getTime() < SYNC_TTL_MS) {
       shouldRefresh = false;
     }
@@ -1422,8 +1361,8 @@ export const collectInstancesForTenant = async (
 
   if (shouldRefresh) {
     try {
-      safeIncrementHttpCounter();
-      const syncResult = await syncInstancesFromBroker(
+      metrics.incrementHttpCounter();
+      const syncResult = await syncInstances(
         tenantId,
         storedInstances,
         snapshots ?? undefined
@@ -1431,20 +1370,20 @@ export const collectInstancesForTenant = async (
       storedInstances = syncResult.instances;
       snapshots = syncResult.snapshots;
       if (!storageDegraded) {
-        await setLastSyncAt(tenantId, new Date());
+        await cache.setLastSyncAt(tenantId, new Date());
         // cache snapshots for short TTL to reduce pressure
         if (snapshots && snapshots.length > 0) {
-          await setCachedSnapshots(tenantId, snapshots, 30);
+          await cache.setCachedSnapshots(tenantId, snapshots, 30);
         }
       }
-      recordRefreshOutcome(tenantId, 'success');
+      metrics.recordRefreshOutcome(tenantId, 'success');
       synced = true;
     } catch (error) {
       const errorCode =
         (error as { code?: string }).code ??
         (error as { name?: string }).name ??
         (error instanceof Error ? error.name : null);
-      recordRefreshOutcome(tenantId, 'failure', errorCode);
+      metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
       if (error instanceof WhatsAppBrokerNotConfiguredError) {
         if (options.refresh) {
           throw error;
@@ -1458,14 +1397,14 @@ export const collectInstancesForTenant = async (
   } else if (fetchSnapshots) {
     // Snapshot mode (read-only): use cache first, then broker, and cache the result
     if (!snapshots) {
-      snapshots = await getCachedSnapshots(tenantId);
+      snapshots = await cache.getCachedSnapshots(tenantId);
     }
     if (!snapshots) {
       try {
-        safeIncrementHttpCounter();
-        snapshots = await whatsappBrokerClient.listInstances(tenantId);
+        metrics.incrementHttpCounter();
+        snapshots = await brokerClient.listInstances(tenantId);
         if (snapshots && snapshots.length > 0) {
-          await setCachedSnapshots(tenantId, snapshots, 30);
+          await cache.setCachedSnapshots(tenantId, snapshots, 30);
         }
       } catch (error) {
         if (error instanceof WhatsAppBrokerNotConfiguredError) {
@@ -1480,7 +1419,7 @@ export const collectInstancesForTenant = async (
   }
 
   if (storageDegraded && !snapshots) {
-    snapshots = await getCachedSnapshots(tenantId);
+    snapshots = await cache.getCachedSnapshots(tenantId);
   }
 
   // Index snapshots by id for quick lookups
@@ -1521,10 +1460,7 @@ export const collectInstancesForTenant = async (
 
     // Keep E.164 normalized phone in DB when we discover a better one
     if (serialized.phoneNumber && serialized.phoneNumber !== stored.phoneNumber) {
-      await prisma.whatsAppInstance.update({
-        where: { id: stored.id },
-        data: { phoneNumber: serialized.phoneNumber },
-      });
+      await repository.updatePhoneNumber(stored.id, serialized.phoneNumber);
       stored.phoneNumber = serialized.phoneNumber;
     }
 
