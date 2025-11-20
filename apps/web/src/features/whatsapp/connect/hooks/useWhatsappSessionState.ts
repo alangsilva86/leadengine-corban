@@ -48,6 +48,7 @@ interface UseWhatsappSessionStateParams {
   loadingQr: boolean;
   requestingPairingCode: boolean;
   instance: any;
+  realtimeConnected: boolean;
   selectInstance: (inst: any, options?: { skipAutoQr?: boolean }) => Promise<void>;
   generateQr: (id: string) => Promise<void>;
   markConnected: () => Promise<boolean>;
@@ -68,6 +69,7 @@ const useWhatsappSessionState = ({
   loadingQr,
   requestingPairingCode,
   instance,
+  realtimeConnected,
   selectInstance,
   generateQr,
   markConnected,
@@ -131,7 +133,7 @@ const useWhatsappSessionState = ({
   const countdownMessage = secondsLeft !== null ? `QR expira em ${secondsLeft}s` : null;
 
   const isBusy = loadingInstances || loadingQr || isGeneratingQrImage || requestingPairingCode;
-  const canContinue = localStatus === 'connected' && Boolean(instance);
+  const canContinue = realtimeConnected && localStatus === 'connected' && Boolean(instance);
 
   const qrStatusMessage =
     localStatus === 'connected'
