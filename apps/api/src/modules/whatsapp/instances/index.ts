@@ -7,3 +7,7 @@ export * from './helpers';
 export * from './archive';
 export * from './sync';
 export * from './types';
+export * from './metrics';
+export * from './status-mapper';
+export * from './snapshot-cache';
+export * from './instance-repository';
