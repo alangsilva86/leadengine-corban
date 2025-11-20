@@ -11,7 +11,6 @@ export type OnboardingPage =
   | 'reports'
   | 'settings'
   | 'baileys-logs'
-  | 'whatsapp-debug'
   | 'accept-invite'
   | 'team'
   | 'complete';
@@ -32,7 +31,6 @@ export type UseOnboardingStateOptions = {
   initialPage?: StoredOnboardingPage | null;
   defaultPage: OnboardingPage;
   storageKey: string;
-  debugDisabled: boolean;
   shouldRestorePage: boolean;
   initialInviteToken?: string | null;
 };
@@ -75,7 +73,6 @@ export function useOnboardingState(options: UseOnboardingStateOptions): UseOnboa
     initialPage,
     defaultPage,
     storageKey,
-    debugDisabled,
     shouldRestorePage,
     initialInviteToken,
   } = options;
@@ -89,12 +86,7 @@ export function useOnboardingState(options: UseOnboardingStateOptions): UseOnboa
   const [teamSetupResult, setTeamSetupResult] = useState<TeamSetupResult | null>(null);
   const [initialInviteTokenState, setInitialInviteToken] = useState<string | null>(initialInviteToken ?? null);
 
-  const safeCurrentPage = useMemo<OnboardingPage>(() => {
-    if (debugDisabled && currentPage === 'whatsapp-debug') {
-      return 'dashboard';
-    }
-    return currentPage;
-  }, [currentPage, debugDisabled]);
+  const safeCurrentPage = useMemo<OnboardingPage>(() => currentPage, [currentPage]);
 
   useEffect(() => {
     try {
@@ -102,12 +94,9 @@ export function useOnboardingState(options: UseOnboardingStateOptions): UseOnboa
       if (!raw) return;
       const persisted = JSON.parse(raw);
       const restoredPage = normalizeOnboardingPage(persisted.currentPage as StoredOnboardingPage | null, defaultPage);
-      const safeRestoredPage = debugDisabled && restoredPage === 'whatsapp-debug' ? 'dashboard' : restoredPage;
 
       if (shouldRestorePage) {
-        setCurrentPage(safeRestoredPage);
-      } else if (debugDisabled) {
-        setCurrentPage((prev) => (prev === 'whatsapp-debug' ? 'dashboard' : prev));
+        setCurrentPage(restoredPage);
       }
 
       setSelectedAgreement(persisted.selectedAgreement || null);
@@ -119,7 +108,7 @@ export function useOnboardingState(options: UseOnboardingStateOptions): UseOnboa
     } catch (error) {
       console.warn('Failed to restore onboarding state', error);
     }
-  }, [debugDisabled, shouldRestorePage, storageKey, defaultPage]);
+  }, [shouldRestorePage, storageKey, defaultPage]);
 
   useEffect(() => {
     const payload = {

@@ -1,7 +1,4 @@
 import { createElement, lazy, useCallback, useMemo, useRef, type ComponentType, type ReactNode } from 'react';
-import { isWhatsAppDebugEnabled } from '../debug/featureFlags.js';
-import { getRuntimeEnv } from '../../lib/runtime-env.js';
-import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
 import { ONBOARDING_PAGE_IDS } from '@/features/navigation/routes.ts';
 import type { ChatCommandCenterContainerProps } from '../chat/containers/ChatCommandCenterContainer';
 import { WhatsAppInstancesProvider } from '../whatsapp/hooks/useWhatsAppInstances.jsx';
@@ -45,12 +42,6 @@ const ChatCommandCenter = lazy<ComponentType<ChatCommandCenterContainerProps>>((
 const Reports = lazy(() => import('../../components/Reports.jsx'));
 const Settings = lazy(() => import('../../components/Settings.jsx'));
 const BaileysLogs = lazy(() => import('../debug/BaileysLogs.jsx'));
-const WhatsAppDebugLazy = lazy(() => import('../debug/WhatsAppDebug.jsx'));
-
-const WHATSAPP_DEBUG_ENABLED = isWhatsAppDebugEnabled();
-
-const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
-const shouldEnableWhatsappDebug = frontendFeatureFlags.whatsappDebug;
 
 const APP_JOURNEY_STAGES: JourneyStage[] = [
   { id: 'channels', label: 'Instâncias & Canais' },
@@ -91,7 +82,6 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
   const loadingCurrentUser = Boolean(options?.loadingCurrentUser);
   const storageKey = journeyKind === 'invite' ? `${STORAGE_KEY}_invite` : STORAGE_KEY;
 
-  const debugDisabled = !WHATSAPP_DEBUG_ENABLED && !shouldEnableWhatsappDebug;
   const shouldRestorePage = journeyKind === 'invite' || options?.initialPage == null;
   const initialInviteTokenRef = useRef<string | null>(options?.initialInviteToken ?? readInviteTokenFromLocation());
 
@@ -115,7 +105,6 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
     initialPage: options?.initialPage ?? null,
     defaultPage,
     storageKey,
-    debugDisabled,
     shouldRestorePage,
     initialInviteToken: initialInviteTokenRef.current,
   });
@@ -131,13 +120,10 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
       }
 
       const normalizedTarget = normalizeOnboardingPage(targetPage as StoredOnboardingPage);
-      if (normalizedTarget === 'whatsapp-debug' && debugDisabled) {
-        return;
-      }
 
       setCurrentPage(normalizedTarget);
     },
-    [debugDisabled, setCurrentPage]
+    [setCurrentPage]
   );
 
   useOnboardingNavigationEvents({ onNavigate: handleExternalNavigation });
@@ -189,14 +175,9 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
   const handleNavigate = useCallback(
     (nextPage: StoredOnboardingPage) => {
       const normalizedPage = normalizeOnboardingPage(nextPage);
-
-      if (normalizedPage === 'whatsapp-debug' && debugDisabled) {
-        return;
-      }
-
       setCurrentPage(normalizedPage);
     },
-    [debugDisabled]
+    [setCurrentPage]
   );
 
   const page = useMemo<ReactNode>(() => {
@@ -435,11 +416,6 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
         return createElement(Settings, null);
       case 'baileys-logs':
         return createElement(BaileysLogs, null);
-      case 'whatsapp-debug':
-        if (shouldEnableWhatsappDebug || WHATSAPP_DEBUG_ENABLED) {
-          return createElement(WhatsAppDebugLazy, null);
-        }
-        return createElement(Dashboard, null);
       default:
         return createElement(Dashboard, null);
     }
@@ -453,7 +429,6 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
     loadingCurrentUser,
     currentUser,
     computeNextSetupPage,
-    shouldEnableWhatsappDebug,
     journeyKind,
     inviteDetails,
     initialInviteToken,

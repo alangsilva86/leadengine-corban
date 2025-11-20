@@ -20,14 +20,12 @@ import {
   Sun,
   Moon,
   ScrollText,
-  Bug,
   ShieldCheck,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
-import { isWhatsAppDebugEnabled } from '@/features/debug/featureFlags.js';
 import { useAuth } from '@/features/auth/AuthProvider.jsx';
 import {
   Sidebar,
@@ -47,17 +45,7 @@ import {
 } from '@/components/ui/sidebar.jsx';
 import HealthIndicator from './HealthIndicator.jsx';
 import TenantSelector from './TenantSelector.jsx';
-import { getRuntimeEnv } from '@/lib/runtime-env.js';
-import { getFrontendFeatureFlags } from '@/lib/feature-flags.js';
-import {
-  CONTEXTUAL_NAVIGATION_IDS,
-  NAVIGATION_PAGES,
-  PRIMARY_NAVIGATION_IDS,
-} from '@/features/navigation/routes.ts';
-
-const frontendFeatureFlags = getFrontendFeatureFlags(getRuntimeEnv());
-const shouldShowWhatsappDebug = frontendFeatureFlags.whatsappDebug;
-const showWhatsappDebug = isWhatsAppDebugEnabled() || shouldShowWhatsappDebug;
+import { CONTEXTUAL_NAVIGATION_IDS, NAVIGATION_PAGES, PRIMARY_NAVIGATION_IDS } from '@/features/navigation/routes.ts';
 
 const NAVIGATION_ICON_MAP = {
   [NAVIGATION_PAGES.dashboard.id]: Home,
@@ -68,7 +56,6 @@ const NAVIGATION_ICON_MAP = {
   [NAVIGATION_PAGES.crm.id]: Layers,
   [NAVIGATION_PAGES.agreements.id]: Briefcase,
   [NAVIGATION_PAGES.reports.id]: BarChart3,
-  [NAVIGATION_PAGES['whatsapp-debug'].id]: Bug,
   [NAVIGATION_PAGES['baileys-logs'].id]: ScrollText,
   [NAVIGATION_PAGES.settings.id]: Settings,
   [NAVIGATION_PAGES['tenant-admin'].id]: ShieldCheck,
@@ -78,10 +65,6 @@ const NAVIGATION_ITEMS = (() => {
   const buildNavigationSection = (ids) =>
     ids
       .map((id) => {
-        if (id === NAVIGATION_PAGES['whatsapp-debug'].id && !showWhatsappDebug) {
-          return null;
-        }
-
         const definition = NAVIGATION_PAGES[id];
         if (!definition) {
           return null;

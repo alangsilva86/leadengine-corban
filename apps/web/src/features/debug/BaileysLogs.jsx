@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import {
@@ -11,87 +11,11 @@ import {
 import { Card } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
-import { apiGet } from '@/lib/api.js';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
+import { formatDateTime, useBaileysEvents } from './hooks/useBaileysEvents.ts';
 
 const LIMIT_OPTIONS = [20, 50, 100, 150];
 const STATUS_PAGE_URL = 'https://status.leadengine.com.br';
-
-const extractStatusCode = (error) => {
-  if (!error || typeof error !== 'object') return null;
-  if (typeof error.status === 'number') return error.status;
-  if (typeof error.response?.status === 'number') return error.response.status;
-  if (typeof error.statusCode === 'number') return error.statusCode;
-  if (typeof error.response?.statusCode === 'number') {
-    return error.response.statusCode;
-  }
-  return null;
-};
-
-const getActionableStatusMessage = (status) => {
-  switch (status) {
-    case 401:
-    case 403:
-      return 'Sessão expirada (Fase 1) – faça login novamente.';
-    case 429:
-      return 'Muitas requisições (Fase 2) – aguarde um instante e tente novamente.';
-    case 500:
-      return 'Erro interno do conector (Fase 3) – tente novamente em alguns instantes ou acione o time responsável.';
-    case 502:
-    case 503:
-    case 504:
-      return 'Conector de debug indisponível (Fase 3) – tente novamente em alguns minutos.';
-    default:
-      return null;
-  }
-};
-
-const buildErrorState = (error, previousState) => {
-  const status = extractStatusCode(error);
-  const fallbackMessage =
-    (error instanceof Error && error.message) ||
-    (typeof error?.message === 'string' ? error.message : null) ||
-    'Não foi possível carregar os logs do Baileys.';
-  const message = getActionableStatusMessage(status) ?? fallbackMessage;
-  const payload =
-    error?.response?.data ?? error?.data ?? previousState?.payload ?? null;
-  const requestId =
-    typeof error?.response?.data?.error?.requestId === 'string'
-      ? error.response.data.error.requestId
-      : typeof error?.data?.error?.requestId === 'string'
-        ? error.data.error.requestId
-        : typeof payload?.error?.requestId === 'string'
-          ? payload.error.requestId
-          : null;
-  const recoveryHint =
-    typeof error?.response?.data?.error?.recoveryHint === 'string'
-      ? error.response.data.error.recoveryHint
-      : typeof error?.data?.error?.recoveryHint === 'string'
-        ? error.data.error.recoveryHint
-        : null;
-
-  return {
-    message,
-    status,
-    fallbackMessage,
-    payload,
-    timestamp: new Date().toISOString(),
-    requestId,
-    recoveryHint,
-  };
-};
-
-const formatDateTime = (value) => {
-  if (!value) return '—';
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '—';
-  }
-  return date.toLocaleString('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-  });
-};
 
 const directionTone = {
   inbound: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
@@ -111,11 +35,6 @@ const BaileysLogs = () => {
   const [direction, setDirection] = useState('all');
   const [tenantId, setTenantId] = useState('');
   const [chatId, setChatId] = useState('');
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [degradedMode, setDegradedMode] = useState(false);
-  const controllerRef = useRef(null);
 
   const buildQuery = useCallback(() => {
     const params = new URLSearchParams();
@@ -132,53 +51,14 @@ const BaileysLogs = () => {
     return params.toString();
   }, [chatId, direction, limit, tenantId]);
 
-  const fetchLogs = useCallback(async (signal) => {
-    if (signal?.aborted) {
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const query = buildQuery();
-      const response = await apiGet(`/api/debug/baileys-events?${query}`, {
-        signal,
-      });
-      const items = Array.isArray(response?.data) ? response.data : [];
-      setLogs(items);
-      setError(null);
-      setDegradedMode(false);
-    } catch (err) {
-      if (err?.name === 'AbortError') {
-        return;
-      }
-
-      setError((previous) => buildErrorState(err, previous));
-      setDegradedMode(true);
-      console.error('BaileysLogs: fetch failed', err);
-    } finally {
-      if (!signal?.aborted) {
-        setLoading(false);
-      }
-    }
-  }, [buildQuery]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    controllerRef.current?.abort();
-    controllerRef.current = controller;
-    void fetchLogs(controller.signal);
-    return () => {
-      controller.abort();
-    };
-  }, [fetchLogs]);
+  const { events: logs, loading, error, degradedMode, refresh } = useBaileysEvents({
+    buildQuery,
+    dependencies: [buildQuery],
+  });
 
   const handleManualRefresh = useCallback(() => {
-    const controller = new AbortController();
-    controllerRef.current?.abort();
-    controllerRef.current = controller;
-    void fetchLogs(controller.signal);
-  }, [fetchLogs]);
+    refresh();
+  }, [refresh]);
 
   const summary = useMemo(() => {
     if (!logs.length) {
@@ -385,7 +265,7 @@ const BaileysLogs = () => {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={fetchLogs} disabled={loading}>
+              <Button type="button" onClick={refresh} disabled={loading}>
                 {loading ? 'Recarregando…' : 'Tentar novamente'}
               </Button>
               <Button asChild variant="outline">
