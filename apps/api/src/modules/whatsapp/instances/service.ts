@@ -1,5 +1,6 @@
 // Auto-generated WhatsApp instance services module
 import { Prisma, WhatsAppInstanceStatus } from '@prisma/client';
+import { normalizeWhatsAppStatus, WHATSAPP_STATUS, type WhatsAppStatusValue } from '@leadengine/wa-status';
 import { z } from 'zod';
 import {
   whatsappBrokerClient,
@@ -134,64 +135,52 @@ const toNumeric = (value: unknown): number | null => {
 };
 
 const mapDbStatusToNormalized = (status: WhatsAppInstanceStatus): NormalizedInstance['status'] => {
+  return normalizeWhatsAppStatus({ status }).status;
+};
+
+export const mapNormalizedStatusToDbStatus = (
+  status: WhatsAppStatusValue,
+): WhatsAppInstanceStatus => {
   switch (status) {
-    case 'connected':
+    case WHATSAPP_STATUS.CONNECTED:
       return 'connected';
-    case 'connecting':
+    case WHATSAPP_STATUS.CONNECTING:
+    case WHATSAPP_STATUS.RECONNECTING:
+    case WHATSAPP_STATUS.QR_REQUIRED:
       return 'connecting';
-    case 'pending':
+    case WHATSAPP_STATUS.PENDING:
       return 'pending';
-    case 'failed':
+    case WHATSAPP_STATUS.FAILED:
       return 'failed';
-    case 'error':
+    case WHATSAPP_STATUS.ERROR:
       return 'error';
     default:
       return 'disconnected';
   }
+};
+
+const resolveDbStatusFromRaw = (
+  status: string | null | undefined,
+  connected: boolean | null | undefined,
+): WhatsAppInstanceStatus => {
+  const normalized = normalizeWhatsAppStatus({ status, connected });
+  return mapNormalizedStatusToDbStatus(normalized.status);
 };
 
 export const mapBrokerStatusToDbStatus = (
   status: WhatsAppStatus | null | undefined,
 ): WhatsAppInstanceStatus => {
   if (!status) {
-    return 'disconnected';
+    return resolveDbStatusFromRaw(null, null);
   }
-  switch (status.status) {
-    case 'connected':
-      return 'connected';
-    case 'connecting':
-      return 'connecting';
-    case 'qr_required':
-      return 'connecting';
-    case 'disconnected':
-      return 'disconnected';
-    case 'pending':
-      return 'pending';
-    case 'failed':
-      return 'failed';
-    default:
-      return 'error';
-  }
+
+  return resolveDbStatusFromRaw(status.status, status.connected);
 };
 
 export const mapBrokerInstanceStatusToDbStatus = (
   status: string | null | undefined,
 ): WhatsAppInstanceStatus => {
-  switch (status) {
-    case 'connected':
-      return 'connected';
-    case 'connecting':
-    case 'qr_required':
-      return 'connecting';
-    case 'disconnected':
-      return 'disconnected';
-    case 'pending':
-      return 'pending';
-    case 'failed':
-      return 'failed';
-    default:
-      return 'error';
-  }
+  return resolveDbStatusFromRaw(status, null);
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
@@ -900,9 +889,12 @@ export const serializeStoredInstance = (
   instance: StoredInstance,
   brokerStatus: WhatsAppStatus | null,
 ) => {
-  const normalizedStatus: NormalizedInstance['status'] =
-    brokerStatus?.status ?? mapDbStatusToNormalized(instance.status);
-  const connected = brokerStatus?.connected ?? instance.connected;
+  const normalized = normalizeWhatsAppStatus({
+    status: brokerStatus?.status ?? instance.status,
+    connected: brokerStatus?.connected ?? instance.connected,
+  });
+  const normalizedStatus: NormalizedInstance['status'] = normalized.status;
+  const connected = normalized.connected;
   const rawStatus =
     asRecord(brokerStatus?.raw) ??
     (isRecord(brokerStatus) ? (brokerStatus as Record<string, unknown>) : null);
