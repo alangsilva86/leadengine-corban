@@ -232,6 +232,7 @@ export type BrokerRequestOptions = {
   searchParams?: Record<string, string | number | undefined>;
   idempotencyKey?: string;
   tenantId?: string;
+  allowedStatuses?: number[];
 };
 
 export type WhatsAppBrokerResolvedConfig = {
@@ -552,8 +553,10 @@ export const performWhatsAppBrokerRequest = async <T>(
     const durationMs = Date.now() - startedAt;
     const requestId = response.headers?.get?.('x-request-id') ?? null;
     const responseContentType = response.headers?.get?.('content-type') ?? null;
+    const allowedStatuses = options.allowedStatuses ?? [];
+    const isAllowedNonOk = !response.ok && allowedStatuses.includes(response.status);
 
-    if (!response.ok) {
+    if (!response.ok && !isAllowedNonOk) {
       logger.warn('⚠️ [WhatsApp Broker] Resposta não OK recebida do broker', {
         method,
         path,
@@ -564,6 +567,20 @@ export const performWhatsAppBrokerRequest = async <T>(
         contentType: responseContentType,
       });
       await handleWhatsAppBrokerError(response);
+    }
+
+    if (isAllowedNonOk) {
+      logger.info('ℹ️ [WhatsApp Broker] Resposta tratada como sucesso mesmo sem status OK', {
+        method,
+        path,
+        url,
+        status: response.status,
+        durationMs,
+        requestId,
+        contentType: responseContentType,
+        allowedStatuses,
+      });
+      return undefined as T;
     }
 
     logger.info('📦 [WhatsApp Broker] Resposta do broker recebida com sucesso', {
@@ -796,9 +813,13 @@ class WhatsAppBrokerClient {
       options.instanceId
     );
 
-    await this.request<void>(`/instances/${encodedInstanceId}/session/wipe`, {
-      method: 'POST',
-    });
+    await this.request<void>(
+      `/instances/${encodedInstanceId}/session/wipe`,
+      {
+        method: 'POST',
+      },
+      { allowedStatuses: [404] }
+    );
   }
 
   async getSessionStatus<T = Record<string, unknown>>(
