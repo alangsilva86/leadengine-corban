@@ -545,7 +545,7 @@ export const shouldDisplayInstance = (instance: unknown): boolean => {
     return true;
   }
 
-  const status = resolveInstanceStatus(instance);
+  const status = resolveInstanceStatus(instance)?.toLowerCase();
   return status ? VISIBLE_INSTANCE_STATUSES.has(status) : false;
 };
 
