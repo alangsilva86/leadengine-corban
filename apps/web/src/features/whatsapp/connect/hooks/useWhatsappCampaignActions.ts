@@ -130,6 +130,8 @@ const useWhatsappCampaignActions = ({
       margin,
       strategy,
       status: requestedStatus = 'active',
+      leadSource,
+      segments,
     }: {
       name: string;
       instanceId: string;
@@ -139,6 +141,8 @@ const useWhatsappCampaignActions = ({
       margin: number;
       strategy: string;
       status?: string;
+      leadSource: string;
+      segments?: string[];
     }) => {
       const parsed = createCampaignSchema.safeParse({
         name,
@@ -149,6 +153,8 @@ const useWhatsappCampaignActions = ({
         margin,
         strategy,
         status: requestedStatus,
+        leadSource,
+        segments,
       });
       if (!parsed.success) {
         const message = parsed.error.errors[0]?.message ?? 'Falha ao validar os dados da campanha.';
@@ -193,6 +199,8 @@ const useWhatsappCampaignActions = ({
           marginType: parsed.data.marginType,
           marginValue: parsed.data.marginValue,
           strategy: parsed.data.strategy,
+          ...(parsed.data.leadSource ? { leadSource: parsed.data.leadSource } : {}),
+          ...(parsed.data.segments ? { segments: parsed.data.segments } : {}),
           ...(parsed.data.tags ? { tags: parsed.data.tags } : {}),
         });
 

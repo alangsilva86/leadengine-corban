@@ -71,6 +71,9 @@ export const createCampaignSchema = z
         required_error: 'Escolha o status inicial da campanha.',
       })
       .default('active'),
+    leadSource: z.enum(['inbound', 'internal_list', 'partner'], {
+      required_error: 'Selecione a origem dos leads.',
+    }),
     marginType: z
       .string()
       .trim()
@@ -81,6 +84,18 @@ export const createCampaignSchema = z
       .array(z.string().trim().min(1))
       .optional()
       .transform((value) => (value && value.length > 0 ? Array.from(new Set(value)) : undefined)),
+    segments: z
+      .array(z.string().trim().min(1))
+      .optional()
+      .transform((value) => {
+        if (!value || value.length === 0) {
+          return [] as string[];
+        }
+        const normalized = value
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+        return Array.from(new Set(normalized));
+      }),
   })
   .transform(
     ({
@@ -94,6 +109,8 @@ export const createCampaignSchema = z
       strategy,
       marginType,
       tags,
+      leadSource,
+      segments = [],
     }) => ({
       name,
       instanceId,
@@ -104,7 +121,11 @@ export const createCampaignSchema = z
       productType: product,
       marginType,
       marginValue: margin,
-      ...(tags ? { tags } : {}),
+      leadSource,
+      ...(segments.length ? { segments } : {}),
+      ...(tags || segments.length
+        ? { tags: Array.from(new Set([...(tags ?? []), ...segments])) }
+        : {}),
     })
   );
 
