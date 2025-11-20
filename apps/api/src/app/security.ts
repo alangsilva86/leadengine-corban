@@ -5,18 +5,9 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import type { IncomingMessage } from 'http';
 
+import { attachRateLimitHeaders, buildRateLimitConfigFromEnv, createRateLimitOptionsHandler } from '../middleware/rate-limit';
+import type { RateLimitConfig, RateLimitedRequest } from '../middleware/rate-limit';
 import { type Logger } from '../types/logger';
-
-const DEFAULT_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
-
-type RateLimitState = {
-  limit?: number;
-  remaining?: number;
-  resetTime?: Date;
-};
-
-type RateLimitedRequest = express.Request & { rateLimit?: RateLimitState };
 
 type RawBodyIncomingMessage = IncomingMessage & {
   originalUrl?: string;
@@ -29,26 +20,7 @@ type ConfigureSecurityMiddlewareDeps = {
   nodeEnv: string;
   requestLogger: RequestHandler;
   logger: Logger;
-};
-
-const parseRateLimitWindowMs = () => {
-  const parsed = Number(process.env.RATE_LIMIT_WINDOW_MS);
-
-  if (Number.isFinite(parsed) && parsed > 0) {
-    return parsed;
-  }
-
-  return DEFAULT_RATE_LIMIT_WINDOW_MS;
-};
-
-const parseRateLimitMaxRequests = () => {
-  const parsed = Number(process.env.RATE_LIMIT_MAX_REQUESTS);
-
-  if (Number.isInteger(parsed) && parsed > 0) {
-    return parsed;
-  }
-
-  return DEFAULT_RATE_LIMIT_MAX_REQUESTS;
+  rateLimitConfig?: RateLimitConfig;
 };
 
 const webhookRawBodyMiddleware: RequestHandler = (req, _res, next) => {
@@ -94,23 +66,13 @@ const webhookRawBodyMiddleware: RequestHandler = (req, _res, next) => {
 
 export const configureSecurityMiddleware = (
   app: Application,
-  { corsOptions, nodeEnv, requestLogger, logger }: ConfigureSecurityMiddlewareDeps,
+  { corsOptions, nodeEnv, requestLogger, logger, rateLimitConfig }: ConfigureSecurityMiddlewareDeps,
 ) => {
-  const rateLimitWindowMs = parseRateLimitWindowMs();
-  const rateLimitMaxRequests = parseRateLimitMaxRequests();
+  const resolvedRateLimitConfig = rateLimitConfig ?? buildRateLimitConfigFromEnv();
+  const rateLimitWindowMs = resolvedRateLimitConfig.windowMs;
+  const rateLimitMaxRequests = resolvedRateLimitConfig.maxRequests;
 
-  const attachRateLimitHeaders = (req: RateLimitedRequest, res: express.Response) => {
-    const rateLimit = req.rateLimit;
-    const limit = typeof rateLimit?.limit === 'number' ? rateLimit.limit : rateLimitMaxRequests;
-    const remaining = typeof rateLimit?.remaining === 'number' ? Math.max(0, rateLimit.remaining) : limit;
-    const resetReference = rateLimit?.resetTime instanceof Date ? rateLimit.resetTime : null;
-    const resetTime = resetReference ?? new Date(Date.now() + rateLimitWindowMs);
-    const resetSeconds = Math.max(0, Math.ceil((resetTime.getTime() - Date.now()) / 1000));
-
-    res.setHeader('X-RateLimit-Limit', limit.toString());
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, remaining).toString());
-    res.setHeader('X-RateLimit-Reset', resetSeconds.toString());
-  };
+  const rateLimitOptionsHandler = createRateLimitOptionsHandler(resolvedRateLimitConfig);
 
   const limiter = rateLimit({
     windowMs: rateLimitWindowMs,
@@ -133,7 +95,7 @@ export const configureSecurityMiddleware = (
         res.setHeader('Retry-After', retryAfterSeconds.toString());
       }
 
-      attachRateLimitHeaders(rateLimitedReq, res);
+      attachRateLimitHeaders(rateLimitedReq, res, resolvedRateLimitConfig);
 
       res.status(429).json({
         success: false,
@@ -148,16 +110,7 @@ export const configureSecurityMiddleware = (
 
   app.use(cors(corsOptions));
   app.options('*', cors(corsOptions));
-  app.use((req, res, next) => {
-    if (req.method === 'OPTIONS') {
-      if (req.path.startsWith('/api')) {
-        attachRateLimitHeaders(req as RateLimitedRequest, res);
-      }
-      res.status(204).end();
-      return;
-    }
-    next();
-  });
+  app.use(rateLimitOptionsHandler);
 
   app.set('trust proxy', 1);
   app.use(
@@ -194,7 +147,7 @@ export const configureSecurityMiddleware = (
   }
 
   app.use('/api', (req, res, next) => {
-    attachRateLimitHeaders(req as RateLimitedRequest, res);
+    attachRateLimitHeaders(req as RateLimitedRequest, res, resolvedRateLimitConfig);
     next();
   });
 
