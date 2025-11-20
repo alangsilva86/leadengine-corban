@@ -1,5 +1,4 @@
-import { getWhatsAppMode } from './config/whatsapp';
-import type { WhatsAppTransportMode } from './config/whatsapp';
+import { getBrokerBaseUrl, getBrokerTimeoutMs, getBrokerWebhookUrl } from './config/whatsapp';
 import { getBrokerObservabilitySnapshot } from './services/broker-observability';
 import { getBrokerCircuitBreakerMetrics } from './services/whatsapp-broker-client-protected';
 
@@ -10,15 +9,10 @@ export type HealthPayload = {
   environment: string;
   storage: string;
   whatsapp: {
-    runtime: {
-      status: 'running';
-      mode: WhatsAppTransportMode;
-      transport: WhatsAppTransportMode;
-      disabled: false;
-    };
-    mode: WhatsAppTransportMode;
-    transportMode: WhatsAppTransportMode;
     broker: {
+      baseUrl: string | null;
+      webhookUrl: string;
+      timeoutMs: number;
       circuitBreaker: ReturnType<typeof getBrokerCircuitBreakerMetrics>;
       lastSuccessAt: string | null;
       lastFailureAt: string | null;
@@ -50,15 +44,13 @@ const deriveStorageBackend = (): string => {
 };
 
 export const buildHealthPayload = ({ environment }: { environment: string }): HealthPayload => {
-  const mode = getWhatsAppMode();
-  const runtime: HealthPayload['whatsapp']['runtime'] = {
-    status: 'running',
-    mode,
-    transport: mode,
-    disabled: false,
-  };
   const brokerSnapshot = getBrokerObservabilitySnapshot();
   const circuitBreaker = getBrokerCircuitBreakerMetrics();
+  const brokerConfig = {
+    baseUrl: getBrokerBaseUrl(),
+    webhookUrl: getBrokerWebhookUrl(),
+    timeoutMs: getBrokerTimeoutMs(),
+  };
 
   return {
     status: 'ok',
@@ -67,10 +59,10 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     environment,
     storage: deriveStorageBackend(),
     whatsapp: {
-      runtime,
-      mode: runtime.mode,
-      transportMode: mode,
       broker: {
+        baseUrl: brokerConfig.baseUrl,
+        webhookUrl: brokerConfig.webhookUrl,
+        timeoutMs: brokerConfig.timeoutMs,
         circuitBreaker,
         lastSuccessAt: brokerSnapshot.lastSuccessAt,
         lastFailureAt: brokerSnapshot.lastFailureAt,

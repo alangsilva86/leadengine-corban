@@ -27,9 +27,9 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 ## 🔄 Interface de transporte WhatsApp unificada
 
-- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis e expõe `getWhatsAppMode()` (fixo em `http`; qualquer presença de `WHATSAPP_MODE` interrompe o boot para sinalizar configuração inválida).
+- `apps/api/src/config/whatsapp-config.ts` centraliza variáveis do broker HTTP; o transporte é sempre HTTP e não depende mais de `WHATSAPP_MODE`.
 - `apps/api/src/config/whatsapp.ts` distribui getters (por exemplo, `getBrokerBaseUrl`, `getWebhookApiKey`) removendo leituras diretas de `process.env`.
-- `/healthz` revela o estado do transporte WhatsApp via `apps/api/src/health.ts`, expondo `whatsapp.runtime` (com `mode`, `transport`, `status`, `disabled`) para auditar a disponibilidade do broker HTTP.
+- `/healthz` revela o estado do transporte WhatsApp via `apps/api/src/health.ts`, expondo apenas os dados relevantes do broker (circuit breaker, endpoints e timeouts) sem campos de modo.
 
 ## 📥 Pipeline inbound consolidado
 
@@ -53,6 +53,4 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 
 ## 🔁 Operação contínua
 
-Remova `WHATSAPP_MODE` de ambientes legados; `/healthz` confirma o transporte HTTP ativo.
-Qualquer definição da variável agora gera erro de inicialização — não há fallback automático para valores herdados como `sidecar`.
 Com apenas o transporte HTTP habilitado, não há fluxos de rollback entre modos. A operação se concentra em manter as credenciais e o endpoint do broker disponíveis; `/healthz` continua sendo a referência para confirmar o status durante deploys e incidentes.

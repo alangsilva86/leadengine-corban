@@ -15,8 +15,7 @@ arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configur
 1. Consolidar todas as variáveis de ambiente relacionadas ao WhatsApp em uma camada de
    configuração única (`apps/api/src/config/whatsapp-config.ts`), exportando utilitários
    memoizados para consumo em toda a aplicação.
-2. Manter o transporte HTTP como modo único exposto por `getWhatsAppMode`, assegurando
-   que nenhuma alternância dinâmica entre sidecar e http aconteça em produção.
+2. Manter o transporte HTTP como modo único, evitando alternância dinâmica entre sidecar e http em produção.
 3. Atualizar os pontos sensíveis (healthcheck e cliente do broker) para depender dessa camada,
    garantindo auditoria do transporte HTTP e preparando eventual expansão futura sem toggles operacionais.
 
@@ -31,4 +30,4 @@ arquivos dispersos, o que dificulta o rollback seguro e abre brechas de configur
 - Operações deixam de executar rollback entre `http` e `sidecar`; o foco passa a ser
   garantir que as credenciais HTTP estejam corretas antes de promover novas versões.
 - O webhook inbound (`apps/api/src/features/whatsapp-inbound/routes/webhook-controller.ts`) tornou-se o caminho principal e exclusivo de ingestão.
-- `/healthz` divulga o modo ativo (`apps/api/src/health.ts`), garantindo observabilidade do circuito durante rollout/rollback.
+- `/healthz` divulga o estado do broker HTTP (`apps/api/src/health.ts`), garantindo observabilidade do circuito durante rollout/rollback.

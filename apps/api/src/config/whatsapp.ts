@@ -1,8 +1,4 @@
-import {
-  getWhatsAppConfig,
-  refreshWhatsAppConfig,
-  type WhatsAppTransportMode,
-} from './whatsapp-config';
+import { getWhatsAppConfig, refreshWhatsAppConfig } from './whatsapp-config';
 
 export const getBrokerBaseUrl = (): string | null => getWhatsAppConfig().broker.baseUrl;
 
@@ -26,8 +22,4 @@ export const isWebhookSignatureRequired = (): boolean => getWhatsAppConfig().web
 
 export const getWebhookTrustedIps = (): string[] => getWhatsAppConfig().webhook.trustedIps;
 
-export const getWhatsAppMode = (): WhatsAppTransportMode => getWhatsAppConfig().runtime.mode;
-
 export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
-
-export type { WhatsAppTransportMode } from './whatsapp-config';

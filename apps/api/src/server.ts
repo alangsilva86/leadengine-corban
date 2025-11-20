@@ -25,7 +25,7 @@ import { leadEngineRouter } from './routes/lead-engine';
 import { crmRouter } from './routes/crm';
 import { logger } from './config/logger';
 import { registerSocketServer } from './lib/socket-registry';
-import { getWhatsAppMode } from './config/whatsapp';
+import { getBrokerBaseUrl } from './config/whatsapp';
 import { renderMetrics } from './lib/metrics';
 import { campaignsRouter } from './routes/campaigns';
 import { reportsRouter } from './routes/reports';
@@ -591,8 +591,9 @@ server.listen(PORT, () => {
   const { logAiConfiguration } = require('./config/ai');
   logAiConfiguration();
 
-  const mode = getWhatsAppMode();
-  logger.info(`💬 WhatsApp transport initialized in ${mode.toUpperCase()} mode`);
+  const brokerBaseUrl = getBrokerBaseUrl();
+  const brokerLabel = brokerBaseUrl ? `broker at ${brokerBaseUrl}` : 'broker with no base URL configured';
+  logger.info(`💬 WhatsApp transport initialized using ${brokerLabel}`);
 });
 
 // Graceful shutdown
