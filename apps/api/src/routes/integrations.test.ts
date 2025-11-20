@@ -316,6 +316,9 @@ describe('WhatsApp integration routes when broker is not configured', () => {
         success: false,
         error: { code: 'WHATSAPP_NOT_CONFIGURED' },
       });
+      expect(body.error?.details?.missing).toEqual(
+        expect.arrayContaining(['WHATSAPP_BROKER_URL', 'WHATSAPP_BROKER_API_KEY', 'WHATSAPP_WEBHOOK_VERIFY_TOKEN'])
+      );
       expect(prisma.whatsAppInstance.create).not.toHaveBeenCalled();
     } finally {
       await stopTestServer(server);
