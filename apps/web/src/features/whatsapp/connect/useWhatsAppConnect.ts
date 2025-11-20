@@ -353,7 +353,7 @@ const useWhatsAppConnect = ({
     secondsLeft,
     setSecondsLeft,
     setInstanceStatus,
-    onStatusChange,
+    ...(onStatusChange ? { onStatusChange } : {}),
     setGeneratingQrState,
     loadingInstances,
     loadingQr,
