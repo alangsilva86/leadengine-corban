@@ -468,6 +468,8 @@ export interface InstanceStatusInfo {
 export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
   const record = isPlainRecord(instance) ? instance : {};
   const resolvedStatus = resolveInstanceStatus(instance);
+  const normalizedResolvedStatus =
+    typeof resolvedStatus === 'string' ? resolvedStatus.toLowerCase() : null;
   const statusMap: Record<string, InstanceStatusInfo> = {
     connected: { label: 'Conectado', variant: 'success' },
     connecting: { label: 'Conectando', variant: 'info' },
@@ -483,7 +485,7 @@ export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
   const isExplicitlyDisconnected = record.connected === false;
 
   const normalizedStatus = (() => {
-    const statusKey = typeof resolvedStatus === 'string' ? resolvedStatus : null;
+    const statusKey = normalizedResolvedStatus;
     if (statusKey && statusMap[statusKey]) {
       return statusKey;
     }
@@ -546,7 +548,8 @@ export const shouldDisplayInstance = (instance: unknown): boolean => {
   }
 
   const status = resolveInstanceStatus(instance);
-  return status ? VISIBLE_INSTANCE_STATUSES.has(status) : false;
+  const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : null;
+  return normalizedStatus ? VISIBLE_INSTANCE_STATUSES.has(normalizedStatus) : false;
 };
 
 export interface SelectInstanceOptions {
