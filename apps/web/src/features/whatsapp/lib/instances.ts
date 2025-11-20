@@ -461,19 +461,40 @@ export interface InstanceStatusInfo {
 export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
   const record = isPlainRecord(instance) ? instance : {};
   const resolvedStatus = resolveInstanceStatus(instance);
-  const rawStatus =
-    (typeof resolvedStatus === 'string' && resolvedStatus) ||
-    (record.connected ? 'connected' : 'disconnected');
-
-  const map: Record<string, InstanceStatusInfo> = {
+  const statusMap: Record<string, InstanceStatusInfo> = {
     connected: { label: 'Conectado', variant: 'success' },
     connecting: { label: 'Conectando', variant: 'info' },
+    pending: { label: 'Pendente', variant: 'info' },
     disconnected: { label: 'Desconectado', variant: 'secondary' },
     qr_required: { label: 'QR necessário', variant: 'warning' },
+    failed: { label: 'Falhou', variant: 'destructive' },
     error: { label: 'Erro', variant: 'destructive' },
   };
 
-  return map[rawStatus] || { label: rawStatus || 'Indefinido', variant: 'secondary' };
+  const isExplicitlyConnected = record.connected === true;
+  const isExplicitlyDisconnected = record.connected === false;
+
+  const normalizedStatus = (() => {
+    const statusKey = typeof resolvedStatus === 'string' ? resolvedStatus : null;
+    if (statusKey && statusMap[statusKey]) {
+      return statusKey;
+    }
+
+    if (isExplicitlyConnected) {
+      return 'connected';
+    }
+
+    if (isExplicitlyDisconnected) {
+      return 'disconnected';
+    }
+
+    return statusKey || 'disconnected';
+  })();
+
+  return statusMap[normalizedStatus] || {
+    label: normalizedStatus || 'Indefinido',
+    variant: isExplicitlyConnected ? 'success' : 'secondary',
+  };
 };
 
 export const resolveInstancePhone = (instance: unknown): string => {
