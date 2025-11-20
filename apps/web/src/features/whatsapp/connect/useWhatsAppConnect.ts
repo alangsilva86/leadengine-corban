@@ -3,7 +3,12 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
 import useWhatsAppInstances from '../hooks/useWhatsAppInstances.jsx';
-import { getStatusInfo, resolveInstancePhone, shouldDisplayInstance } from '../lib/instances';
+import {
+  getStatusInfo,
+  resolveInstancePhone,
+  resolveInstanceStatus,
+  shouldDisplayInstance,
+} from '../lib/instances';
 import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
 import { getInstanceMetrics } from '../lib/metrics';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
@@ -458,7 +463,18 @@ const useWhatsAppConnect = ({
   const visibleInstanceCount = visibleInstances.length;
   const hasHiddenInstances = totalInstanceCount > visibleInstanceCount;
   const renderInstances = state.showAllInstances ? instances : visibleInstances;
-  const hasConnectedInstances = renderInstances.some((entry) => Boolean(entry?.connected));
+  const isInstanceConnected = (entry: unknown) => {
+    const status = resolveInstanceStatus(entry);
+    const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : null;
+
+    return Boolean((entry as Record<string, unknown>)?.connected) ||
+      normalizedStatus === 'connected' ||
+      normalizedStatus === 'online' ||
+      normalizedStatus === 'ready';
+  };
+
+  const hasConnectedInstances =
+    renderInstances.some(isInstanceConnected) || (instance ? isInstanceConnected(instance) : false);
   const canCreateCampaigns = hasConnectedInstances;
   const instanceViewModels = useMemo<WhatsAppInstanceViewModel[]>(() => {
     return renderInstances.map((entry, index) => {
