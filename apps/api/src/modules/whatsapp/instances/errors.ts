@@ -1,4 +1,8 @@
 import { logger } from '../../../config/logger';
+import {
+  whatsappStorageLatencySummary,
+  whatsappStorageUnavailableCounter,
+} from '../../../lib/metrics';
 
 const PRISMA_STORAGE_ERROR_CODES = new Set([
   'P1000',
@@ -122,10 +126,81 @@ export const describeErrorForLog = (error: unknown): unknown => {
   return { value: error };
 };
 
+const deriveOperationType = (operation: string, fallback?: string | null): string => {
+  if (fallback && fallback.trim().length > 0) {
+    return fallback.trim();
+  }
+
+  const normalized = operation.toLowerCase();
+  const isRead = normalized.includes('get') || normalized.includes('read');
+
+  if (normalized.includes('snapshot')) {
+    return isRead ? 'snapshot.read' : 'snapshot.write';
+  }
+
+  if (normalized.includes('qr')) {
+    return isRead ? 'qr.read' : 'qr.write';
+  }
+
+  if (normalized.includes('cache')) {
+    return isRead ? 'snapshot.read' : 'snapshot.write';
+  }
+
+  if (normalized.includes('archive')) {
+    return 'snapshot.write';
+  }
+
+  return 'storage';
+};
+
+export const observeStorageLatency = (
+  operation: string,
+  startedAt: number,
+  outcome: 'success' | 'failure',
+  context: { tenantId?: string; instanceId?: string | null; operationType?: string | null } = {}
+): void => {
+  const durationMs = Date.now() - startedAt;
+
+  try {
+    whatsappStorageLatencySummary.observe(
+      {
+        tenantId: context.tenantId,
+        instanceId: context.instanceId,
+        operation: deriveOperationType(operation, context.operationType),
+        outcome,
+      },
+      durationMs
+    );
+  } catch {
+    // metrics are best effort
+  }
+};
+
+const incrementStorageUnavailable = (
+  operation: string,
+  context: { tenantId?: string; instanceId?: string | null; operationType?: string | null; errorCode?: string | null }
+): void => {
+  try {
+    whatsappStorageUnavailableCounter.inc({
+      tenantId: context.tenantId,
+      instanceId: context.instanceId,
+      operation: deriveOperationType(operation, context.operationType),
+      errorCode: context.errorCode ?? 'WHATSAPP_STORAGE_UNAVAILABLE',
+    });
+  } catch {
+    // ignore metric failures
+  }
+};
+
+export const trackStorageUnavailable = (
+  operation: string,
+  context: { tenantId?: string; instanceId?: string | null; operationType?: string | null; errorCode?: string | null }
+): void => incrementStorageUnavailable(operation, context);
+
 export function logWhatsAppStorageError(
   operation: string,
   error: unknown,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> & { tenantId?: string; instanceId?: string | null; operationType?: string | null } = {}
 ): boolean {
   const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
 
@@ -133,8 +208,13 @@ export function logWhatsAppStorageError(
     return false;
   }
 
+  const operationType = deriveOperationType(operation, context.operationType);
+
   logger.warn(`whatsapp.storage.${operation}.failed`, {
     operation,
+    operationType,
+    tenantId: context.tenantId ?? null,
+    instanceId: context.instanceId ?? null,
     ...(prismaCode ? { prismaCode } : {}),
     ...context,
     error: describeErrorForLog(error),

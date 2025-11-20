@@ -30,6 +30,26 @@ const WS_EMIT_METRIC = 'ws_emit_total';
 const WS_EMIT_HELP = '# HELP ws_emit_total Contador de eventos emitidos via WebSocket/Socket.IO';
 const WS_EMIT_TYPE = '# TYPE ws_emit_total counter';
 
+const WHATSAPP_STORAGE_UNAVAILABLE_METRIC = 'whatsapp_storage_unavailable_total';
+const WHATSAPP_STORAGE_UNAVAILABLE_HELP =
+  '# HELP whatsapp_storage_unavailable_total Ocorrências de indisponibilidade de storage WhatsApp por operação/tenant';
+const WHATSAPP_STORAGE_UNAVAILABLE_TYPE = '# TYPE whatsapp_storage_unavailable_total counter';
+
+const WHATSAPP_STORAGE_LATENCY_METRIC = 'whatsapp_storage_operation_duration_ms';
+const WHATSAPP_STORAGE_LATENCY_HELP =
+  '# HELP whatsapp_storage_operation_duration_ms Latência de operações de storage de WhatsApp em milissegundos';
+const WHATSAPP_STORAGE_LATENCY_TYPE = '# TYPE whatsapp_storage_operation_duration_ms summary';
+
+const WHATSAPP_REFRESH_RESULT_METRIC = 'whatsapp_refresh_requests_total';
+const WHATSAPP_REFRESH_RESULT_HELP =
+  '# HELP whatsapp_refresh_requests_total Taxa de sucesso de refresh de instâncias do WhatsApp por tenant';
+const WHATSAPP_REFRESH_RESULT_TYPE = '# TYPE whatsapp_refresh_requests_total counter';
+
+const WHATSAPP_QR_RESULT_METRIC = 'whatsapp_qr_requests_total';
+const WHATSAPP_QR_RESULT_HELP =
+  '# HELP whatsapp_qr_requests_total Sucesso e falhas em operações de QR do WhatsApp por tenant/instância';
+const WHATSAPP_QR_RESULT_TYPE = '# TYPE whatsapp_qr_requests_total counter';
+
 const INBOUND_MESSAGES_METRIC = 'inbound_messages_processed_total';
 const INBOUND_MESSAGES_HELP =
   '# HELP inbound_messages_processed_total Contador de mensagens inbound processadas por tenant';
@@ -132,6 +152,8 @@ const TENANT_CONSTRAINT: LabelConstraint = { limit: 100, defaultValue: 'unknown'
 const INSTANCE_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
 const TRANSPORT_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
 const OPERATION_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' };
+const OUTCOME_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
+const ERROR_CONSTRAINT: LabelConstraint = { limit: 50, defaultValue: 'unknown' };
 const STAGE_CONSTRAINT: LabelConstraint = { limit: 50, defaultValue: 'desconhecido' };
 const AGREEMENT_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
 const AGREEMENT_NAME_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
@@ -219,6 +241,26 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     agreementId: AGREEMENT_CONSTRAINT,
     origin: ORIGIN_CONSTRAINT,
   },
+  [WHATSAPP_STORAGE_UNAVAILABLE_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    operation: OPERATION_CONSTRAINT,
+    errorCode: ERROR_CONSTRAINT,
+  },
+  [WHATSAPP_STORAGE_LATENCY_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    operation: OPERATION_CONSTRAINT,
+    outcome: OUTCOME_CONSTRAINT,
+  },
+  [WHATSAPP_REFRESH_RESULT_METRIC]: {
+    tenantId: TENANT_CONSTRAINT,
+    outcome: OUTCOME_CONSTRAINT,
+    errorCode: ERROR_CONSTRAINT,
+  },
+  [WHATSAPP_QR_RESULT_METRIC]: {
+    ...BASE_LABEL_CONSTRAINTS,
+    outcome: OUTCOME_CONSTRAINT,
+    errorCode: ERROR_CONSTRAINT,
+  },
   [AGREEMENTS_SYNC_REQUEST_METRIC]: {
     providerId: PROVIDER_CONSTRAINT,
     result: RESULT_CONSTRAINT,
@@ -245,6 +287,10 @@ const outboundDeliverySuccessStore = new Map<string, number>();
 const socketReconnectCounterStore = new Map<string, number>();
 const httpRequestCounterStore = new Map<string, number>();
 const wsEmitCounterStore = new Map<string, number>();
+const whatsappStorageUnavailableCounterStore = new Map<string, number>();
+const whatsappStorageLatencyStore = new Map<string, { sum: number; count: number }>();
+const whatsappRefreshOutcomeStore = new Map<string, number>();
+const whatsappQrOutcomeStore = new Map<string, number>();
 const inboundMessagesCounterStore = new Map<string, number>();
 const inboundMediaRetryAttemptsStore = new Map<string, number>();
 const inboundMediaRetrySuccessStore = new Map<string, number>();
@@ -427,6 +473,45 @@ export const wsEmitCounter = {
     const key = buildLabelKey(WS_EMIT_METRIC, labels);
     const current = wsEmitCounterStore.get(key) ?? 0;
     wsEmitCounterStore.set(key, current + value);
+  },
+};
+
+export const whatsappStorageUnavailableCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(WHATSAPP_STORAGE_UNAVAILABLE_METRIC, labels);
+    const current = whatsappStorageUnavailableCounterStore.get(key) ?? 0;
+    whatsappStorageUnavailableCounterStore.set(key, current + value);
+  },
+};
+
+export const whatsappStorageLatencySummary = {
+  observe(labels: CounterLabels = {}, durationMs: number): void {
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      return;
+    }
+
+    const key = buildLabelKey(WHATSAPP_STORAGE_LATENCY_METRIC, labels);
+    const current = whatsappStorageLatencyStore.get(key) ?? { sum: 0, count: 0 };
+    whatsappStorageLatencyStore.set(key, {
+      sum: current.sum + durationMs,
+      count: current.count + 1,
+    });
+  },
+};
+
+export const whatsappRefreshOutcomeCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(WHATSAPP_REFRESH_RESULT_METRIC, labels);
+    const current = whatsappRefreshOutcomeStore.get(key) ?? 0;
+    whatsappRefreshOutcomeStore.set(key, current + value);
+  },
+};
+
+export const whatsappQrRequestCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(WHATSAPP_QR_RESULT_METRIC, labels);
+    const current = whatsappQrOutcomeStore.get(key) ?? 0;
+    whatsappQrOutcomeStore.set(key, current + value);
   },
 };
 
@@ -650,6 +735,48 @@ export const renderMetrics = async (): Promise<string> => {
     }
   }
 
+  lines.push(WHATSAPP_STORAGE_UNAVAILABLE_HELP, WHATSAPP_STORAGE_UNAVAILABLE_TYPE);
+  if (whatsappStorageUnavailableCounterStore.size === 0) {
+    lines.push(`${WHATSAPP_STORAGE_UNAVAILABLE_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of whatsappStorageUnavailableCounterStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_STORAGE_UNAVAILABLE_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(WHATSAPP_STORAGE_LATENCY_HELP, WHATSAPP_STORAGE_LATENCY_TYPE);
+  if (whatsappStorageLatencyStore.size === 0) {
+    lines.push(`${WHATSAPP_STORAGE_LATENCY_METRIC}_sum 0`);
+    lines.push(`${WHATSAPP_STORAGE_LATENCY_METRIC}_count 0`);
+  } else {
+    for (const [labelString, stats] of whatsappStorageLatencyStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_STORAGE_LATENCY_METRIC}_sum${suffix} ${stats.sum}`);
+      lines.push(`${WHATSAPP_STORAGE_LATENCY_METRIC}_count${suffix} ${stats.count}`);
+    }
+  }
+
+  lines.push(WHATSAPP_REFRESH_RESULT_HELP, WHATSAPP_REFRESH_RESULT_TYPE);
+  if (whatsappRefreshOutcomeStore.size === 0) {
+    lines.push(`${WHATSAPP_REFRESH_RESULT_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of whatsappRefreshOutcomeStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_REFRESH_RESULT_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(WHATSAPP_QR_RESULT_HELP, WHATSAPP_QR_RESULT_TYPE);
+  if (whatsappQrOutcomeStore.size === 0) {
+    lines.push(`${WHATSAPP_QR_RESULT_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of whatsappQrOutcomeStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_QR_RESULT_METRIC}${suffix} ${value}`);
+    }
+  }
+
   lines.push(SALES_OPERATIONS_HELP, SALES_OPERATIONS_TYPE);
   if (salesOperationsCounterStore.size === 0) {
     lines.push(`${SALES_OPERATIONS_METRIC} 0`);
@@ -862,6 +989,10 @@ export const resetMetrics = (): void => {
   socketReconnectCounterStore.clear();
   httpRequestCounterStore.clear();
   wsEmitCounterStore.clear();
+  whatsappStorageUnavailableCounterStore.clear();
+  whatsappStorageLatencyStore.clear();
+  whatsappRefreshOutcomeStore.clear();
+  whatsappQrOutcomeStore.clear();
   inboundMessagesCounterStore.clear();
   inboundMediaRetryAttemptsStore.clear();
   inboundMediaRetrySuccessStore.clear();

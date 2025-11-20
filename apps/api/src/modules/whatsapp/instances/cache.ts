@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import type { WhatsAppBrokerInstanceSnapshot } from '../../../services/whatsapp-broker-client';
 import { prisma } from '../../../lib/prisma';
-import { logWhatsAppStorageError, hasErrorName } from './errors';
+import { logWhatsAppStorageError, hasErrorName, observeStorageLatency } from './errors';
 import type { PrismaTransactionClient } from './types';
 
 const LAST_SYNC_KEY_PREFIX = 'whatsapp:instances:lastSync:tenant:';
@@ -47,14 +47,18 @@ export const getLastSyncAt = async (
   client: typeof prisma = prisma
 ): Promise<Date | null> => {
   const key = `${LAST_SYNC_KEY_PREFIX}${tenantId}`;
+  const startedAt = Date.now();
   try {
     const rec = await client.integrationState.findUnique({ where: { key }, select: { value: true } });
     if (!rec?.value || typeof rec.value !== 'object' || rec.value === null) return null;
     const v = (rec.value as Record<string, unknown>).lastSyncAt;
     if (typeof v !== 'string') return null;
     const ts = Date.parse(v);
-    return Number.isFinite(ts) ? new Date(ts) : null;
+    const parsed = Number.isFinite(ts) ? new Date(ts) : null;
+    observeStorageLatency('getLastSyncAt', startedAt, 'success', { tenantId, operationType: 'snapshot.read' });
+    return parsed;
   } catch (error) {
+    observeStorageLatency('getLastSyncAt', startedAt, 'failure', { tenantId, operationType: 'snapshot.read' });
     if (logWhatsAppStorageError('getLastSyncAt', error, { tenantId, key })) {
       return null;
     }
@@ -69,13 +73,16 @@ export const setLastSyncAt = async (
 ): Promise<void> => {
   const key = `${LAST_SYNC_KEY_PREFIX}${tenantId}`;
   const value: Prisma.JsonObject = { lastSyncAt: at.toISOString() };
+  const startedAt = Date.now();
   try {
     await client.integrationState.upsert({
       where: { key },
       update: { value },
       create: { key, value },
     });
+    observeStorageLatency('setLastSyncAt', startedAt, 'success', { tenantId, operationType: 'snapshot.write' });
   } catch (error) {
+    observeStorageLatency('setLastSyncAt', startedAt, 'failure', { tenantId, operationType: 'snapshot.write' });
     if (logWhatsAppStorageError('setLastSyncAt', error, { tenantId, key })) {
       return;
     }
@@ -93,6 +100,7 @@ export const getCachedSnapshots = async (
   }
 
   const key = `${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`;
+  const startedAt = Date.now();
   try {
     const rec = await client.integrationState.findUnique({ where: { key }, select: { value: true } });
     if (!rec?.value || typeof rec.value !== 'object' || rec.value === null) return null;
@@ -100,8 +108,17 @@ export const getCachedSnapshots = async (
     const expiresAt = typeof v.expiresAt === 'string' ? Date.parse(v.expiresAt) : NaN;
     if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
     const raw = (v.snapshots ?? null) as unknown;
-    return Array.isArray(raw) ? (raw as WhatsAppBrokerInstanceSnapshot[]) : null;
+    const snapshots = Array.isArray(raw) ? (raw as WhatsAppBrokerInstanceSnapshot[]) : null;
+    observeStorageLatency('getCachedSnapshots', startedAt, 'success', {
+      tenantId,
+      operationType: 'snapshot.read',
+    });
+    return snapshots;
   } catch (error) {
+    observeStorageLatency('getCachedSnapshots', startedAt, 'failure', {
+      tenantId,
+      operationType: 'snapshot.read',
+    });
     if (logWhatsAppStorageError('getCachedSnapshots', error, { tenantId, key })) {
       return null;
     }
@@ -119,13 +136,22 @@ export const setCachedSnapshots = async (
   const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
   const value: Prisma.JsonObject = { expiresAt, snapshots: snapshots as unknown as Prisma.JsonArray };
   setMemoryCachedSnapshots(tenantId, snapshots, ttlSeconds);
+  const startedAt = Date.now();
   try {
     await client.integrationState.upsert({
       where: { key },
       update: { value },
       create: { key, value },
     });
+    observeStorageLatency('setCachedSnapshots', startedAt, 'success', {
+      tenantId,
+      operationType: 'snapshot.write',
+    });
   } catch (error) {
+    observeStorageLatency('setCachedSnapshots', startedAt, 'failure', {
+      tenantId,
+      operationType: 'snapshot.write',
+    });
     if (logWhatsAppStorageError('setCachedSnapshots', error, { tenantId, key })) {
       return;
     }
@@ -163,9 +189,20 @@ export const removeCachedSnapshot = async (
     return;
   }
 
+  const startedAt = Date.now();
   try {
     await setCachedSnapshots(tenantId, filtered, 30, client);
+    observeStorageLatency('removeCachedSnapshot', startedAt, 'success', {
+      tenantId,
+      instanceId,
+      operationType: 'snapshot.write',
+    });
   } catch (error) {
+    observeStorageLatency('removeCachedSnapshot', startedAt, 'failure', {
+      tenantId,
+      instanceId,
+      operationType: 'snapshot.write',
+    });
     if (!logWhatsAppStorageError('removeCachedSnapshot', error, { tenantId, instanceId, brokerId })) {
       throw error;
     }

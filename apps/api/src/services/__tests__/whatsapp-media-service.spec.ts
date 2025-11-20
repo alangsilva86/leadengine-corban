@@ -6,6 +6,7 @@ const createSignedGetUrlMock = vi.hoisted(() => vi.fn());
 vi.mock('../supabase-storage', () => ({
   uploadObject: (...args: unknown[]) => uploadObjectMock(...args),
   createSignedGetUrl: (...args: unknown[]) => createSignedGetUrlMock(...args),
+  validateSupabaseS3Connectivity: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe('whatsapp-media-service', () => {

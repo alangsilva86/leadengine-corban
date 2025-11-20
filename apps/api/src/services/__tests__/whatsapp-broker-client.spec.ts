@@ -244,6 +244,23 @@ describe('WhatsAppBrokerClient', () => {
     expect(init?.body).toBeUndefined();
   });
 
+  it('treats 404 from wipe session as idempotent success', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: 'SESSION_NOT_FOUND' }), {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    await whatsappBrokerClient.wipeSession('broker-10', { instanceId: 'crm-instance' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://broker.test/instances/crm-instance/session/wipe');
+    expect(init?.method).toBe('POST');
+  });
+
   it('disconnects instance with optional wipe sequenciando logout e wipe', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
@@ -262,6 +279,32 @@ describe('WhatsAppBrokerClient', () => {
     expect(logoutInit?.method).toBe('POST');
     expect(wipeUrl).toBe('https://broker.test/instances/crm-instance/session/wipe');
     expect(wipeInit?.method).toBe('POST');
+  });
+
+  it('deletes instance even when session wipe is missing', async () => {
+    const { Response } = await import('undici');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'SESSION_NOT_FOUND' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      })
+    );
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    await whatsappBrokerClient.deleteInstance('broker-10', {
+      instanceId: 'crm-instance',
+      wipe: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [wipeUrl, wipeInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [deleteUrl, deleteInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(wipeUrl).toBe('https://broker.test/instances/crm-instance/session/wipe');
+    expect(wipeInit?.method).toBe('POST');
+    expect(deleteUrl).toBe('https://broker.test/instances/broker-10');
+    expect(deleteInit?.method).toBe('DELETE');
   });
 
   it('retrieves status via GET /instances/:id/status', async () => {

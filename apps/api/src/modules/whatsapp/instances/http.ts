@@ -2,7 +2,7 @@ import process from 'node:process';
 import { param } from 'express-validator';
 import { WhatsAppBrokerError, WhatsAppBrokerNotConfiguredError } from '../../../services/whatsapp-broker-client';
 import { compactRecord } from './helpers';
-import { resolveWhatsAppStorageError } from './errors';
+import { logWhatsAppStorageError, resolveWhatsAppStorageError, trackStorageUnavailable } from './errors';
 
 export const INVALID_INSTANCE_ID_MESSAGE = 'Identificador de instância inválido.';
 
@@ -101,7 +101,11 @@ export const respondWhatsAppNotConfigured = (res: ResponseLike, error: unknown):
   return false;
 };
 
-export const respondWhatsAppStorageUnavailable = (res: ResponseLike, error: unknown): boolean => {
+export const respondWhatsAppStorageUnavailable = (
+  res: ResponseLike,
+  error: unknown,
+  context: { tenantId?: string; instanceId?: string | null; operation?: string | null; operationType?: string | null } = {}
+): boolean => {
   const { isStorageError, prismaCode } = resolveWhatsAppStorageError(error);
 
   if (!isStorageError) {
@@ -109,6 +113,19 @@ export const respondWhatsAppStorageUnavailable = (res: ResponseLike, error: unkn
   }
 
   const storageDisabled = prismaCode === 'DATABASE_DISABLED';
+  const operation = context.operation ?? 'storage';
+
+  logWhatsAppStorageError(operation, error, {
+    ...context,
+    prismaCode,
+  });
+
+  trackStorageUnavailable(operation, {
+    tenantId: context.tenantId,
+    instanceId: context.instanceId,
+    operationType: context.operationType,
+    errorCode: storageDisabled ? 'DATABASE_DISABLED' : 'WHATSAPP_STORAGE_UNAVAILABLE',
+  });
 
   if (storageDisabled) {
     if (!res.locals) {
