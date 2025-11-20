@@ -1398,10 +1398,10 @@ class WhatsAppBrokerClient {
     const config = this.resolveConfig();
 
     const normalizedTenantId = typeof args.tenantId === 'string' ? args.tenantId.trim() : '';
-    const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
-      ? { searchParams: { tenantId: normalizedTenantId }, tenantId: normalizedTenantId }
-      ? { searchParams: { tenantId: normalizedTenantId } }
-      : {};
+    const requestOptions: BrokerRequestOptions =
+      normalizedTenantId.length > 0
+        ? { searchParams: { tenantId: normalizedTenantId }, tenantId: normalizedTenantId }
+        : {};
 
     const requestedInstanceId = (() => {
       const explicitId = typeof args.instanceId === 'string' ? args.instanceId.trim() : '';
