@@ -16,6 +16,7 @@ import useInstanceMetrics from '../hooks/useInstanceMetrics';
 const STATUS_FILTERS = [
   { value: 'all', label: 'Todas' },
   { value: 'connected', label: 'Conectadas' },
+  { value: 'reconnecting', label: 'Reconectando' },
   { value: 'attention', label: 'Atenção' },
   { value: 'disconnected', label: 'Desconectadas' },
 ];

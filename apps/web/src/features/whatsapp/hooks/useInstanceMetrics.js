@@ -3,15 +3,7 @@ import { ptBR } from 'date-fns/locale';
 import { useCallback, useMemo, useState } from 'react';
 
 import { formatTimestampLabel } from '../lib/formatting.js';
-
-const CONNECTION_STATUS_MAP = {
-  success: 'connected',
-  info: 'attention',
-  warning: 'attention',
-  destructive: 'attention',
-  secondary: 'disconnected',
-  default: 'disconnected',
-};
+import { resolveConnectionState } from '../lib/connectionStates.js';
 
 const formatRelativeTime = (date) => {
   if (!date) return '—';
@@ -20,13 +12,6 @@ const formatRelativeTime = (date) => {
   } catch {
     return formatTimestampLabel(date);
   }
-};
-
-export const resolveConnectionState = (statusInfo) => {
-  if (!statusInfo) {
-    return 'disconnected';
-  }
-  return CONNECTION_STATUS_MAP[statusInfo.variant] ?? CONNECTION_STATUS_MAP.default;
 };
 
 export const computeLoadLevel = (metrics = {}, ratePercentage = 0) => {
@@ -51,7 +36,7 @@ export const computeHealthScore = (connectionState, metrics = {}, ratePercentage
   const failed = Number(metrics.failed ?? 0);
   const usage = Number(ratePercentage ?? 0);
 
-  if (connectionState === 'attention') {
+  if (connectionState === 'attention' || connectionState === 'reconnecting') {
     score -= 25;
   }
 
@@ -223,7 +208,7 @@ export const useInstanceMetrics = ({ instanceViewModels, instancesReady }) => {
     if (!instancesReady) {
       return {
         state: 'loading',
-        totals: { connected: 0, attention: 0, disconnected: 0 },
+        totals: { connected: 0, attention: 0, reconnecting: 0, disconnected: 0 },
         queueTotal: 0,
         failureTotal: 0,
         usageAverage: 0,
@@ -236,7 +221,7 @@ export const useInstanceMetrics = ({ instanceViewModels, instancesReady }) => {
     if (enrichedInstances.length === 0) {
       return {
         state: 'empty',
-        totals: { connected: 0, attention: 0, disconnected: 0 },
+        totals: { connected: 0, attention: 0, reconnecting: 0, disconnected: 0 },
         queueTotal: 0,
         failureTotal: 0,
         usageAverage: 0,
@@ -246,7 +231,7 @@ export const useInstanceMetrics = ({ instanceViewModels, instancesReady }) => {
       };
     }
 
-    const totals = { connected: 0, attention: 0, disconnected: 0 };
+    const totals = { connected: 0, attention: 0, reconnecting: 0, disconnected: 0 };
     let queueTotal = 0;
     let failureTotal = 0;
     let usageAccumulator = 0;

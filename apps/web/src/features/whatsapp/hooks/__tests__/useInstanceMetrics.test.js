@@ -52,6 +52,9 @@ describe('useInstanceMetrics', () => {
 
     expect(result.current.providerOptions).toEqual(['Alpha', 'Zeta']);
     expect(result.current.filteredInstances).toHaveLength(2);
+    expect(result.current.enrichedInstances.find((item) => item.instance.id === 'b')?.connectionState).toBe(
+      'reconnecting',
+    );
 
     act(() => result.current.setHealthFilter('baixa'));
     expect(result.current.filteredInstances.map((item) => item.instance.id)).toEqual(['b']);
@@ -59,7 +62,7 @@ describe('useInstanceMetrics', () => {
     act(() => result.current.setProviderFilter('Zeta'));
     expect(result.current.filteredInstances.map((item) => item.instance.id)).toEqual(['a']);
 
-    act(() => result.current.setStatusFilter('attention'));
+    act(() => result.current.setStatusFilter('reconnecting'));
     expect(result.current.filteredInstances.map((item) => item.instance.id)).toEqual(['b']);
     expect(result.current.filtersApplied).toBe(2);
   });
@@ -92,7 +95,7 @@ describe('useInstanceMetrics', () => {
       state: 'ready',
       queueTotal: 111,
       failureTotal: 15,
-      totals: { connected: 2, attention: 0, disconnected: 1 },
+      totals: { connected: 2, attention: 1, reconnecting: 0, disconnected: 0 },
     });
 
     expect(result.current.priorityInstance.instance.id).toBe('b');
