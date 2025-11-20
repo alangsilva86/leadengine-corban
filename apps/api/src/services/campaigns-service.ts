@@ -161,6 +161,23 @@ const computeCampaignMetrics = (
   } as CampaignDTO['metrics'];
 };
 
+const buildCampaignResponses = async (
+  campaigns: CampaignWithInstance[],
+  { metricsFallback }: { metricsFallback?: RawCampaignMetrics } = {}
+): Promise<{ items: CampaignDTO[]; warnings?: CampaignWarning[]; metricsError?: unknown }> => {
+  try {
+    const items = await Promise.all(campaigns.map((campaign) => buildCampaignResponse(campaign)));
+    return { items };
+  } catch (metricsError) {
+    const fallbackMetrics = metricsFallback ?? createEmptyRawMetrics();
+    const items = await Promise.all(
+      campaigns.map((campaign) => buildCampaignResponse(campaign, fallbackMetrics))
+    );
+
+    return { items, warnings: [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }], metricsError };
+  }
+};
+
 const buildCampaignResponse = async (
   campaign: CampaignWithInstance,
   rawMetrics?: RawCampaignMetrics
@@ -180,21 +197,18 @@ const buildCampaignResponseSafely = async (
   campaign: CampaignWithInstance,
   logContext: Record<string, unknown>
 ): Promise<{ data: CampaignDTO; warnings?: CampaignWarning[] }> => {
-  try {
-    return {
-      data: await buildCampaignResponse(campaign),
-    };
-  } catch (metricsError) {
+  const { items, warnings, metricsError } = await buildCampaignResponses([campaign], {
+    metricsFallback: createEmptyRawMetrics(),
+  });
+
+  if (metricsError) {
     logger.warn(`${LOG_CONTEXT} enrich metrics failed`, {
       ...logContext,
       error: toSafeError(metricsError),
     });
-
-    return {
-      data: await buildCampaignResponse(campaign, createEmptyRawMetrics()),
-      warnings: [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }],
-    };
   }
+
+  return { data: items[0], ...(warnings ? { warnings } : {}) };
 };
 
 const canTransition = (from: CampaignStatus, to: CampaignStatus): boolean => {
@@ -275,30 +289,28 @@ const loadCampaignsFromStore = async ({
     take: 100,
   });
 
-  let warnings: CampaignWarning[] | undefined;
+  const { items, warnings, metricsError } = await buildCampaignResponses(campaigns, {
+    metricsFallback: createEmptyRawMetrics(),
+  });
 
-  try {
-    const items = await Promise.all(campaigns.map((campaign) => buildCampaignResponse(campaign)));
-    logger.info(`${LOG_CONTEXT} returning campaigns from store`, {
-      ...logContext,
-      count: items.length,
-    });
-    return { items };
-  } catch (metricsError) {
+  if (metricsError) {
     logger.warn(`${LOG_CONTEXT} metrics enrichment failed, using empty metrics`, {
       ...logContext,
       error: toSafeError(metricsError),
     });
-    warnings = [{ code: 'CAMPAIGN_METRICS_UNAVAILABLE' }];
-    const items = await Promise.all(
-      campaigns.map((campaign) => buildCampaignResponse(campaign, createEmptyRawMetrics()))
-    );
-    logger.info(`${LOG_CONTEXT} returning campaigns from store with fallback metrics`, {
+  }
+
+  logger.info(
+    warnings
+      ? `${LOG_CONTEXT} returning campaigns from store with fallback metrics`
+      : `${LOG_CONTEXT} returning campaigns from store`,
+    {
       ...logContext,
       count: items.length,
-    });
-    return { items, warnings };
-  }
+    }
+  );
+
+  return { items, ...(warnings ? { warnings } : {}) };
 };
 
 export interface ListCampaignsOptions {
