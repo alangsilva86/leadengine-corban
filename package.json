@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "preinstall": "npx -y only-allow pnpm",
+    "postinstall": "pnpm --filter @leadengine/wa-status build",
     "doctor": "node scripts/doctor.mjs",
     "depcheck": "pnpm exec depcheck --skip-missing --ignores=prettier,eslint-config-prettier,eslint-plugin-prettier,@types/node,@typescript-eslint/eslint-plugin,@typescript-eslint/parser",
     "prebuild": "pnpm --filter @ticketz/storage run prisma:generate",
@@ -58,6 +59,7 @@
     "prisma": "5.22.0",
     "socket.io-client": "^4.8.1",
     "ts-prune": "^0.10.3",
+    "tsup": "^8.5.0",
     "tsx": "^4.6.2",
     "typescript": "^5.3.3",
     "typescript-eslint": "^8.18.2"
