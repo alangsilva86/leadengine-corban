@@ -59,7 +59,7 @@ const SelectedInstanceBanner = ({
     summary ??
     {
       state: 'loading',
-      totals: { connected: 0, attention: 0, disconnected: 0 },
+      totals: { connected: 0, attention: 0, reconnecting: 0, disconnected: 0 },
       queueTotal: 0,
       failureTotal: 0,
       usageAverage: 0,

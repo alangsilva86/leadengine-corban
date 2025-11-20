@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
 import { formatMetricValue } from '../lib/formatting';
+import { resolveConnectionState } from '../lib/connectionStates.js';
 
 import {
   Collapsible,
@@ -13,15 +14,6 @@ import {
 import { ChevronDown } from 'lucide-react';
 
 import InstanceActionsMenu from './InstanceActionsMenu.jsx';
-
-const CONNECTION_STATUS_MAP = {
-  success: 'connected',
-  info: 'reconnecting',
-  warning: 'attention',
-  destructive: 'attention',
-  secondary: 'disconnected',
-  default: 'disconnected',
-};
 
 const STATUS_LABEL_MAP = {
   connected: 'Conectado',
@@ -38,14 +30,6 @@ const STATUS_CHIP_STYLES = {
 };
 
 const DEFAULT_STATUS_CODES = ['1', '2', '3', '4', '5'];
-
-const computeConnectionState = (statusInfo) => {
-  if (!statusInfo) {
-    return 'disconnected';
-  }
-
-  return CONNECTION_STATUS_MAP[statusInfo.variant] ?? CONNECTION_STATUS_MAP.default;
-};
 
 const computeLoadLevel = (metrics = {}, ratePercentage = 0) => {
   const queued = Number(metrics.queued ?? 0);
@@ -116,7 +100,7 @@ const InstanceSummaryCard = ({
     isCurrent,
   } = viewModel;
 
-  const connectionState = computeConnectionState(statusInfo);
+  const connectionState = resolveConnectionState(statusInfo);
   const loadLevel = computeLoadLevel(metrics, ratePercentage);
   const statusChipClass = STATUS_CHIP_STYLES[connectionState] ?? STATUS_CHIP_STYLES.disconnected;
 
