@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client';
+import Redis from 'ioredis';
 import type { WhatsAppBrokerInstanceSnapshot } from '../../../services/whatsapp-broker-client';
 import { prisma } from '../../../lib/prisma';
+import { logger } from '../../../config/logger';
 import { logWhatsAppStorageError, hasErrorName, observeStorageLatency } from './errors';
 import type { PrismaTransactionClient } from './types';
 
@@ -11,7 +13,30 @@ const MAX_DISCONNECT_RETRY_JOBS = 20;
 
 export const SYNC_TTL_MS = 30_000; // 30s cooldown for broker sync per tenant unless forced
 
-export type CachedSnapshots = { expiresAt: string; snapshots: WhatsAppBrokerInstanceSnapshot[] };
+export type SnapshotCacheBackendType = 'memory' | 'redis';
+
+export type SnapshotCacheReadResult = {
+  snapshots: WhatsAppBrokerInstanceSnapshot[] | null;
+  hit: boolean;
+  backend: SnapshotCacheBackendType;
+  error?: string;
+};
+
+export type SnapshotCacheWriteResult = {
+  backend: SnapshotCacheBackendType;
+  error?: string;
+};
+
+type SnapshotCacheBackend = {
+  type: SnapshotCacheBackendType;
+  get: (tenantId: string) => Promise<WhatsAppBrokerInstanceSnapshot[] | null>;
+  set: (
+    tenantId: string,
+    snapshots: WhatsAppBrokerInstanceSnapshot[],
+    ttlSeconds: number
+  ) => Promise<void>;
+  invalidate?: (tenantId: string) => Promise<void>;
+};
 
 type MemoryCacheEntry = { expiresAt: number; snapshots: WhatsAppBrokerInstanceSnapshot[] };
 
@@ -41,6 +66,69 @@ const setMemoryCachedSnapshots = (
     expiresAt: Date.now() + ttlSeconds * 1000,
   });
 };
+
+const invalidateMemorySnapshots = (tenantId: string): void => {
+  memorySnapshotCache.delete(tenantId);
+};
+
+const memoryBackend: SnapshotCacheBackend = {
+  type: 'memory',
+  get: async (tenantId) => getMemoryCachedSnapshots(tenantId),
+  set: async (tenantId, snapshots, ttlSeconds) =>
+    setMemoryCachedSnapshots(tenantId, snapshots, ttlSeconds),
+  invalidate: async (tenantId) => invalidateMemorySnapshots(tenantId),
+};
+
+const redisUrl = process.env.WHATSAPP_INSTANCES_CACHE_REDIS_URL ?? process.env.REDIS_URL ?? null;
+const redisClient = redisUrl
+  ? new Redis(redisUrl, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+    })
+  : null;
+
+const ensureRedisConnected = async (): Promise<void> => {
+  if (!redisClient || redisClient.status === 'ready' || redisClient.status === 'connecting') {
+    return;
+  }
+  await redisClient.connect();
+};
+
+const redisBackend: SnapshotCacheBackend | null = redisClient
+  ? {
+      type: 'redis',
+      get: async (tenantId) => {
+        await ensureRedisConnected();
+        const raw = await redisClient.get(`${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw) as {
+          snapshots?: WhatsAppBrokerInstanceSnapshot[];
+        } | null;
+        return parsed?.snapshots ?? null;
+      },
+      set: async (tenantId, snapshots, ttlSeconds) => {
+        await ensureRedisConnected();
+        await redisClient.set(
+          `${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`,
+          JSON.stringify({ snapshots }),
+          'EX',
+          ttlSeconds,
+        );
+      },
+      invalidate: async (tenantId) => {
+        await ensureRedisConnected();
+        await redisClient.del(`${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`);
+      },
+    }
+  : null;
+
+let selectedSnapshotBackend: SnapshotCacheBackend = redisBackend ?? memoryBackend;
+
+export const configureSnapshotCacheBackend = (backend: SnapshotCacheBackend | null): void => {
+  selectedSnapshotBackend = backend ?? memoryBackend;
+};
+
+const getSnapshotBackend = (): SnapshotCacheBackend => selectedSnapshotBackend ?? memoryBackend;
 
 export const getLastSyncAt = async (
   tenantId: string,
@@ -90,123 +178,67 @@ export const setLastSyncAt = async (
   }
 };
 
-export const getCachedSnapshots = async (
-  tenantId: string,
-  client: typeof prisma = prisma
-): Promise<WhatsAppBrokerInstanceSnapshot[] | null> => {
-  const memoryCached = getMemoryCachedSnapshots(tenantId);
-  if (memoryCached) {
-    return memoryCached;
-  }
+export const getCachedSnapshots = async (tenantId: string): Promise<SnapshotCacheReadResult> => {
+  const backend = getSnapshotBackend();
 
-  const key = `${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`;
-  const startedAt = Date.now();
   try {
-    const rec = await client.integrationState.findUnique({ where: { key }, select: { value: true } });
-    if (!rec?.value || typeof rec.value !== 'object' || rec.value === null) return null;
-    const v = rec.value as Record<string, unknown>;
-    const expiresAt = typeof v.expiresAt === 'string' ? Date.parse(v.expiresAt) : NaN;
-    if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return null;
-    const raw = (v.snapshots ?? null) as unknown;
-    const snapshots = Array.isArray(raw) ? (raw as WhatsAppBrokerInstanceSnapshot[]) : null;
-    observeStorageLatency('getCachedSnapshots', startedAt, 'success', {
-      tenantId,
-      operationType: 'snapshot.read',
-    });
-    return snapshots;
+    const snapshots = await backend.get(tenantId);
+    return { snapshots, hit: !!snapshots, backend: backend.type } satisfies SnapshotCacheReadResult;
   } catch (error) {
-    observeStorageLatency('getCachedSnapshots', startedAt, 'failure', {
-      tenantId,
-      operationType: 'snapshot.read',
-    });
-    if (logWhatsAppStorageError('getCachedSnapshots', error, { tenantId, key })) {
-      return null;
+    const message = error instanceof Error ? error.message : 'unknown-error';
+    logger.warn('whatsapp.instances.snapshotCache.readFailure', { tenantId, backend: backend.type, error: message });
+    if (backend.type !== 'memory') {
+      invalidateMemorySnapshots(tenantId);
     }
-    throw error;
+    return { snapshots: null, hit: false, backend: backend.type, error: message } satisfies SnapshotCacheReadResult;
   }
 };
 
 export const setCachedSnapshots = async (
   tenantId: string,
   snapshots: WhatsAppBrokerInstanceSnapshot[],
-  ttlSeconds = 30,
-  client: typeof prisma = prisma
-): Promise<void> => {
-  const key = `${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`;
-  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
-  const value: Prisma.JsonObject = { expiresAt, snapshots: snapshots as unknown as Prisma.JsonArray };
+  ttlSeconds = 30
+): Promise<SnapshotCacheWriteResult> => {
+  const backend = getSnapshotBackend();
   setMemoryCachedSnapshots(tenantId, snapshots, ttlSeconds);
-  const startedAt = Date.now();
+
   try {
-    await client.integrationState.upsert({
-      where: { key },
-      update: { value },
-      create: { key, value },
-    });
-    observeStorageLatency('setCachedSnapshots', startedAt, 'success', {
-      tenantId,
-      operationType: 'snapshot.write',
-    });
+    await backend.set(tenantId, snapshots, ttlSeconds);
+    return { backend: backend.type } satisfies SnapshotCacheWriteResult;
   } catch (error) {
-    observeStorageLatency('setCachedSnapshots', startedAt, 'failure', {
-      tenantId,
-      operationType: 'snapshot.write',
-    });
-    if (logWhatsAppStorageError('setCachedSnapshots', error, { tenantId, key })) {
-      return;
+    const message = error instanceof Error ? error.message : 'unknown-error';
+    logger.warn('whatsapp.instances.snapshotCache.writeFailure', { tenantId, backend: backend.type, error: message });
+    return { backend: backend.type, error: message } satisfies SnapshotCacheWriteResult;
+  }
+};
+
+export const invalidateCachedSnapshots = async (
+  tenantId: string
+): Promise<SnapshotCacheWriteResult> => {
+  const backend = getSnapshotBackend();
+  invalidateMemorySnapshots(tenantId);
+  try {
+    if (backend.invalidate) {
+      await backend.invalidate(tenantId);
     }
-    throw error;
+    return { backend: backend.type } satisfies SnapshotCacheWriteResult;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown-error';
+    logger.warn('whatsapp.instances.snapshotCache.invalidateFailure', {
+      tenantId,
+      backend: backend.type,
+      error: message,
+    });
+    return { backend: backend.type, error: message } satisfies SnapshotCacheWriteResult;
   }
 };
 
 export const removeCachedSnapshot = async (
   tenantId: string,
-  instanceId: string,
-  brokerId?: string | null,
-  client: typeof prisma = prisma
+  _instanceId: string,
+  _brokerId?: string | null
 ): Promise<void> => {
-  const snapshots = await getCachedSnapshots(tenantId, client);
-  if (!snapshots?.length) {
-    return;
-  }
-
-  const normalizedInstanceId = instanceId.trim().toLowerCase();
-  const normalizedBrokerId = brokerId?.trim().toLowerCase();
-
-  const filtered = snapshots.filter((snapshot) => {
-    const rawId = snapshot.instance?.id ?? '';
-    const normalized = typeof rawId === 'string' ? rawId.trim().toLowerCase() : '';
-    if (normalized && normalized === normalizedInstanceId) {
-      return false;
-    }
-    if (normalizedBrokerId && normalized && normalized === normalizedBrokerId) {
-      return false;
-    }
-    return true;
-  });
-
-  if (filtered.length === snapshots.length) {
-    return;
-  }
-
-  const startedAt = Date.now();
-  try {
-    await setCachedSnapshots(tenantId, filtered, 30, client);
-    observeStorageLatency('removeCachedSnapshot', startedAt, 'success', {
-      tenantId,
-      instanceId,
-      operationType: 'snapshot.write',
-    });
-  } catch (error) {
-    observeStorageLatency('removeCachedSnapshot', startedAt, 'failure', {
-      tenantId,
-      instanceId,
-      operationType: 'snapshot.write',
-    });
-    if (!logWhatsAppStorageError('removeCachedSnapshot', error, { tenantId, instanceId, brokerId })) {
-      throw error;
-    }
-  }
+  await invalidateCachedSnapshots(tenantId);
 };
 
 type WhatsAppDisconnectRetryJob = {
