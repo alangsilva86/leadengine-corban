@@ -23,6 +23,11 @@ const SectionFallback = () => (
 
 const DialogFallback = () => null;
 
+type OnboardingStage = {
+  id: string;
+  label: string;
+};
+
 type WhatsAppCampaignsProps = Parameters<typeof useWhatsAppConnect>[0] & {
   onNavigateStage?: (stageId: string) => void;
 };
@@ -66,7 +71,7 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
   } = useWhatsAppConnect(props);
 
   const backLabel = 'Voltar';
-  const fallbackSteps = useMemo(
+  const fallbackSteps = useMemo<OnboardingStage[]>(
     () => [
       { id: 'channels', label: 'Instâncias & Canais' },
       { id: 'campaigns', label: 'Campanhas' },
@@ -75,7 +80,9 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
     []
   );
 
-  const resolvedSteps = props?.onboarding?.stages?.length ? props.onboarding.stages : fallbackSteps;
+  const resolvedSteps: OnboardingStage[] = props?.onboarding?.stages?.length
+    ? (props.onboarding.stages as OnboardingStage[])
+    : fallbackSteps;
   const activeStepIndex = props?.onboarding?.activeStep ?? 1;
   const currentStage = resolvedSteps[activeStepIndex] ?? resolvedSteps[1] ?? resolvedSteps[0];
   const stageObjectives: Record<string, string> = {
@@ -167,7 +174,7 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
         <Separator className="section-divider" />
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2 text-sm">
-            {resolvedSteps.map((step, index) => {
+            {resolvedSteps.map((step: OnboardingStage, index: number) => {
               const status = index < activeStepIndex ? 'done' : index === activeStepIndex ? 'current' : 'todo';
 
               return (
@@ -246,14 +253,14 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
           error={campaignError}
           onRefresh={() => void reloadCampaigns()}
           onCreateClick={() => setCreateCampaignOpen(true)}
-          onPause={(target) => void updateCampaignStatus(target, 'paused')}
-          onActivate={(target) => void updateCampaignStatus(target, 'active')}
-          onDelete={(target) => void deleteCampaign(target)}
-          onReassign={(target) => {
+          onPause={(target: any) => void updateCampaignStatus(target, 'paused')}
+          onActivate={(target: any) => void updateCampaignStatus(target, 'active')}
+          onDelete={(target: any) => void deleteCampaign(target)}
+          onReassign={(target: any) => {
             setPendingReassign(target);
             setReassignIntent('reassign');
           }}
-          onDisconnect={(target) => {
+          onDisconnect={(target: any) => {
             setPendingReassign(target);
             setReassignIntent('disconnect');
           }}
@@ -278,7 +285,7 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
       <Suspense fallback={<DialogFallback />}>
         <ReassignCampaignDialog
           open={Boolean(pendingReassign)}
-          onClose={(value) => {
+          onClose={(value: boolean) => {
             if (!value) {
               setPendingReassign(null);
             }
@@ -287,7 +294,7 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
           instances={renderInstances}
           fetchImpact={fetchCampaignImpact}
           intent={reassignIntent}
-          onSubmit={async ({ instanceId }) => {
+          onSubmit={async ({ instanceId }: { instanceId?: string | null }) => {
             if (!pendingReassign) {
               return;
             }

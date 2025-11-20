@@ -169,6 +169,7 @@ export interface UseWhatsAppConnectParams {
   onStatusChange?: (status: string) => void;
   onCampaignReady?: (campaign: any | null) => void;
   onBack?: () => void;
+  onContinue?: () => void;
 }
 
 const readShowAllPreference = () => {
@@ -225,6 +226,7 @@ const useWhatsAppConnect = ({
   onStatusChange,
   onCampaignReady,
   onBack,
+  onContinue,
 }: UseWhatsAppConnectParams) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
   const [state, dispatch] = useReducer(reducer, initialState(status, activeCampaign));
@@ -453,6 +455,8 @@ const useWhatsAppConnect = ({
   const agreementDisplayName = agreementName ?? 'Nenhuma origem vinculada';
   const hasCampaign = Boolean(campaign);
   const isAuthenticated = hookIsAuthenticated;
+  const confirmLabel = hasCampaign ? 'Ir para a Inbox' : 'Continuar';
+  const confirmDisabled = !canContinue;
   
   const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
@@ -751,6 +755,9 @@ const useWhatsAppConnect = ({
     stepLabel,
     onboardingDescription,
     canCreateCampaigns,
+    confirmLabel,
+    confirmDisabled,
+    onContinue,
   }; 
 };
 
