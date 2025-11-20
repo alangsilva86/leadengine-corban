@@ -555,11 +555,13 @@ const CreateCampaignWizard = ({
         instanceId: formState.instanceId,
         agreementId: formState.agreementId,
         agreementName: formState.agreementName,
+        leadSource: formState.leadSource,
         product: formState.product,
         margin: Number(formState.margin),
         strategy: formState.strategy,
         leadSource: formState.leadSource,
         segments: normalizedSegments,
+        segments: Array.from(new Set(formState.segments)),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Não foi possível criar a campanha.';

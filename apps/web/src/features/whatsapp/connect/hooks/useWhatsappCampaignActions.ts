@@ -126,6 +126,7 @@ const useWhatsappCampaignActions = ({
       instanceId,
       agreementId,
       agreementName,
+      leadSource,
       product,
       margin,
       strategy,
@@ -137,9 +138,11 @@ const useWhatsappCampaignActions = ({
       instanceId: string;
       agreementId: string;
       agreementName: string;
+      leadSource: string;
       product: string;
       margin: number;
       strategy: string;
+      segments?: string[];
       status?: string;
       leadSource: string;
       segments?: string[];
@@ -149,6 +152,7 @@ const useWhatsappCampaignActions = ({
         instanceId,
         agreementId,
         agreementName,
+        leadSource,
         product,
         margin,
         strategy,
@@ -195,6 +199,7 @@ const useWhatsappCampaignActions = ({
             resolvedAgreementName ||
             `${resolvedAgreementId} • ${parsed.data.instanceId}`,
           status: parsed.data.status,
+          leadSource: parsed.data.leadSource,
           productType: parsed.data.productType,
           marginType: parsed.data.marginType,
           marginValue: parsed.data.marginValue,
