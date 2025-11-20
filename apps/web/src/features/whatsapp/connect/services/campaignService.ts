@@ -35,6 +35,8 @@ export interface CreateCampaignPayload {
   segments?: string[];
   tags?: string[];
   strategy?: string | null;
+  leadSource?: string;
+  segments?: string[];
 }
 
 export async function createCampaign(payload: CreateCampaignPayload) {

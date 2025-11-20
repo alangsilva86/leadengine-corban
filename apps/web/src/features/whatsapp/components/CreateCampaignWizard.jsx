@@ -541,6 +541,14 @@ const CreateCampaignWizard = ({
     setIsSubmitting(true);
 
     try {
+      const normalizedSegments = Array.from(
+        new Set(
+          (Array.isArray(formState.segments) ? formState.segments : [])
+            .map((segment) => (typeof segment === 'string' ? segment.trim() : ''))
+            .filter(Boolean),
+        ),
+      );
+
       await onSubmit?.({
         name: formState.name.trim(),
         status: formState.status,
@@ -551,6 +559,8 @@ const CreateCampaignWizard = ({
         product: formState.product,
         margin: Number(formState.margin),
         strategy: formState.strategy,
+        leadSource: formState.leadSource,
+        segments: normalizedSegments,
         segments: Array.from(new Set(formState.segments)),
       });
     } catch (error) {
