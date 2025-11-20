@@ -16,7 +16,7 @@ import InstanceActionsMenu from './InstanceActionsMenu.jsx';
 
 const CONNECTION_STATUS_MAP = {
   success: 'connected',
-  info: 'attention',
+  info: 'reconnecting',
   warning: 'attention',
   destructive: 'attention',
   secondary: 'disconnected',
@@ -25,12 +25,14 @@ const CONNECTION_STATUS_MAP = {
 
 const STATUS_LABEL_MAP = {
   connected: 'Conectado',
+  reconnecting: 'Reconectando',
   attention: 'Atenção',
   disconnected: 'Desconectado',
 };
 
 const STATUS_CHIP_STYLES = {
   connected: 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40',
+  reconnecting: 'bg-amber-500/10 text-amber-300 border border-amber-500/40',
   attention: 'bg-amber-500/10 text-amber-300 border border-amber-500/40',
   disconnected: 'bg-rose-500/10 text-rose-300 border border-rose-500/40',
 };
