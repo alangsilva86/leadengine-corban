@@ -465,11 +465,29 @@ export interface InstanceStatusInfo {
   variant: string;
 }
 
-export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
+export const resolveNormalizedInstanceStatus = (instance: unknown): string => {
   const record = isPlainRecord(instance) ? instance : {};
   const resolvedStatus = resolveInstanceStatus(instance);
   const normalizedResolvedStatus =
     typeof resolvedStatus === 'string' ? resolvedStatus.toLowerCase() : null;
+
+  const isExplicitlyConnected = record.connected === true;
+  const isExplicitlyDisconnected = record.connected === false;
+
+  if (isExplicitlyConnected) {
+    return 'connected';
+  }
+
+  if (isExplicitlyDisconnected) {
+    return 'disconnected';
+  }
+
+  return normalizedResolvedStatus || 'disconnected';
+};
+
+export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
+  const record = isPlainRecord(instance) ? instance : {};
+  const normalizedStatus = resolveNormalizedInstanceStatus(instance);
   const statusMap: Record<string, InstanceStatusInfo> = {
     connected: { label: 'Conectado', variant: 'success' },
     connecting: { label: 'Conectando', variant: 'info' },
@@ -481,29 +499,9 @@ export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
     error: { label: 'Erro', variant: 'destructive' },
   };
 
-  const isExplicitlyConnected = record.connected === true;
-  const isExplicitlyDisconnected = record.connected === false;
-
-  const normalizedStatus = (() => {
-    const statusKey = normalizedResolvedStatus;
-    if (statusKey && statusMap[statusKey]) {
-      return statusKey;
-    }
-
-    if (isExplicitlyConnected) {
-      return 'connected';
-    }
-
-    if (isExplicitlyDisconnected) {
-      return 'disconnected';
-    }
-
-    return statusKey || 'disconnected';
-  })();
-
   return statusMap[normalizedStatus] || {
     label: normalizedStatus || 'Indefinido',
-    variant: isExplicitlyConnected ? 'success' : 'secondary',
+    variant: record.connected === true ? 'success' : 'secondary',
   };
 };
 

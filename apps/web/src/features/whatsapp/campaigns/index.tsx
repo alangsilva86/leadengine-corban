@@ -60,6 +60,9 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
     nextStage,
     stepLabel,
     onboardingDescription,
+    realtimeConnected,
+    connectionStatus,
+    connectionHealthy,
   } = useWhatsAppConnect(props);
 
   const backLabel = 'Voltar';
@@ -86,7 +89,20 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
   const hasCampaigns = (campaigns?.length ?? 0) > 0;
   const primaryAction = hasCampaigns ? 'continue' : 'create';
   const primaryLabel = hasCampaigns ? confirmLabel ?? 'Continuar' : 'Criar campanha';
-  const isPrimaryDisabled = hasCampaigns ? confirmDisabled : false;
+  const isPrimaryDisabled = hasCampaigns ? confirmDisabled || !connectionHealthy : !connectionHealthy;
+
+  const connectionBlockedMessage = connectionHealthy
+    ? null
+    : realtimeConnected
+      ? 'Conecte uma instância ativa e com tempo real para gerenciar as campanhas.'
+      : 'Tempo real está offline. Reative a conexão para gerenciar as campanhas.';
+
+  const statusBadgeTone = connectionHealthy ? statusTone : 'warning';
+  const statusBadgeLabel = connectionHealthy
+    ? statusCopy.badge
+    : connectionStatus === 'connected'
+      ? 'Tempo real offline'
+      : 'Desconectado';
 
   const handlePrimaryAction = () => {
     if (primaryAction === 'create') {
@@ -138,8 +154,8 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
                 Instância ativa · {selectedInstance.name ?? selectedInstance.id}
               </Badge>
             ) : null}
-            <Badge variant="status" tone={statusTone as any} className="gap-2 text-xs font-medium uppercase">
-              {statusCopy.badge}
+            <Badge variant="status" tone={statusBadgeTone as any} className="gap-2 text-xs font-medium uppercase">
+              {statusBadgeLabel}
             </Badge>
           </div>
         </div>
@@ -195,6 +211,12 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
           </div>
         </div>
       </header>
+
+      {connectionBlockedMessage ? (
+        <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
+          {connectionBlockedMessage}
+        </NoticeBanner>
+      ) : null}
 
       {persistentWarning ? (
         <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>

@@ -197,4 +197,6 @@ export interface InstancesStoreBundle {
   store: StoreApi<InstancesStoreState>;
   events: StoreEvents;
   deps: InstancesStoreDependencies;
+  selectRealtimeConnected: (state: InstancesStoreState) => boolean;
+  selectSelectedInstanceStatus: (state: InstancesStoreState) => string;
 }

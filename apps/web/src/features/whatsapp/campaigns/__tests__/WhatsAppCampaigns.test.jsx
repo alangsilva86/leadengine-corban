@@ -5,6 +5,8 @@ import { Suspense } from 'react';
 
 import WhatsAppCampaigns from '../index';
 
+const useWhatsAppConnectMock = vi.fn();
+
 const setCreateCampaignOpenMock = vi.fn();
 const reloadCampaignsMock = vi.fn();
 const updateCampaignStatusMock = vi.fn();
@@ -17,48 +19,53 @@ const onNavigateStageMock = vi.fn();
 
 const stubCampaign = { id: 'campaign-1', name: 'Campanha Demo' };
 
+const defaultHookValue = {
+  statusCopy: { badge: 'Operacional' },
+  statusTone: 'success',
+  confirmLabel: 'Ir para a Inbox',
+  confirmDisabled: false,
+  onBack: vi.fn(),
+  onContinue: onContinueMock,
+  campaigns: [stubCampaign],
+  campaignsLoading: false,
+  campaignError: null,
+  campaignAction: null,
+  reloadCampaigns: reloadCampaignsMock,
+  updateCampaignStatus: updateCampaignStatusMock,
+  deleteCampaign: deleteCampaignMock,
+  reassignCampaign: reassignCampaignMock,
+  canCreateCampaigns: true,
+  selectedAgreement: { id: 'agreement-1', name: 'Convênio XPTO' },
+  selectedInstance: { id: 'instance-1', name: 'Instância A' },
+  setCreateCampaignOpen: setCreateCampaignOpenMock,
+  isCreateCampaignOpen: false,
+  createCampaign: vi.fn(),
+  renderInstances: [{ id: 'instance-1', name: 'Instância A', connected: true }],
+  setPendingReassign: setPendingReassignMock,
+  pendingReassign: null,
+  setReassignIntent: setReassignIntentMock,
+  reassignIntent: 'reassign',
+  fetchCampaignImpact: vi.fn(),
+  agreementName: 'Convênio XPTO',
+  persistentWarning: 'Os leads continuam chegando normalmente.',
+  nextStage: 'Inbox',
+  stepLabel: 'Passo 3 de 5',
+  onboardingDescription: 'Configure campanhas para distribuir os leads.',
+  realtimeConnected: true,
+  connectionStatus: 'connected',
+  connectionHealthy: true,
+};
+
 vi.mock('../../connect/useWhatsAppConnect', () => ({
   __esModule: true,
-  default: vi.fn(() => ({
-    statusCopy: { badge: 'Operacional' },
-    statusTone: 'success',
-    confirmLabel: 'Ir para a Inbox',
-    confirmDisabled: false,
-    onBack: vi.fn(),
-    onContinue: onContinueMock,
-    campaigns: [stubCampaign],
-    campaignsLoading: false,
-    campaignError: null,
-    campaignAction: null,
-    reloadCampaigns: reloadCampaignsMock,
-    updateCampaignStatus: updateCampaignStatusMock,
-    deleteCampaign: deleteCampaignMock,
-    reassignCampaign: reassignCampaignMock,
-    canCreateCampaigns: true,
-    selectedAgreement: { id: 'agreement-1', name: 'Convênio XPTO' },
-    selectedInstance: { id: 'instance-1', name: 'Instância A' },
-    setCreateCampaignOpen: setCreateCampaignOpenMock,
-    isCreateCampaignOpen: false,
-    createCampaign: vi.fn(),
-    renderInstances: [{ id: 'instance-1', name: 'Instância A', connected: true }],
-    setPendingReassign: setPendingReassignMock,
-    pendingReassign: null,
-    setReassignIntent: setReassignIntentMock,
-    reassignIntent: 'reassign',
-    fetchCampaignImpact: vi.fn(),
-    agreementName: 'Convênio XPTO',
-    persistentWarning: 'Os leads continuam chegando normalmente.',
-    nextStage: 'Inbox',
-    stepLabel: 'Passo 3 de 5',
-    onboardingDescription: 'Configure campanhas para distribuir os leads.',
-  })),
+  default: useWhatsAppConnectMock,
 }));
 
 vi.mock('../../components/CampaignsPanel.jsx', () => ({
   __esModule: true,
   default: (props) => (
     <div data-testid="campaigns-panel">
-      <button type="button" onClick={props.onCreateClick}>
+      <button type="button" onClick={props.onCreateClick} disabled={!props.canCreateCampaigns}>
         Nova campanha
       </button>
       <button type="button" onClick={() => props.onReassign(stubCampaign)}>
@@ -99,6 +106,7 @@ vi.mock('../../components/ReassignCampaignDialog.jsx', () => ({
 
 describe('WhatsAppCampaigns', () => {
   beforeEach(() => {
+    useWhatsAppConnectMock.mockReturnValue({ ...defaultHookValue });
     setCreateCampaignOpenMock.mockClear();
     reloadCampaignsMock.mockClear();
     updateCampaignStatusMock.mockClear();
@@ -155,5 +163,29 @@ describe('WhatsAppCampaigns', () => {
 
     fireEvent.click(await screen.findByText('Inbox'));
     expect(onNavigateStageMock).toHaveBeenCalledWith('inbox');
+  });
+
+  it('shows a warning and disables actions when the connection is offline', async () => {
+    useWhatsAppConnectMock.mockReturnValue({
+      ...defaultHookValue,
+      realtimeConnected: false,
+      connectionStatus: 'disconnected',
+      connectionHealthy: false,
+      canCreateCampaigns: false,
+      statusCopy: { badge: 'Pendente' },
+    });
+
+    render(
+      <Suspense fallback={<span>loading</span>}>
+        <WhatsAppCampaigns />
+      </Suspense>,
+    );
+
+    expect(
+      await screen.findByText('Tempo real está offline. Reative a conexão para gerenciar as campanhas.'),
+    ).toBeInTheDocument();
+
+    expect(screen.getByRole('button', { name: 'Nova campanha' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Ir para a Inbox|Continuar/ })).toBeDisabled();
   });
 });
