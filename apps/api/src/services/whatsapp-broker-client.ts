@@ -231,6 +231,7 @@ export type BrokerRequestOptions = {
   timeoutMs?: number;
   searchParams?: Record<string, string | number | undefined>;
   idempotencyKey?: string;
+  tenantId?: string;
 };
 
 export type WhatsAppBrokerResolvedConfig = {
@@ -284,7 +285,9 @@ export const resolveWhatsAppBrokerConfig = (): WhatsAppBrokerResolvedConfig => {
     );
   }
 
-  const missing = Object.entries({ baseUrl, apiKey, verifyToken })
+  const resolvedVerifyToken = verifyToken ?? apiKey ?? null;
+
+  const missing = Object.entries({ baseUrl, apiKey, verifyToken: resolvedVerifyToken })
     .filter(([, value]) => !value)
     .map(([key]) => REQUIRED_ENV_VARS[key as keyof typeof REQUIRED_ENV_VARS]);
 
@@ -298,12 +301,20 @@ export const resolveWhatsAppBrokerConfig = (): WhatsAppBrokerResolvedConfig => {
   }
 
   const normalizedBaseUrl = normalizeBrokerBaseUrl(baseUrl!);
+  const normalizedVerifyToken = resolvedVerifyToken!;
+
+  if (!verifyToken && resolvedVerifyToken) {
+    logger.warn('whatsapp.broker.verifyToken.fallback', {
+      reason: 'missing',
+      fallback: 'apiKey',
+    });
+  }
 
   return {
     baseUrl: normalizedBaseUrl,
     apiKey: apiKey!,
     webhookUrl,
-    verifyToken: verifyToken!,
+    verifyToken: normalizedVerifyToken,
     timeoutMs,
   };
 };
@@ -431,6 +442,10 @@ const ensureBrokerHeaders = (
   }
 
   headers.set('X-API-Key', options.apiKey ?? config.apiKey);
+
+  if (options.tenantId) {
+    headers.set('X-Tenant-Id', options.tenantId);
+  }
 
   if (options.idempotencyKey && !headers.has('Idempotency-Key')) {
     headers.set('Idempotency-Key', options.idempotencyKey);
@@ -1323,7 +1338,7 @@ class WhatsAppBrokerClient {
     const normalizedTenantId =
       typeof tenantId === 'string' ? tenantId.trim() : '';
     const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
-      ? { searchParams: { tenantId: normalizedTenantId } }
+      ? { searchParams: { tenantId: normalizedTenantId }, tenantId: normalizedTenantId }
       : {};
 
     const response = await this.request<unknown>(
@@ -1382,6 +1397,11 @@ class WhatsAppBrokerClient {
   }): Promise<WhatsAppInstance> {
     const config = this.resolveConfig();
 
+    const normalizedTenantId = typeof args.tenantId === 'string' ? args.tenantId.trim() : '';
+    const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
+      ? { searchParams: { tenantId: normalizedTenantId }, tenantId: normalizedTenantId }
+      : {};
+
     const requestedInstanceId = (() => {
       const explicitId = typeof args.instanceId === 'string' ? args.instanceId.trim() : '';
       if (explicitId.length > 0) {
@@ -1409,7 +1429,7 @@ class WhatsAppBrokerClient {
           webhookUrl,
           verifyToken: config.verifyToken,
         }),
-      });
+      }, requestOptions);
     } catch (error) {
       logger.warn('Unable to create WhatsApp instance via broker', {
         tenantId: args.tenantId,
