@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   ensureArrayOfObjects,
+  getStatusInfo,
   normalizeInstanceRecord,
   normalizeInstancesCollection,
   parseInstancesPayload,
   resolveInstanceStatus,
+  shouldDisplayInstance,
 } from '../instances.js';
 
 const sampleInstance = {
@@ -102,5 +104,16 @@ describe('WhatsApp instances helpers', () => {
       sampleInstance,
       { id: 'B' },
     ]);
+  });
+
+  it('normalizes resolved status to display correct info even when uppercase', () => {
+    const info = getStatusInfo({ status: 'CONNECTED', connected: false });
+
+    expect(info).toMatchObject({ label: 'Conectado', variant: 'success' });
+  });
+
+  it('uses normalized status when deciding visibility', () => {
+    expect(shouldDisplayInstance({ status: 'RECONNECTING' })).toBe(true);
+    expect(shouldDisplayInstance({ status: 'UNKNOWN' })).toBe(false);
   });
 });
