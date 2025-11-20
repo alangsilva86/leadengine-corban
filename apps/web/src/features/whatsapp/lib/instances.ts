@@ -1,3 +1,4 @@
+import { normalizeWhatsAppStatus } from '@leadengine/wa-status';
 import { normalizeQrPayload as normalizeQrPayloadContract } from '@ticketz/wa-contracts';
 import { extractQrPayload } from '../utils/qr.js';
 
@@ -162,14 +163,14 @@ export const normalizeInstanceRecord = (entry: unknown): NormalizedInstance | nu
       mergedMetadata.state,
     ) ?? null;
 
-  const normalizedStatus = rawStatus ? rawStatus.toLowerCase() : null;
-
   const connectedValue =
     typeof base.connected === 'boolean'
       ? base.connected
       : typeof mergedMetadata.connected === 'boolean'
         ? mergedMetadata.connected
-        : normalizedStatus === 'connected';
+        : undefined;
+
+  const normalizedStatusResult = normalizeWhatsAppStatus({ status: rawStatus, connected: connectedValue });
 
   const tenantId =
     pickStringValue(
@@ -211,8 +212,6 @@ export const normalizeInstanceRecord = (entry: unknown): NormalizedInstance | nu
     pickStringValue(base.source, mergedMetadata.source, mergedMetadata.origin, base.origin) ??
     (looksLikeWhatsAppJid(id) ? 'broker' : 'db');
 
-  const statusValue = normalizedStatus || (connectedValue ? 'connected' : 'disconnected');
-
   return {
     ...base,
     metadata: mergedMetadata,
@@ -220,8 +219,8 @@ export const normalizeInstanceRecord = (entry: unknown): NormalizedInstance | nu
     tenantId,
     name,
     phoneNumber,
-    status: statusValue,
-    connected: Boolean(connectedValue),
+    status: normalizedStatusResult.status,
+    connected: normalizedStatusResult.connected,
     displayId: formatInstanceDisplayId(id),
     source,
   };
@@ -463,13 +462,13 @@ export const resolveInstanceStatus = (instance: unknown): string | null => {
 export interface InstanceStatusInfo {
   label: string;
   variant: string;
+  status?: string;
+  connected?: boolean;
 }
 
 export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
   const record = isPlainRecord(instance) ? instance : {};
   const resolvedStatus = resolveInstanceStatus(instance);
-  const normalizedResolvedStatus =
-    typeof resolvedStatus === 'string' ? resolvedStatus.toLowerCase() : null;
   const statusMap: Record<string, InstanceStatusInfo> = {
     connected: { label: 'Conectado', variant: 'success' },
     connecting: { label: 'Conectando', variant: 'info' },
@@ -481,30 +480,17 @@ export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
     error: { label: 'Erro', variant: 'destructive' },
   };
 
-  const isExplicitlyConnected = record.connected === true;
-  const isExplicitlyDisconnected = record.connected === false;
+  const normalizedStatus = normalizeWhatsAppStatus({
+    status: resolvedStatus,
+    connected: typeof record.connected === 'boolean' ? record.connected : undefined,
+  });
 
-  const normalizedStatus = (() => {
-    const statusKey = normalizedResolvedStatus;
-    if (statusKey && statusMap[statusKey]) {
-      return statusKey;
-    }
-
-    if (isExplicitlyConnected) {
-      return 'connected';
-    }
-
-    if (isExplicitlyDisconnected) {
-      return 'disconnected';
-    }
-
-    return statusKey || 'disconnected';
-  })();
-
-  return statusMap[normalizedStatus] || {
-    label: normalizedStatus || 'Indefinido',
-    variant: isExplicitlyConnected ? 'success' : 'secondary',
+  const baseInfo = statusMap[normalizedStatus.status] ?? {
+    label: normalizedStatus.status || 'Indefinido',
+    variant: normalizedStatus.connected ? 'success' : 'secondary',
   };
+
+  return { ...baseInfo, status: normalizedStatus.status, connected: normalizedStatus.connected };
 };
 
 export const resolveInstancePhone = (instance: unknown): string => {

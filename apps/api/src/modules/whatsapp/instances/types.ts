@@ -14,7 +14,7 @@ export type NormalizedInstance = {
   id: string;
   tenantId: string | null;
   name: string | null;
-  status: 'connected' | 'connecting' | 'disconnected' | 'qr_required' | 'error' | 'pending' | 'failed';
+  status: 'connected' | 'connecting' | 'reconnecting' | 'disconnected' | 'qr_required' | 'error' | 'pending' | 'failed';
   connected: boolean;
   createdAt: string | null;
   lastActivity: string | null;
