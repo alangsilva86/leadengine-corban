@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../../lib/prisma';
 import type { NormalizedInstance, PrismaTransactionClient, StoredInstance } from './types';
-import { logWhatsAppStorageError } from './errors';
+import { logWhatsAppStorageError, observeStorageLatency } from './errors';
 
 const WHATSAPP_INSTANCE_ARCHIVE_KEY_PREFIX = 'whatsapp:instance:archive:';
 
@@ -109,13 +109,24 @@ export const archiveInstanceSnapshot = async (
   }
 
   for (const target of targets) {
+    const startedAt = Date.now();
     try {
       await client.integrationState.upsert({
         where: { key: target.key },
         update: { value: target.value },
         create: { key: target.key, value: target.value },
       });
+      observeStorageLatency('archiveInstanceSnapshot', startedAt, 'success', {
+        tenantId,
+        instanceId: stored.id,
+        operationType: 'snapshot.write',
+      });
     } catch (error) {
+      observeStorageLatency('archiveInstanceSnapshot', startedAt, 'failure', {
+        tenantId,
+        instanceId: stored.id,
+        operationType: 'snapshot.write',
+      });
       if (!logWhatsAppStorageError('archiveInstanceSnapshot', error, { tenantId, key: target.key, instanceId: stored.id })) {
         throw error;
       }
@@ -167,13 +178,24 @@ export const archiveDetachedInstance = async (
   }
 
   for (const target of targets) {
+    const startedAt = Date.now();
     try {
       await prisma.integrationState.upsert({
         where: { key: target.key },
         update: { value: target.value },
         create: { key: target.key, value: target.value },
       });
+      observeStorageLatency('archiveDetachedInstance', startedAt, 'success', {
+        tenantId,
+        instanceId: normalizedInstanceId,
+        operationType: 'snapshot.write',
+      });
     } catch (error) {
+      observeStorageLatency('archiveDetachedInstance', startedAt, 'failure', {
+        tenantId,
+        instanceId: normalizedInstanceId,
+        operationType: 'snapshot.write',
+      });
       if (!logWhatsAppStorageError('archiveDetachedInstance', error, { tenantId, key: target.key, instanceId: normalizedInstanceId })) {
         throw error;
       }
@@ -203,12 +225,21 @@ export const readInstanceArchives = async (
   const keys = normalizedIds.map((value) => `${keyPrefix}${value}`);
 
   let rows;
+  const startedAt = Date.now();
   try {
     rows = await prisma.integrationState.findMany({
       where: { key: { in: keys } },
       select: { key: true, value: true },
     });
+    observeStorageLatency('readInstanceArchives', startedAt, 'success', {
+      tenantId,
+      operationType: 'snapshot.read',
+    });
   } catch (error) {
+    observeStorageLatency('readInstanceArchives', startedAt, 'failure', {
+      tenantId,
+      operationType: 'snapshot.read',
+    });
     if (logWhatsAppStorageError('readInstanceArchives', error, { tenantId, keysCount: keys.length })) {
       return new Map();
     }
@@ -269,9 +300,20 @@ export const clearInstanceArchive = async (
   for (const instanceId of normalizedIds) {
     const key = buildInstanceArchiveKey(tenantId, instanceId);
 
+    const startedAt = Date.now();
     try {
       await prisma.integrationState.delete({ where: { key } });
+      observeStorageLatency('clearInstanceArchive', startedAt, 'success', {
+        tenantId,
+        instanceId,
+        operationType: 'snapshot.write',
+      });
     } catch (error) {
+      observeStorageLatency('clearInstanceArchive', startedAt, 'failure', {
+        tenantId,
+        instanceId,
+        operationType: 'snapshot.write',
+      });
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         continue;
       }

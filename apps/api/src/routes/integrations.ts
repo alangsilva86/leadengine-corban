@@ -157,7 +157,14 @@ router.post(
         return;
       }
 
-      if (respondWhatsAppStorageUnavailable(res, error)) {
+      if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId: parsedBody.data.id ?? parsedBody.data.name ?? null,
+          operation: 'instances.create',
+          operationType: 'snapshot.write',
+        })
+      ) {
         return;
       }
 
@@ -283,7 +290,14 @@ router.get(
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
-      if (respondWhatsAppStorageUnavailable(res, error)) {
+      if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.status',
+          operationType: 'snapshot.read',
+        })
+      ) {
         return;
       }
       throw error;
@@ -341,7 +355,14 @@ router.get(
         return;
       }
 
-      if (respondWhatsAppStorageUnavailable(res, error)) {
+      if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.status',
+          operationType: 'snapshot.read',
+        })
+      ) {
         return;
       }
 
@@ -409,7 +430,14 @@ router.get(
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
-      if (respondWhatsAppStorageUnavailable(res, error)) {
+      if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.qr.lookup',
+          operationType: 'qr.read',
+        })
+      ) {
         return;
       }
       throw error;
@@ -533,6 +561,14 @@ router.get(
         return;
       } else if (handleWhatsAppIntegrationError(res, error)) {
         return;
+      } else if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.qr.fetch',
+          operationType: 'qr.read',
+        })
+      ) {
       } else if (respondWhatsAppStorageUnavailable(res, error)) {
         logger.error('whatsapp.instances.qr.storageUnavailable', {
           tenantId,
@@ -613,7 +649,14 @@ router.get(
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
-      if (respondWhatsAppStorageUnavailable(res, error)) {
+      if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.qr.image',
+          operationType: 'qr.read',
+        })
+      ) {
         return;
       }
       throw error;
@@ -694,6 +737,14 @@ router.get(
         return;
       } else if (handleWhatsAppIntegrationError(res, error)) {
         return;
+      } else if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.qr.image',
+          operationType: 'qr.read',
+        })
+      ) {
       } else if (respondWhatsAppStorageUnavailable(res, error)) {
         logger.error('whatsapp.instances.qrImage.storageUnavailable', {
           tenantId,
@@ -749,7 +800,14 @@ router.get(
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
-      if (respondWhatsAppStorageUnavailable(res, error)) {
+      if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.qr.default',
+          operationType: 'qr.read',
+        })
+      ) {
         return;
       }
       throw error;
@@ -875,7 +933,14 @@ router.get(
         return;
       } else if (handleWhatsAppIntegrationError(res, error)) {
         return;
-      } else if (respondWhatsAppStorageUnavailable(res, error)) {
+      } else if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId: context?.instance.id ?? instanceId,
+          operation: 'instances.qr.default',
+          operationType: 'qr.read',
+        })
+      ) {
         return;
       }
 
@@ -928,7 +993,14 @@ router.get(
         },
       })) as StoredInstance | null;
     } catch (error: unknown) {
-      if (respondWhatsAppStorageUnavailable(res, error)) {
+      if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.qr.defaultImage',
+          operationType: 'qr.read',
+        })
+      ) {
         return;
       }
       throw error;
@@ -1007,7 +1079,14 @@ router.get(
         return;
       } else if (handleWhatsAppIntegrationError(res, error)) {
         return;
-      } else if (respondWhatsAppStorageUnavailable(res, error)) {
+      } else if (
+        respondWhatsAppStorageUnavailable(res, error, {
+          tenantId,
+          instanceId,
+          operation: 'instances.qr.defaultImage',
+          operationType: 'qr.read',
+        })
+      ) {
         return;
       }
 
