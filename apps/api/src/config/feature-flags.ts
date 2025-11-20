@@ -48,6 +48,7 @@ type FeatureFlags = {
   whatsappRawFallbackEnabled: boolean;
   whatsappBrokerStrictConfig: boolean;
   whatsappDebugToolsEnabled: boolean;
+  whatsappDisableRefreshOnStorageDegraded: boolean;
 } & SharedFeatureFlags;
 
 const parseBoolean = (value: string | undefined, defaultValue: boolean): boolean => {
@@ -91,6 +92,14 @@ const computeFlags = (): FeatureFlags => {
     logger.warn('[config] WhatsApp debug tools habilitado — endpoints sensíveis ativos');
   }
 
+  const whatsappDisableRefreshOnStorageDegraded = parseBoolean(
+    process.env.WHATSAPP_DISABLE_REFRESH_ON_STORAGE_DEGRADED,
+    false
+  );
+  if (whatsappDisableRefreshOnStorageDegraded) {
+    logger.warn('[config] Refresh automático desabilitado quando o storage estiver degradado');
+  }
+
   const sharedFlags = resolveSharedFeatureFlags(process.env);
   if (sharedFlags.whatsappDebug) {
     logger.info('[config] WhatsApp debug routes habilitadas (FEATURE_DEBUG_WHATSAPP)');
@@ -102,6 +111,7 @@ const computeFlags = (): FeatureFlags => {
     whatsappRawFallbackEnabled,
     whatsappBrokerStrictConfig,
     whatsappDebugToolsEnabled,
+    whatsappDisableRefreshOnStorageDegraded,
     ...sharedFlags,
   } satisfies FeatureFlags;
 };
@@ -120,6 +130,9 @@ export const isWhatsappBrokerStrictConfigEnabled = (): boolean => cachedFlags.wh
 
 export const isWhatsappDebugToolsEnabled = (): boolean => cachedFlags.whatsappDebugToolsEnabled;
 export const isWhatsappDebugFeatureEnabled = (): boolean => cachedFlags.whatsappDebug;
+
+export const isWhatsappRefreshDisabledOnStorageDegraded = (): boolean =>
+  cachedFlags.whatsappDisableRefreshOnStorageDegraded;
 
 export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureFlags => {
   const next = { ...computeFlags(), ...overrides } satisfies FeatureFlags;

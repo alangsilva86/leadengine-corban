@@ -105,11 +105,10 @@ export const createQrService = ({ store, events, api, logger }: QrServiceOptions
       errorLog('Falha ao gerar QR Code da instância WhatsApp', err);
       clearCountdown();
       store.getState().failQr(payload.instanceId);
+      const fallbackMessage =
+        'Não foi possível gerar o QR Code no momento devido a uma indisponibilidade externa. Usaremos os dados recentes e você pode tentar novamente em instantes.';
       store.getState().setError({
-        message:
-          err instanceof Error
-            ? err.message
-            : 'Não foi possível gerar o QR Code. Tente novamente em instantes.',
+        message: err instanceof Error && err.message ? err.message : fallbackMessage,
         code: null,
       });
     }

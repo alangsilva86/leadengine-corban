@@ -13,6 +13,35 @@ export const SYNC_TTL_MS = 30_000; // 30s cooldown for broker sync per tenant un
 
 export type CachedSnapshots = { expiresAt: string; snapshots: WhatsAppBrokerInstanceSnapshot[] };
 
+type MemoryCacheEntry = { expiresAt: number; snapshots: WhatsAppBrokerInstanceSnapshot[] };
+
+const memorySnapshotCache = new Map<string, MemoryCacheEntry>();
+
+const getMemoryCachedSnapshots = (tenantId: string): WhatsAppBrokerInstanceSnapshot[] | null => {
+  const cached = memorySnapshotCache.get(tenantId);
+  if (!cached) {
+    return null;
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    memorySnapshotCache.delete(tenantId);
+    return null;
+  }
+
+  return cached.snapshots;
+};
+
+const setMemoryCachedSnapshots = (
+  tenantId: string,
+  snapshots: WhatsAppBrokerInstanceSnapshot[],
+  ttlSeconds: number
+) => {
+  memorySnapshotCache.set(tenantId, {
+    snapshots,
+    expiresAt: Date.now() + ttlSeconds * 1000,
+  });
+};
+
 export const getLastSyncAt = async (
   tenantId: string,
   client: typeof prisma = prisma
@@ -65,6 +94,11 @@ export const getCachedSnapshots = async (
   tenantId: string,
   client: typeof prisma = prisma
 ): Promise<WhatsAppBrokerInstanceSnapshot[] | null> => {
+  const memoryCached = getMemoryCachedSnapshots(tenantId);
+  if (memoryCached) {
+    return memoryCached;
+  }
+
   const key = `${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`;
   const startedAt = Date.now();
   try {
@@ -101,6 +135,7 @@ export const setCachedSnapshots = async (
   const key = `${SNAPSHOT_CACHE_KEY_PREFIX}${tenantId}`;
   const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
   const value: Prisma.JsonObject = { expiresAt, snapshots: snapshots as unknown as Prisma.JsonArray };
+  setMemoryCachedSnapshots(tenantId, snapshots, ttlSeconds);
   const startedAt = Date.now();
   try {
     await client.integrationState.upsert({

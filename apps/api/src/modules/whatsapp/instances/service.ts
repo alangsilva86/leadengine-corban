@@ -28,6 +28,7 @@ import {
   describeErrorForLog,
   logWhatsAppStorageError,
 } from './errors';
+import { isWhatsappRefreshDisabledOnStorageDegraded } from '../../../config/feature-flags';
 import {
   appendInstanceHistory,
   buildHistoryEntry,
@@ -1241,6 +1242,8 @@ type InstanceCollectionResult = {
   shouldRefresh?: boolean;
   fetchSnapshots?: boolean;
   synced?: boolean;
+  storageFallback?: boolean;
+  warnings?: string[];
 };
 
 const toPublicInstance = (
@@ -1366,14 +1369,32 @@ export const collectInstancesForTenant = async (
 ): Promise<InstanceCollectionResult> => {
   const refreshFlag = options.refresh;
   const fetchSnapshots = options.fetchSnapshots ?? false;
+  const warnings: string[] = [];
+
+  let storageDegraded = false;
 
   // Load stored instances first (DB)
-  let storedInstances =
-    options.existing ??
-    ((await prisma.whatsAppInstance.findMany({
-      where: { tenantId },
-      orderBy: { createdAt: 'asc' },
-    })) as StoredInstance[]);
+  let storedInstances: StoredInstance[];
+  if (options.existing) {
+    storedInstances = options.existing;
+  } else {
+    try {
+      storedInstances = (await prisma.whatsAppInstance.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: 'asc' },
+      })) as StoredInstance[];
+    } catch (error) {
+      const { isStorageError } = resolveWhatsAppStorageError(error);
+      if (!isStorageError) {
+        throw error;
+      }
+
+      storageDegraded = true;
+      warnings.push('Storage indisponível; exibindo dados cacheados sem refresh obrigatório.');
+      logWhatsAppStorageError('collectInstancesForTenant.findInstances', error, { tenantId });
+      storedInstances = [];
+    }
+  }
 
   // Prefer snapshots provided by caller
   let snapshots = options.snapshots ?? null;
@@ -1387,6 +1408,14 @@ export const collectInstancesForTenant = async (
   } else {
     // default: do NOT sync unless we have nothing stored and caller allows snapshots
     shouldRefresh = Boolean(fetchSnapshots) && storedInstances.length === 0;
+  }
+
+  if (storageDegraded) {
+    const refreshBlocked = isWhatsappRefreshDisabledOnStorageDegraded() || refreshFlag !== true;
+    if (refreshBlocked) {
+      shouldRefresh = false;
+      warnings.push('Refresh automático adiado devido à indisponibilidade do storage.');
+    }
   }
 
   // TTL: only applies when refresh wasn't explicitly forced
@@ -1409,10 +1438,12 @@ export const collectInstancesForTenant = async (
       );
       storedInstances = syncResult.instances;
       snapshots = syncResult.snapshots;
-      await setLastSyncAt(tenantId, new Date());
-      // cache snapshots for short TTL to reduce pressure
-      if (snapshots && snapshots.length > 0) {
-        await setCachedSnapshots(tenantId, snapshots, 30);
+      if (!storageDegraded) {
+        await setLastSyncAt(tenantId, new Date());
+        // cache snapshots for short TTL to reduce pressure
+        if (snapshots && snapshots.length > 0) {
+          await setCachedSnapshots(tenantId, snapshots, 30);
+        }
       }
       recordRefreshOutcome(tenantId, 'success');
       synced = true;
@@ -1456,6 +1487,10 @@ export const collectInstancesForTenant = async (
     snapshots = [];
   }
 
+  if (storageDegraded && !snapshots) {
+    snapshots = await getCachedSnapshots(tenantId);
+  }
+
   // Index snapshots by id for quick lookups
   const snapshotMap = new Map<string, WhatsAppBrokerInstanceSnapshot>();
   if (snapshots) {
@@ -1469,6 +1504,22 @@ export const collectInstancesForTenant = async (
   }
 
   const entries: InstanceCollectionEntry[] = [];
+
+  if (!storedInstances.length && snapshots?.length) {
+    const fallbackInstances = buildFallbackInstancesFromSnapshots(tenantId, snapshots);
+    return {
+      entries,
+      instances: fallbackInstances,
+      rawInstances: [],
+      map: new Map(),
+      snapshots: snapshots ?? [],
+      shouldRefresh,
+      fetchSnapshots,
+      synced,
+      storageFallback: true,
+      warnings,
+    } satisfies InstanceCollectionResult;
+  }
 
   for (const stored of storedInstances) {
     const snapshot = snapshotMap.get(stored.id) ??
@@ -1507,6 +1558,8 @@ export const collectInstancesForTenant = async (
     shouldRefresh,
     fetchSnapshots,
     synced,
+    storageFallback: storageDegraded,
+    warnings,
   };
 
   return result;
