@@ -64,3 +64,16 @@ Remember to pass the `x-api-key` header that matches `WHATSAPP_BROKER_API_KEY`
 when invoking the broker directly. The LeadEngine API reuses the same secret via
 `WhatsAppBrokerClient`, so mismatched keys or broker endpoints lead to the
 configuration error mentioned above.
+
+## Fallbacks e mensagens de QR Code
+
+- Quando o storage (Postgres/Prisma) estiver indisponível, a listagem de
+  instâncias tenta reutilizar snapshots em cache (in-memory ou broker) e
+  devolve uma resposta 200 com `meta.storageFallback = true` e um array de
+  `meta.warnings` informando que o refresh foi adiado. O refresh automático é
+  bloqueado se a flag `WHATSAPP_DISABLE_REFRESH_ON_STORAGE_DEGRADED=1` estiver
+  ativa, evitando mais pressão sobre o storage degradado.
+- Se o QR Code não puder ser gerado por indisponibilidade externa, o front-end
+  apresenta uma mensagem amigável (“Não foi possível gerar o QR Code no momento
+  devido a uma indisponibilidade externa...”) e mantém os dados recentes
+  exibidos, permitindo que o usuário tente novamente assim que o serviço voltar.

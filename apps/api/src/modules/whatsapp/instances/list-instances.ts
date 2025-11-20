@@ -91,6 +91,8 @@ type ListInstancesMeta = {
   synced: boolean;
   instancesCount: number;
   durationMs: number;
+  storageFallback: boolean;
+  warnings: string[];
 };
 
 type ListInstancesPayload = {
@@ -131,6 +133,8 @@ export const listInstancesUseCase = async ({
     synced: result.synced ?? false,
     instancesCount: instances.length,
     durationMs,
+    storageFallback: result.storageFallback ?? false,
+    warnings: result.warnings ?? [],
   };
 
   return {
