@@ -140,20 +140,34 @@ const useWhatsappSessionState = ({
         countdownMessage ||
         (loadingQr || isGeneratingQrImage ? 'Gerando QR Code…' : 'Selecione uma instância para gerar o QR.');
 
+  const resolveInstanceId = useCallback((target: any): string | null => {
+    if (!target) return null;
+    if (typeof target === 'string') return target;
+    if (typeof target.id === 'string' && target.id.trim().length > 0) {
+      return target.id.trim();
+    }
+    if (target.instance && typeof target.instance.id === 'string') {
+      return target.instance.id.trim();
+    }
+    return null;
+  }, []);
+
   const handleViewQr = useCallback(
     async (inst: any) => {
-      if (!inst) return;
+      const targetId = resolveInstanceId(inst);
+      if (!targetId) return;
       await selectInstance(inst, { skipAutoQr: true });
-      await generateQr(inst.id);
+      await generateQr(targetId);
       setQrDialogOpen(true);
     },
-    [generateQr, selectInstance, setQrDialogOpen]
+    [generateQr, selectInstance, setQrDialogOpen, resolveInstanceId]
   );
 
   const handleGenerateQr = useCallback(async () => {
-    if (!instance?.id) return;
-    await generateQr(instance.id);
-  }, [generateQr, instance?.id]);
+    const targetId = resolveInstanceId(instance);
+    if (!targetId) return;
+    await generateQr(targetId);
+  }, [generateQr, instance, resolveInstanceId]);
 
   const handleMarkConnected = useCallback(async () => {
     const success = await markConnected();

@@ -88,7 +88,6 @@ const withPreferredLoad = (
 ): InstancesLoadOptions => ({
   ...options,
   preferredInstanceId: preferredInstanceId ?? options.preferredInstanceId ?? null,
-  forceRefresh: true,
 });
 
 export interface InstancesApiService {
