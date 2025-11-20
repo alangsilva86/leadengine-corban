@@ -488,7 +488,12 @@ export const resolveNormalizedInstanceStatus = (instance: unknown): string => {
 
 export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
   const record = isPlainRecord(instance) ? instance : {};
-  const normalizedStatus = resolveNormalizedInstanceStatus(instance);
+  const resolvedStatus = resolveInstanceStatus(instance);
+  const normalizedStatus = normalizeWhatsAppStatus({
+    status: resolvedStatus,
+    connected: typeof record.connected === 'boolean' ? record.connected : undefined,
+  });
+  const statusKey = normalizedStatus.status ?? resolveNormalizedInstanceStatus(instance);
   const statusMap: Record<string, InstanceStatusInfo> = {
     connected: { label: 'Conectado', variant: 'success' },
     connecting: { label: 'Conectando', variant: 'info' },
@@ -500,20 +505,16 @@ export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
     error: { label: 'Erro', variant: 'destructive' },
   };
 
-  const normalizedStatus = normalizeWhatsAppStatus({
-    status: resolvedStatus,
-    connected: typeof record.connected === 'boolean' ? record.connected : undefined,
-  });
-
-  const baseInfo = statusMap[normalizedStatus.status] ?? {
-    label: normalizedStatus.status || 'Indefinido',
+  const baseInfo = statusMap[statusKey] ?? {
+    label: statusKey || 'Indefinido',
     variant: normalizedStatus.connected ? 'success' : 'secondary',
-  return statusMap[normalizedStatus] || {
-    label: normalizedStatus || 'Indefinido',
-    variant: record.connected === true ? 'success' : 'secondary',
   };
 
-  return { ...baseInfo, status: normalizedStatus.status, connected: normalizedStatus.connected };
+  return {
+    ...baseInfo,
+    status: normalizedStatus.status ?? statusKey,
+    connected: normalizedStatus.connected,
+  };
 };
 
 export const resolveInstancePhone = (instance: unknown): string => {
