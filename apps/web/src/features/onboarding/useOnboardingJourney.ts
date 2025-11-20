@@ -400,6 +400,7 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
             onCampaignReady: setActiveCampaign,
             onContinue: () => setCurrentPage('inbox'),
             onBack: () => setCurrentPage('channels'),
+            onNavigateStage: setCurrentPage,
           }),
         );
       case 'inbox':

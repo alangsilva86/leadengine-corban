@@ -1,11 +1,11 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useMemo } from 'react';
 
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card } from '@/components/ui/card.jsx';
 import NoticeBanner from '@/components/ui/notice-banner.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
-import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, Check } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 
 import useWhatsAppConnect from '../connect/useWhatsAppConnect';
@@ -22,7 +22,11 @@ const SectionFallback = () => (
 
 const DialogFallback = () => null;
 
-const WhatsAppCampaigns = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
+type WhatsAppCampaignsProps = Parameters<typeof useWhatsAppConnect>[0] & {
+  onNavigateStage?: (stageId: string) => void;
+};
+
+const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
   const {
     statusCopy,
     statusTone,
@@ -58,37 +62,69 @@ const WhatsAppCampaigns = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
   } = useWhatsAppConnect(props);
 
   const backLabel = 'Voltar';
-  const journeySteps = ['Instâncias & Canais', 'Campanhas', 'Inbox'];
+  const fallbackSteps = useMemo(
+    () => [
+      { id: 'channels', label: 'Instâncias & Canais' },
+      { id: 'campaigns', label: 'Campanhas' },
+      { id: 'inbox', label: 'Inbox' },
+    ],
+    []
+  );
+
+  const resolvedSteps = props?.onboarding?.stages?.length ? props.onboarding.stages : fallbackSteps;
+  const activeStepIndex = props?.onboarding?.activeStep ?? 1;
+  const currentStage = resolvedSteps[activeStepIndex] ?? resolvedSteps[1] ?? resolvedSteps[0];
+  const stageObjectives: Record<string, string> = {
+    channels: 'Conecte instância',
+    campaigns: 'Configure campanha',
+    inbox: 'Revise roteamento',
+  };
+  const objectiveCopy = stageObjectives[currentStage?.id ?? ''] ?? 'Avance na jornada de integração';
+  const supportCopy = `${objectiveCopy}. ${onboardingDescription}`;
+
+  const hasCampaigns = (campaigns?.length ?? 0) > 0;
+  const primaryAction = hasCampaigns ? 'continue' : 'create';
+  const primaryLabel = hasCampaigns ? confirmLabel ?? 'Continuar' : 'Criar campanha';
+  const isPrimaryDisabled = hasCampaigns ? confirmDisabled : !canCreateCampaigns;
+
+  const handlePrimaryAction = () => {
+    if (primaryAction === 'create') {
+      setCreateCampaignOpen(true);
+      return;
+    }
+
+    onContinue?.();
+  };
+
+  const handleStageNavigate = (stageId: string, index: number) => {
+    if (props?.onNavigateStage) {
+      props.onNavigateStage(stageId);
+      return;
+    }
+
+    if (index < activeStepIndex) {
+      onBack?.();
+      return;
+    }
+
+    if (index > activeStepIndex) {
+      onContinue?.();
+    }
+  };
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="space-y-4 rounded-[var(--radius)] border border-[var(--border)] bg-surface-overlay-strong px-6 py-5 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">
-          {journeySteps.map((step, index) => (
-            <div
-              key={step}
-              className={cn(
-                'inline-flex items-center gap-2 rounded-full border px-3 py-1',
-                index === 1 ? 'border-primary/50 bg-primary/15 text-primary' : 'border-border/70 text-muted-foreground',
-              )}
-            >
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border/60 bg-background text-[0.65rem]">
-                {index + 1}
-              </span>
-              <span>{step}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
               <Badge variant="secondary">{stepLabel}</Badge>
-              {nextStage ? <span>Próximo: {nextStage}</span> : null}
+              <span className="font-semibold text-foreground/80">{objectiveCopy}</span>
+              {nextStage ? <span className="text-[color:var(--color-inbox-foreground-muted)]">Próximo: {nextStage}</span> : null}
             </div>
             <div>
               <h1 className="text-2xl font-semibold text-foreground">Gerencie suas campanhas</h1>
-              <p className="max-w-2xl text-sm text-muted-foreground">{onboardingDescription}</p>
+              <p className="max-w-2xl text-sm text-muted-foreground">{supportCopy}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -100,27 +136,58 @@ const WhatsAppCampaigns = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
             <Badge variant="status" tone={statusTone as any} className="gap-2 text-xs font-medium uppercase">
               {statusCopy.badge}
             </Badge>
-            <div className="flex gap-2">
-              {onBack ? (
-                <Button variant="ghost" size="sm" onClick={onBack}>
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  {backLabel}
-                </Button>
-              ) : null}
-              <Button size="sm" onClick={() => setCreateCampaignOpen(true)} disabled={!canCreateCampaigns}>
-                Nova campanha
-              </Button>
-            </div>
           </div>
         </div>
         <Separator className="section-divider" />
-        <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <span className="text-xs uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70">
-            Campanhas e roteamento
-          </span>
-          <span className="max-w-2xl text-sm text-muted-foreground">
-            Organize o fluxo de leads criando campanhas conectadas às suas instâncias.
-          </span>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-2 text-sm">
+            {resolvedSteps.map((step, index) => {
+              const status = index < activeStepIndex ? 'done' : index === activeStepIndex ? 'current' : 'todo';
+
+              return (
+                <button
+                  type="button"
+                  key={step.id}
+                  onClick={() => handleStageNavigate(step.id, index)}
+                  className={cn(
+                    'group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 transition',
+                    'hover:border-primary/50 hover:text-primary',
+                    status === 'done' && 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700',
+                    status === 'current' && 'border-primary/50 bg-primary/15 text-primary',
+                    status === 'todo' && 'border-border/70 text-muted-foreground'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'inline-flex h-6 w-6 items-center justify-center rounded-full border text-[0.7rem] font-semibold transition',
+                      status === 'done' && 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700',
+                      status === 'current' && 'border-primary/60 bg-primary/20 text-primary',
+                      status === 'todo' && 'border-border/60 bg-background text-muted-foreground'
+                    )}
+                  >
+                    {status === 'done' ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                  </span>
+                  <span className="text-sm font-medium leading-none">{step.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {onBack ? (
+              <Button variant="ghost" size="sm" onClick={onBack}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                {backLabel}
+              </Button>
+            ) : null}
+            <Button size="sm" onClick={handlePrimaryAction} disabled={isPrimaryDisabled}>
+              {isPrimaryDisabled && primaryAction === 'continue' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+              )}
+              {primaryLabel}
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -158,13 +225,6 @@ const WhatsAppCampaigns = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           selectedAgreementId={selectedAgreement?.id ?? null}
         />
       </Suspense>
-
-      <footer className="flex flex-wrap items-center justify-end gap-2">
-        <Button size="sm" variant="secondary" onClick={onContinue} disabled={confirmDisabled}>
-          {confirmDisabled ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-          {confirmLabel}
-        </Button>
-      </footer>
 
       <Suspense fallback={<DialogFallback />}>
         <CreateCampaignDialog
