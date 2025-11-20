@@ -31,6 +31,8 @@ export interface CreateCampaignPayload {
   productType: string;
   marginType: string;
   marginValue?: number | null;
+  leadSource?: string;
+  segments?: string[];
   tags?: string[];
   strategy?: string | null;
 }

@@ -46,6 +46,10 @@ export const createCampaignSchema = z
       .string({ required_error: 'Informe o nome da origem.' })
       .trim()
       .min(1, 'Informe o nome da origem.'),
+    leadSource: z
+      .string({ required_error: 'Selecione a fonte da campanha.' })
+      .trim()
+      .min(1, 'Selecione a fonte da campanha.'),
     product: z
       .string({ required_error: 'Selecione o produto principal.' })
       .trim()
@@ -77,6 +81,10 @@ export const createCampaignSchema = z
       .max(64)
       .optional()
       .transform((value) => (value && value.length > 0 ? value : 'percentage')),
+    segments: z
+      .array(z.string().trim().min(1))
+      .optional()
+      .transform((value) => (value && value.length > 0 ? Array.from(new Set(value)) : undefined)),
     tags: z
       .array(z.string().trim().min(1))
       .optional()
@@ -89,10 +97,12 @@ export const createCampaignSchema = z
       status,
       agreementId,
       agreementName,
+      leadSource,
       product,
       margin,
       strategy,
       marginType,
+      segments,
       tags,
     }) => ({
       name,
@@ -100,11 +110,13 @@ export const createCampaignSchema = z
       status,
       agreementId,
       agreementName,
+      leadSource,
       strategy,
       productType: product,
       marginType,
       marginValue: margin,
-      ...(tags ? { tags } : {}),
+      ...(segments ? { segments } : {}),
+      ...(tags || segments ? { tags: Array.from(new Set([...(tags ?? []), ...(segments ?? [])])) } : {}),
     })
   );
 
