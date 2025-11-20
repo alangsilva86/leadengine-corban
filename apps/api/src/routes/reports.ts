@@ -1,14 +1,13 @@
-import crypto from 'node:crypto';
-import { Router, type Request, type Response } from 'express';
+import { Router } from 'express';
 import { query } from 'express-validator';
 import { Prisma } from '@prisma/client';
 
-import { asyncHandler } from '../middleware/error-handler';
 import { validateRequest } from '../middleware/validation';
 import { prisma } from '../lib/prisma';
 import { logger } from '../config/logger';
 import { resolveTenantId } from './campaigns';
 import { normalizeString, parseDateParam } from '../utils/request-parsers';
+import { withRequestContext } from '../utils/request-context';
 import {
   getSalesFunnelForDimension,
   getSalesFunnelSummary,
@@ -364,8 +363,7 @@ reportsRouter.get(
   query('strategy').optional().isString().trim().notEmpty(),
   query('marginType').optional().isString().trim().notEmpty(),
   validateRequest,
-  asyncHandler(async (req: Request, res: Response) => {
-    const requestId = (req.headers['x-request-id'] as string | undefined) ?? crypto.randomUUID();
+  withRequestContext(async ({ req, res, requestId }) => {
     const tenantId = resolveTenantId(req);
 
     const now = new Date();
@@ -540,7 +538,7 @@ reportsRouter.get(
         requestId,
       });
     }
-  })
+  }, { scope: 'reports:metrics' })
 );
 
 export { reportsRouter };

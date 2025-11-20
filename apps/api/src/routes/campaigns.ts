@@ -1,11 +1,9 @@
-import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
-
-import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
 import { resolveRequestTenantId } from '../services/tenant-service';
-import { mapPrismaError } from '../utils/prisma-error';
+import { HttpErrorTranslator } from '../utils/http-error-translator';
+import { withRequestContext } from '../utils/request-context';
 import type { CampaignDTO } from './campaigns.types';
 import {
   buildFilters,
@@ -57,6 +55,20 @@ const handleCampaignError = (res: Response, error: unknown): boolean => {
   return false;
 };
 
+const errorTranslator = new HttpErrorTranslator({
+  services: [
+    {
+      match: (error): error is CampaignServiceError => error instanceof CampaignServiceError,
+      map: (error) => ({
+        status: error.status,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      }),
+    },
+  ],
+});
+
 const router = Router();
 
 router.get(
@@ -64,8 +76,7 @@ router.get(
   listCampaignValidators,
   validateRequest,
   requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const requestId = (req.headers['x-request-id'] as string | undefined) ?? crypto.randomUUID();
+  withRequestContext(async ({ req, res, requestId }) => {
     const tenantId = resolveTenantId(req);
     const filters = buildFilters(req.query);
 
@@ -97,34 +108,31 @@ router.get(
         return;
       }
 
-      const mapped = mapPrismaError(error, {
-        connectivity: {
-          code: 'CAMPAIGNS_STORE_UNAVAILABLE',
-          message: 'Storage de campanhas indisponível no momento.',
-          status: 503,
-        },
-        validation: {
-          code: 'INVALID_CAMPAIGN_FILTER',
-          message: 'Parâmetros de filtro inválidos.',
-          status: 400,
+      const translated = errorTranslator.translate(error, {
+        requestId,
+        includeRequestId: true,
+        prisma: {
+          connectivity: {
+            code: 'CAMPAIGNS_STORE_UNAVAILABLE',
+            message: 'Storage de campanhas indisponível no momento.',
+            status: 503,
+          },
+          validation: {
+            code: 'INVALID_CAMPAIGN_FILTER',
+            message: 'Parâmetros de filtro inválidos.',
+            status: 400,
+          },
         },
       });
 
-      if (mapped) {
-        res.status(mapped.status).json({
-          success: false,
-          error: {
-            code: mapped.code,
-            message: mapped.message,
-          },
-          requestId,
-        });
+      if (translated) {
+        res.status(translated.status).json(translated.payload);
         return;
       }
 
       throw error;
     }
-  })
+  }, { scope: 'campaigns:list' })
 );
 
 router.post(
@@ -132,7 +140,7 @@ router.post(
   createCampaignValidators,
   validateRequest,
   requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
+  withRequestContext(async ({ req, res, requestId }) => {
     const requestedTenantId = resolveRequestTenantId(req);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const rawAgreementId = typeof body.agreementId === 'string' ? body.agreementId.trim() : '';
@@ -209,38 +217,35 @@ router.post(
         return;
       }
 
-      const mapped = mapPrismaError(error, {
-        connectivity: {
-          code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
-          message: 'Storage de campanhas indisponível no momento.',
-          status: 503,
-        },
-        validation: {
-          code: 'INVALID_CAMPAIGN_DATA',
-          message: 'Dados inválidos para criar a campanha.',
-          status: 400,
-        },
-        conflict: {
-          code: 'CAMPAIGN_ALREADY_EXISTS',
-          message: 'Já existe uma campanha para este acordo e instância.',
-          status: 409,
+      const translated = errorTranslator.translate(error, {
+        requestId,
+        prisma: {
+          connectivity: {
+            code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
+            message: 'Storage de campanhas indisponível no momento.',
+            status: 503,
+          },
+          validation: {
+            code: 'INVALID_CAMPAIGN_DATA',
+            message: 'Dados inválidos para criar a campanha.',
+            status: 400,
+          },
+          conflict: {
+            code: 'CAMPAIGN_ALREADY_EXISTS',
+            message: 'Já existe uma campanha para este acordo e instância.',
+            status: 409,
+          },
         },
       });
 
-      if (mapped) {
-        res.status(mapped.status).json({
-          success: false,
-          error: {
-            code: mapped.code,
-            message: mapped.message,
-          },
-        });
+      if (translated) {
+        res.status(translated.status).json(translated.payload);
         return;
       }
 
       throw error;
     }
-  })
+  }, { scope: 'campaigns:create' })
 );
 
 router.patch(
@@ -248,7 +253,7 @@ router.patch(
   updateCampaignValidators,
   validateRequest,
   requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
+  withRequestContext(async ({ req, res, requestId }) => {
     const campaignId = readCampaignIdParam(req);
 
     if (!campaignId) {
@@ -285,33 +290,30 @@ router.patch(
         return;
       }
 
-      const mapped = mapPrismaError(error, {
-        connectivity: {
-          code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
-          message: 'Storage de campanhas indisponível no momento.',
-          status: 503,
-        },
-        validation: {
-          code: 'INVALID_CAMPAIGN_DATA',
-          message: 'Dados inválidos para atualizar a campanha.',
-          status: 400,
+      const translated = errorTranslator.translate(error, {
+        requestId,
+        prisma: {
+          connectivity: {
+            code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
+            message: 'Storage de campanhas indisponível no momento.',
+            status: 503,
+          },
+          validation: {
+            code: 'INVALID_CAMPAIGN_DATA',
+            message: 'Dados inválidos para atualizar a campanha.',
+            status: 400,
+          },
         },
       });
 
-      if (mapped) {
-        res.status(mapped.status).json({
-          success: false,
-          error: {
-            code: mapped.code,
-            message: mapped.message,
-          },
-        });
+      if (translated) {
+        res.status(translated.status).json(translated.payload);
         return;
       }
 
       throw error;
     }
-  })
+  }, { scope: 'campaigns:update' })
 );
 
 router.delete(
@@ -319,7 +321,7 @@ router.delete(
   deleteCampaignValidators,
   validateRequest,
   requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
+  withRequestContext(async ({ req, res, requestId }) => {
     const tenantId = resolveTenantId(req);
     const campaignId = readCampaignIdParam(req);
     if (!campaignId) {
@@ -346,28 +348,25 @@ router.delete(
         return;
       }
 
-      const mapped = mapPrismaError(error, {
-        connectivity: {
-          code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
-          message: 'Storage de campanhas indisponível no momento.',
-          status: 503,
+      const translated = errorTranslator.translate(error, {
+        requestId,
+        prisma: {
+          connectivity: {
+            code: 'CAMPAIGN_STORAGE_UNAVAILABLE',
+            message: 'Storage de campanhas indisponível no momento.',
+            status: 503,
+          },
         },
       });
 
-      if (mapped) {
-        res.status(mapped.status).json({
-          success: false,
-          error: {
-            code: mapped.code,
-            message: mapped.message,
-          },
-        });
+      if (translated) {
+        res.status(translated.status).json(translated.payload);
         return;
       }
 
       throw error;
     }
-  })
+  }, { scope: 'campaigns:delete' })
 );
 
 const campaignsRouter: Router = router;
