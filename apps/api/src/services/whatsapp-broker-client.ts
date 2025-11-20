@@ -1400,6 +1400,7 @@ class WhatsAppBrokerClient {
     const normalizedTenantId = typeof args.tenantId === 'string' ? args.tenantId.trim() : '';
     const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
       ? { searchParams: { tenantId: normalizedTenantId }, tenantId: normalizedTenantId }
+      ? { searchParams: { tenantId: normalizedTenantId } }
       : {};
 
     const requestedInstanceId = (() => {
