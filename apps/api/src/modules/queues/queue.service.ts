@@ -28,26 +28,42 @@ export class QueueService {
   }
 
   async createQueue(tenantId: string, input: QueueInput): Promise<QueueEntity> {
-    const nextOrderIndex =
-      typeof input.orderIndex === 'number'
-        ? input.orderIndex
-        : await this.prisma.queue.count({ where: { tenantId } });
+    return this.prisma.$transaction(async (tx) => {
+      const nextOrderIndex =
+        typeof input.orderIndex === 'number'
+          ? input.orderIndex
+          : await this.getNextOrderIndex(tx, tenantId);
 
-    return this.prisma.queue.create({
-      data: {
-        tenantId,
-        name: input.name,
-        description: input.description ?? undefined,
-        color: input.color ?? undefined,
-        isActive: typeof input.isActive === 'boolean' ? input.isActive : true,
-        orderIndex: nextOrderIndex,
-        settings:
-          typeof input.settings === 'object' && input.settings !== null
-            ? (input.settings as Prisma.JsonObject)
-            : undefined,
-      },
-      select: queueSelect,
+      return tx.queue.create({
+        data: {
+          tenantId,
+          name: input.name,
+          description: input.description ?? undefined,
+          color: input.color ?? undefined,
+          isActive: typeof input.isActive === 'boolean' ? input.isActive : true,
+          orderIndex: nextOrderIndex,
+          settings:
+            typeof input.settings === 'object' && input.settings !== null
+              ? (input.settings as Prisma.JsonObject)
+              : undefined,
+        },
+        select: queueSelect,
+      });
     });
+  }
+
+  private async getNextOrderIndex(
+    tx: Prisma.TransactionClient,
+    tenantId: string
+  ): Promise<number> {
+    const lastQueue = await tx.queue.findFirst({
+      where: { tenantId },
+      orderBy: { orderIndex: 'desc' },
+      select: { orderIndex: true },
+      lock: { mode: 'ForUpdate' },
+    });
+
+    return (lastQueue?.orderIndex ?? -1) + 1;
   }
 
   async updateQueue(tenantId: string, queueId: string, updates: QueueUpdateInput): Promise<QueueEntity | null> {
