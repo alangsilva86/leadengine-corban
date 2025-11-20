@@ -142,6 +142,15 @@ class LeadEngineClient {
   private readonly timeoutMs: number;
   private readonly token: string;
   private readonly useRealData: boolean;
+  private readonly summaryConcurrencyLimit = Math.max(
+    2,
+    Number(process.env.LEAD_ENGINE_SUMMARY_CONCURRENCY ?? 4)
+  );
+  private readonly countCacheTtlMs = 5_000;
+  private readonly countCache = new Map<
+    string,
+    { expiresAt: number; promise: Promise<number> }
+  >();
 
   constructor() {
     this.baseUrl = leadEngineConfig.baseUrl.replace(/\/$/, '');
@@ -324,78 +333,119 @@ class LeadEngineClient {
   private async countLeads(
     filters: Record<string, string | number | boolean | undefined>
   ): Promise<number> {
-    if (!this.useRealData) {
-      const agreementCode = typeof filters.agreementCode === 'string' ? filters.agreementCode : undefined;
-      const definition = agreementCode
-        ? agreementDefinitions.find(
-            (item) => item.slug === agreementCode || item.id === agreementCode
-          )
-        : undefined;
+    const cacheKey = JSON.stringify(
+      Object.entries(filters)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    );
+    const now = Date.now();
+    const cached = this.countCache.get(cacheKey);
 
-      const scoped = agreementCode
-        ? FALLBACK_LEADS.filter(
-            (lead) =>
-              lead.agreementCode === agreementCode ||
-              lead.agreementId === (definition?.id ?? agreementCode)
-          )
-        : FALLBACK_LEADS;
-
-      const isHotQuery =
-        Object.prototype.hasOwnProperty.call(filters, 'classification') ||
-        Object.prototype.hasOwnProperty.call(filters, 'leadStatus');
-
-      if (isHotQuery) {
-        return Math.min(scoped.length, Math.max(Math.floor(scoped.length * 0.2), scoped.length > 0 ? 1 : 0));
-      }
-
-      return scoped.length;
+    if (cached && cached.expiresAt > now) {
+      logger.debug(`${LOG_PREFIX} ♻️ Cache de contagem reutilizado`, {
+        filters,
+        expiresInMs: cached.expiresAt - now,
+      });
+      return cached.promise;
     }
 
-    const params = new URLSearchParams();
-    params.set('_page', '0');
-    params.set('_size', '1');
-    const range = this.applyDefaultRange(params);
+    if (cached) {
+      this.countCache.delete(cacheKey);
+    }
 
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null) {
-        params.set(key, String(value));
-      }
-    });
-
-    type CountResponse =
-      | { value?: { total?: number } }
-      | { total?: number }
-      | { success?: boolean; value?: { total?: number } };
-    const payload = await this.request<CountResponse>(`/api/v1/lead?${params.toString()}`);
-    const total = (payload as any)?.value?.total ?? (payload as any)?.total;
-    const numericTotal =
-      typeof total === 'number'
-        ? total
-        : typeof total === 'string' && total.trim().length > 0
-          ? Number(total)
+    const startedAt = Date.now();
+    const computeCount = async (): Promise<number> => {
+      if (!this.useRealData) {
+        const agreementCode = typeof filters.agreementCode === 'string' ? filters.agreementCode : undefined;
+        const definition = agreementCode
+          ? agreementDefinitions.find(
+              (item) => item.slug === agreementCode || item.id === agreementCode
+            )
           : undefined;
 
-    const safeTotal =
-      typeof numericTotal === 'number' && Number.isFinite(numericTotal) ? numericTotal : 0;
+        const scoped = agreementCode
+          ? FALLBACK_LEADS.filter(
+              (lead) =>
+                lead.agreementCode === agreementCode ||
+                lead.agreementId === (definition?.id ?? agreementCode)
+            )
+          )
+          : FALLBACK_LEADS;
 
-    const printableFilters = Object.fromEntries(
-      Object.entries(filters).filter(([_, value]) => value !== undefined && value !== null)
+        const isHotQuery =
+          Object.prototype.hasOwnProperty.call(filters, 'classification') ||
+          Object.prototype.hasOwnProperty.call(filters, 'leadStatus');
+
+        if (isHotQuery) {
+          return Math.min(
+            scoped.length,
+            Math.max(Math.floor(scoped.length * 0.2), scoped.length > 0 ? 1 : 0)
+          );
+        }
+
+        return scoped.length;
+      }
+
+      const params = new URLSearchParams();
+      params.set('_page', '0');
+      params.set('_size', '1');
+      const range = this.applyDefaultRange(params);
+
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          params.set(key, String(value));
+        }
+      });
+
+      type CountResponse =
+        | { value?: { total?: number } }
+        | { total?: number }
+        | { success?: boolean; value?: { total?: number } };
+      const payload = await this.request<CountResponse>(`/api/v1/lead?${params.toString()}`);
+      const total = (payload as any)?.value?.total ?? (payload as any)?.total;
+      const numericTotal =
+        typeof total === 'number'
+          ? total
+          : typeof total === 'string' && total.trim().length > 0
+            ? Number(total)
+            : undefined;
+
+      const safeTotal =
+        typeof numericTotal === 'number' && Number.isFinite(numericTotal) ? numericTotal : 0;
+
+      logger.info(`${LOG_PREFIX} 📊 Contagem concluída`, {
+        filters,
+        range,
+        total: safeTotal,
+        elapsedMs: Date.now() - startedAt,
+      });
+
+      if (safeTotal === 0) {
+        logger.warn(`${LOG_PREFIX} ℹ️ Consulta retornou zero leads`, {
+          filters,
+        });
+      }
+
+      return safeTotal;
+    };
+
+    const trackedPromise = computeCount().then(
+      (value) => value,
+      (error) => {
+        const cachedEntry = this.countCache.get(cacheKey);
+        if (cachedEntry?.promise === trackedPromise) {
+          this.countCache.delete(cacheKey);
+        }
+        throw error;
+      }
     );
 
-    logger.info(`${LOG_PREFIX} 📊 Contagem de leads concluída`, {
-      filters: printableFilters,
-      total: safeTotal,
-      rangeStart: range.start ?? null,
-      rangeEnd: range.end ?? null,
+    this.countCache.set(cacheKey, {
+      expiresAt: startedAt + this.countCacheTtlMs,
+      promise: trackedPromise,
     });
 
-    if (safeTotal === 0) {
-      logger.warn(`${LOG_PREFIX} ℹ️ Consulta retornou zero leads`, {
-        filters: printableFilters,
-      });
-    }
-
-    return safeTotal;
+    return trackedPromise;
   }
 
   private getFallbackLeads(params: {
@@ -436,8 +486,15 @@ class LeadEngineClient {
   private async buildAgreementSummary(
     definition: AgreementDefinition
   ): Promise<AgreementSummary> {
+    const startedAt = Date.now();
+
     if (!this.useRealData) {
-      return this.buildFallbackSummary(definition);
+      const fallbackSummary = this.buildFallbackSummary(definition);
+      logger.info(`${LOG_PREFIX} 🧪 Estatística de fallback aplicada`, {
+        agreementCode: definition.slug,
+        elapsedMs: Date.now() - startedAt,
+      });
+      return fallbackSummary;
     }
 
     const agreementCode = definition.slug;
@@ -458,6 +515,7 @@ class LeadEngineClient {
       agreementCode,
       availableLeads,
       hotLeads,
+      elapsedMs: Date.now() - startedAt,
     });
 
     return summary;
@@ -467,8 +525,17 @@ class LeadEngineClient {
     summaries: AgreementSummary[];
     warnings: Array<{ agreementId: string; reason: string }>;
   }> {
-    const settled = await Promise.allSettled(
-      agreementDefinitions.map((definition) => this.buildAgreementSummary(definition))
+    const startedAt = Date.now();
+
+    logger.info(`${LOG_PREFIX} 🚦 Atualizando convênios com limite de concorrência`, {
+      agreements: agreementDefinitions.length,
+      concurrency: this.summaryConcurrencyLimit,
+    });
+
+    const settled = await this.runWithConcurrencyLimit(
+      agreementDefinitions,
+      this.summaryConcurrencyLimit,
+      (definition) => this.buildAgreementSummary(definition)
     );
 
     const summaries: AgreementSummary[] = [];
@@ -499,7 +566,55 @@ class LeadEngineClient {
       });
     }
 
+    const elapsedMs = Date.now() - startedAt;
+    const throughputPerSecond = Number(
+      (agreementDefinitions.length / Math.max(elapsedMs / 1000, 0.001)).toFixed(2)
+    );
+
+    logger.info(`${LOG_PREFIX} 📈 Estatísticas de convênios finalizadas`, {
+      agreements: agreementDefinitions.length,
+      elapsedMs,
+      throughputPerSecond,
+      warnings: warnings.length,
+    });
+
     return { summaries, warnings };
+  }
+
+  private async runWithConcurrencyLimit<T, R>(
+    items: readonly T[],
+    limit: number,
+    task: (item: T, index: number) => Promise<R>
+  ): Promise<PromiseSettledResult<R>[]> {
+    const boundedLimit = Math.max(1, Math.min(Math.floor(limit), items.length));
+    const results: PromiseSettledResult<R>[] = new Array(items.length);
+    let cursor = 0;
+
+    const worker = async () => {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const currentIndex = cursor;
+        cursor += 1;
+
+        if (currentIndex >= items.length) {
+          break;
+        }
+
+        const item = items[currentIndex];
+
+        try {
+          const value = await task(item, currentIndex);
+          results[currentIndex] = { status: 'fulfilled', value };
+        } catch (error) {
+          results[currentIndex] = { status: 'rejected', reason: error };
+        }
+      }
+    };
+
+    const workers = Array.from({ length: boundedLimit }, () => worker());
+    await Promise.all(workers);
+
+    return results;
   }
 
   async getLeads(params: {
