@@ -4,6 +4,14 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { describe, expect, it, vi } from 'vitest';
 
+const toastErrorMock = vi.fn();
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: (...args) => toastErrorMock(...args),
+  },
+}));
+
 import CampaignsPanel from '../CampaignsPanel.jsx';
 
 const buildCampaign = (overrides = {}) => ({
@@ -22,6 +30,10 @@ const buildCampaign = (overrides = {}) => ({
 });
 
 describe('CampaignsPanel', () => {
+  beforeEach(() => {
+    toastErrorMock.mockReset();
+  });
+
   it('exibe convênio, estado de vínculo e permite desvincular a instância', async () => {
     const linkedCampaign = buildCampaign();
     const awaitingCampaign = buildCampaign({
@@ -116,14 +128,17 @@ describe('CampaignsPanel', () => {
     const drawerTrigger = panelScope.getByRole('button', { name: /Filtros e atualização/i });
     const createButton = panelScope.getByRole('button', { name: /Nova campanha/i });
 
-    expect(createButton).toBeDisabled();
-
     await user.click(drawerTrigger);
     const refreshButton = await screen.findByRole('button', { name: /Atualizar lista/i });
 
     await user.click(refreshButton);
     expect(onRefresh).toHaveBeenCalledTimes(1);
     expect(onCreateClick).not.toHaveBeenCalled();
+    expect(toastErrorMock).not.toHaveBeenCalled();
+
+    await user.click(createButton);
+    expect(onCreateClick).not.toHaveBeenCalled();
+    expect(toastErrorMock).toHaveBeenCalled();
 
     rerender(
       <CampaignsPanel
