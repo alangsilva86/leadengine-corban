@@ -3,7 +3,7 @@ import { ZodError, type ZodSchema } from 'zod';
 
 import { asyncHandler } from '../../middleware/error-handler';
 import { respondWithValidationError } from '../../utils/http-validation';
-import { TenantAdminService } from './tenant.service';
+import { TenantAdminService, type TenantAdminServicePort } from './tenant.service';
 import {
   CreateTenantSchema,
   ListTenantsQuerySchema,
@@ -11,8 +11,6 @@ import {
   ToggleTenantSchema,
   UpdateTenantSchema,
 } from './tenant.validators';
-
-const service = new TenantAdminService();
 
 const parseOrFail = <T>(schema: ZodSchema<T>, payload: unknown, res: Response): T | null => {
   try {
@@ -27,7 +25,7 @@ const parseOrFail = <T>(schema: ZodSchema<T>, payload: unknown, res: Response): 
   }
 };
 
-export const createTenantAdminRouter = (): Router => {
+export const createTenantAdminRouter = (service: TenantAdminServicePort): Router => {
   const router = Router();
 
   router.post(
@@ -108,4 +106,5 @@ export const createTenantAdminRouter = (): Router => {
   return router;
 };
 
-export const tenantAdminRouter = createTenantAdminRouter();
+export const tenantAdminRouterFactory = (): Router =>
+  createTenantAdminRouter(new TenantAdminService());

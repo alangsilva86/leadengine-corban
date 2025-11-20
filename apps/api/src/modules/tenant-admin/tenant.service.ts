@@ -18,6 +18,14 @@ export interface TenantAdminServiceDependencies {
   logger?: typeof defaultLogger;
 }
 
+export interface TenantAdminServicePort {
+  createTenant(input: CreateTenantInput): Promise<TenantEntity>;
+  listTenants(params: ListTenantsParams): Promise<PaginatedTenants>;
+  getTenantById(id: string): Promise<TenantEntity>;
+  updateTenant(id: string, input: UpdateTenantInput): Promise<TenantEntity>;
+  toggleTenantActive(id: string, isActive: boolean): Promise<TenantEntity>;
+}
+
 const isUniqueViolation = (error: unknown): boolean =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 
@@ -43,7 +51,7 @@ const toArray = (value: unknown): string[] => {
   return [];
 };
 
-export class TenantAdminService {
+export class TenantAdminService implements TenantAdminServicePort {
   private readonly repository: ITenantRepository;
   private readonly logger: typeof defaultLogger;
 

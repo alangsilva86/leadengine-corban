@@ -6,7 +6,7 @@ import {
   mapBrokerInstanceStatusToDbStatus,
   mapBrokerStatusToDbStatus,
   mapNormalizedStatusToDbStatus,
-} from './service';
+} from './status-mapper';
 
 describe('whatsapp status mappers', () => {
   it('uses connected flag when broker status is missing', () => {
