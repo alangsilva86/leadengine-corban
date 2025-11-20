@@ -4,7 +4,14 @@ import { extractQrPayload } from '../utils/qr.js';
 export const looksLikeWhatsAppJid = (value: unknown): value is string =>
   typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
 
-export const VISIBLE_INSTANCE_STATUSES = new Set(['connected', 'connecting', 'disconnected', 'qr_required', 'error']);
+export const VISIBLE_INSTANCE_STATUSES = new Set([
+  'connected',
+  'connecting',
+  'reconnecting',
+  'disconnected',
+  'qr_required',
+  'error',
+]);
 
 export const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -464,6 +471,7 @@ export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
   const statusMap: Record<string, InstanceStatusInfo> = {
     connected: { label: 'Conectado', variant: 'success' },
     connecting: { label: 'Conectando', variant: 'info' },
+    reconnecting: { label: 'Reconectando', variant: 'info' },
     pending: { label: 'Pendente', variant: 'info' },
     disconnected: { label: 'Desconectado', variant: 'secondary' },
     qr_required: { label: 'QR necessário', variant: 'warning' },
