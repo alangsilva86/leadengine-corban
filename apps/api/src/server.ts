@@ -51,7 +51,7 @@ import { agreementsProvidersRouter } from './routes/agreements.providers';
 import { tenantsRouter } from './routes/tenants';
 import { usersRouter } from './routes/users';
 import { initializeBrokerCircuitBreaker, getBrokerCircuitBreakerMetrics } from './services/whatsapp-broker-client-protected';
-import { tenantAdminRouter } from './modules/tenant-admin/tenants.routes';
+import { tenantAdminRouterFactory } from './modules/tenant-admin/tenants.routes';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -64,6 +64,7 @@ const shouldRegisterWhatsappDebugRoutes = isWhatsappDebugFeatureEnabled();
 const debugMessagesRouter: Router = shouldRegisterWhatsappDebugRoutes
   ? enabledDebugMessagesRouter
   : buildDisabledDebugMessagesRouter();
+const tenantAdminRouter = tenantAdminRouterFactory();
 
 type RawBodyIncomingMessage = IncomingMessage & {
   originalUrl?: string;
