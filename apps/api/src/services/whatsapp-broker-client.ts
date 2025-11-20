@@ -231,6 +231,7 @@ export type BrokerRequestOptions = {
   timeoutMs?: number;
   searchParams?: Record<string, string | number | undefined>;
   idempotencyKey?: string;
+  tenantId?: string;
 };
 
 export type WhatsAppBrokerResolvedConfig = {
@@ -441,6 +442,10 @@ const ensureBrokerHeaders = (
   }
 
   headers.set('X-API-Key', options.apiKey ?? config.apiKey);
+
+  if (options.tenantId) {
+    headers.set('X-Tenant-Id', options.tenantId);
+  }
 
   if (options.idempotencyKey && !headers.has('Idempotency-Key')) {
     headers.set('Idempotency-Key', options.idempotencyKey);
@@ -1333,7 +1338,7 @@ class WhatsAppBrokerClient {
     const normalizedTenantId =
       typeof tenantId === 'string' ? tenantId.trim() : '';
     const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
-      ? { searchParams: { tenantId: normalizedTenantId } }
+      ? { searchParams: { tenantId: normalizedTenantId }, tenantId: normalizedTenantId }
       : {};
 
     const response = await this.request<unknown>(
@@ -1394,6 +1399,7 @@ class WhatsAppBrokerClient {
 
     const normalizedTenantId = typeof args.tenantId === 'string' ? args.tenantId.trim() : '';
     const requestOptions: BrokerRequestOptions = normalizedTenantId.length > 0
+      ? { searchParams: { tenantId: normalizedTenantId }, tenantId: normalizedTenantId }
       ? { searchParams: { tenantId: normalizedTenantId } }
       : {};
 

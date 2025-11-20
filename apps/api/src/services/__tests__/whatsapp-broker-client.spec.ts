@@ -118,6 +118,7 @@ describe('WhatsAppBrokerClient', () => {
 
     const headers = init?.headers as Headers;
     expect(headers.get('X-API-Key')).toBe('test-key');
+    expect(headers.get('X-Tenant-Id')).toBe('tenant-1');
     expect(headers.get('Content-Type')).toBe('application/json');
     expect(headers.get('Accept')).toBe('application/json');
 
@@ -160,6 +161,8 @@ describe('WhatsAppBrokerClient', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://broker.test/instances?tenantId=tenant-1');
     expect(init?.method ?? 'GET').toBe('GET');
+    const headers = init?.headers as Headers;
+    expect(headers.get('X-Tenant-Id')).toBe('tenant-1');
     expect(result).toEqual([
       {
         instance: expect.objectContaining({
