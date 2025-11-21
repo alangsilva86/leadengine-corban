@@ -2,17 +2,29 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
+  ChevronsUpDown,
   Loader2,
   Lock,
   Phone,
   Plug,
+  Search,
   Shapes,
   Sparkles,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import {
@@ -22,6 +34,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select.jsx';
+import { Skeleton } from '@/components/ui/skeleton.jsx';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import useAgreements from '@/features/agreements/useAgreements.js';
 import {
@@ -30,6 +44,7 @@ import {
   findCampaignStrategy,
 } from '@/features/whatsapp/utils/campaign-options.js';
 import { cn } from '@/lib/utils.js';
+import { toast } from 'sonner';
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Ativar imediatamente' },
@@ -217,10 +232,41 @@ const CreateCampaignWizard = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingFocusStep, setPendingFocusStep] = useState(null);
   const stepHeadingRefs = useRef({});
+  const [isAgreementPickerOpen, setIsAgreementPickerOpen] = useState(false);
+
+  const agreementsList = useMemo(() => {
+    if (!Array.isArray(agreements)) {
+      return [];
+    }
+    return agreements;
+  }, [agreements]);
+
+  const agreementErrorMessage = useMemo(() => {
+    if (!agreementsError) {
+      return null;
+    }
+    if (agreementsError instanceof Error) {
+      return agreementsError.message;
+    }
+    if (typeof agreementsError === 'string') {
+      return agreementsError;
+    }
+    return 'Não foi possível carregar os convênios.';
+  }, [agreementsError]);
 
   useEffect(() => {
     onSubmittingChange?.(isSubmitting);
   }, [isSubmitting, onSubmittingChange]);
+
+  useEffect(() => {
+    if (!agreementErrorMessage) {
+      return;
+    }
+    toast.error('Erro ao carregar convênios', {
+      description: agreementErrorMessage,
+      duration: 6000,
+    });
+  }, [agreementErrorMessage]);
 
   const sortedInstances = useMemo(() => {
     return [...instances]
@@ -309,7 +355,7 @@ const CreateCampaignWizard = ({
 
   const currentStep = STEP_SEQUENCE[stepIndex];
   const selectedInstance = sortedInstances.find((item) => item?.id === formState.instanceId) ?? null;
-  const selectedAgreement = agreements.find((item) => item?.id === formState.agreementId) ?? null;
+  const selectedAgreement = agreementsList.find((item) => item?.id === formState.agreementId) ?? null;
   const selectedProduct = findCampaignProduct(formState.product);
   const selectedStrategy = findCampaignStrategy(formState.strategy);
   const selectedStrategyCard = STRATEGY_CARDS.find((card) => card.value === formState.strategy) ?? null;
@@ -414,7 +460,7 @@ const CreateCampaignWizard = ({
   };
 
   const handleAgreementChange = (value) => {
-    const nextAgreement = agreements.find((item) => item?.id === value) ?? null;
+    const nextAgreement = agreementsList.find((item) => item?.id === value) ?? null;
     setFormState((prev) => ({
       ...prev,
       agreementId: value,
@@ -506,7 +552,7 @@ const CreateCampaignWizard = ({
           return 'Escolha uma instância para continuar.';
         }
         if (selectedInstance && !selectedInstance.connected) {
-          return 'Conecte a instância para liberar Origem.';
+          return 'Conecte para liberar Origem.';
         }
         return null;
       case 'agreement':
@@ -789,6 +835,24 @@ const CreateCampaignWizard = ({
                 </p>
               </div>
             </div>
+            {!isConnected && selectedInstance ? (
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">Conecte para liberar Origem</p>
+                    <p className="text-sm leading-5 text-muted-foreground">
+                      Gere o QR Code para ativar a instância e liberar a próxima etapa.
+                    </p>
+                    <Button variant="link" asChild size="sm" className="px-0 text-primary hover:text-primary">
+                      <Link to="/ajuda">Precisa de ajuda?</Link>
+                    </Button>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <Button onClick={() => selectedInstance?.onGenerateQr?.()}>Gerar QR agora</Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             {!hasInstances ? (
               <div className="rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
                 Nenhuma instância encontrada. Gere um QR para conectar e liberar as próximas etapas.
@@ -811,27 +875,74 @@ const CreateCampaignWizard = ({
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2 min-w-0">
                     <Label htmlFor="campaign-agreement">Convênio</Label>
-                    <Select
-                      value={formState.agreementId}
-                      onValueChange={handleAgreementChange}
-                      disabled={agreementsLoading}
-                    >
-                      <SelectTrigger id="campaign-agreement">
-                        <SelectValue placeholder={agreementsLoading ? 'Carregando…' : 'Selecione o convênio'} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agreements.map((item) => (
-                          <SelectItem key={item.id} value={item.id}>
-                            <div className="flex flex-col gap-1">
-                              <span className="text-sm font-medium leading-5">{formatAgreementLabel(item)}</span>
-                              {item.region ? (
-                                <span className="text-xs leading-4 text-muted-foreground">{item.region}</span>
-                              ) : null}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {agreementsLoading ? (
+                      <div className="space-y-3">
+                        <Skeleton className="h-10 w-full" />
+                        <div className="space-y-2 rounded-md border border-dashed border-border p-3">
+                          <Skeleton className="h-4 w-2/3" />
+                          <Skeleton className="h-4 w-1/2" />
+                        </div>
+                      </div>
+                    ) : (
+                      <Popover open={isAgreementPickerOpen} onOpenChange={setIsAgreementPickerOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={isAgreementPickerOpen}
+                            className="w-full justify-between"
+                            id="campaign-agreement"
+                          >
+                            <span className="flex min-w-0 items-center gap-2 truncate">
+                              <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
+                              <span className="truncate">
+                                {formState.agreementId && selectedAgreement
+                                  ? formatAgreementLabel(selectedAgreement)
+                                  : 'Selecione o convênio'}
+                              </span>
+                            </span>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[360px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Buscar convênio..." />
+                            <CommandList>
+                              <CommandEmpty>Nenhum convênio encontrado.</CommandEmpty>
+                              <CommandGroup>
+                                {agreementsList.map((item) => (
+                                  <CommandItem
+                                    key={item.id}
+                                    value={`${formatAgreementLabel(item)} ${item.region ?? ''} ${item.id}`}
+                                    keywords={[item.region, item.id].filter(Boolean)}
+                                    onSelect={() => {
+                                      handleAgreementChange(item.id);
+                                      setIsAgreementPickerOpen(false);
+                                    }}
+                                  >
+                                    <div className="flex min-w-0 flex-col gap-0.5 truncate">
+                                      <span className="truncate text-sm font-medium leading-5">
+                                        {formatAgreementLabel(item)}
+                                      </span>
+                                      {item.region ? (
+                                        <span className="text-xs leading-4 text-muted-foreground">{item.region}</span>
+                                      ) : null}
+                                    </div>
+                                    <Check
+                                      className={cn(
+                                        'ml-auto h-4 w-4',
+                                        formState.agreementId === item.id ? 'text-primary opacity-100' : 'opacity-0',
+                                      )}
+                                    />
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    )}
                   </div>
                   <div className="space-y-2 min-w-0">
                     <Label htmlFor="campaign-source">Fonte da campanha</Label>
@@ -869,17 +980,37 @@ const CreateCampaignWizard = ({
                   </div>
                 </div>
                 {renderDependencyBadge('Produtos serão filtrados pela origem')}
-                {agreementsError ? (
-                  <div className="text-xs leading-5 text-destructive">
-                    {agreementsError}{' '}
-                    <button type="button" className="underline" onClick={retry}>
-                      Tentar novamente
-                    </button>
-                  </div>
+                {agreementErrorMessage ? (
+                  <Alert variant="destructive" className="border-destructive/40 bg-destructive/5">
+                    <AlertCircle className="h-4 w-4" aria-hidden />
+                    <AlertTitle>Falha ao carregar convênios</AlertTitle>
+                    <AlertDescription className="space-y-2">
+                      <p className="leading-5">{agreementErrorMessage}</p>
+                      <Button type="button" size="sm" variant="outline" onClick={retry}>
+                        Tentar novamente
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
                 ) : null}
-                {agreements.length === 0 && !agreementsLoading ? (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm leading-5 text-amber-800">
-                    Nenhum convênio disponível para a instância atual.
+                {agreementsList.length === 0 && !agreementsLoading ? (
+                  <div className="space-y-3 rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
+                    <div className="flex items-start gap-3">
+                      <Plug className="h-4 w-4 text-muted-foreground" aria-hidden />
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">Nenhum convênio disponível para a instância atual.</p>
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Configure ou sincronize novos convênios para liberar esta etapa.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm">
+                        <Link to="/settings">Abrir Configurações</Link>
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" onClick={retry}>
+                        Recarregar convênios
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -1185,7 +1316,7 @@ const CreateCampaignWizard = ({
   const isLastStep = stepIndex === totalSteps - 1;
   const advanceDisabledReason =
     currentStep?.key === 'instance' && selectedInstance && !selectedInstance.connected
-      ? 'Conecte a instância para continuar.'
+      ? 'Conecte para liberar Origem.'
       : null;
   const isAdvanceDisabled = Boolean(advanceDisabledReason) || isSubmitting;
 
