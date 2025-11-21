@@ -77,6 +77,7 @@ import type {
 } from './types';
 
 const MAX_BFS_NODES = 5_000;
+const CACHE_WRITE_TIMEOUT_MS = 5_000;
 
 type BrokerRateLimit = {
   limit: number | null;
@@ -132,6 +133,39 @@ const mergeRecords = (...sources: Array<Record<string, unknown> | null>): Record
   }
 
   return hasValue ? merged : undefined;
+};
+
+const tenantRefreshQueues = new Map<string, Promise<unknown>>();
+
+const enqueueTenantRefresh = async <T>(tenantId: string, task: () => Promise<T>): Promise<T> => {
+  const previous = tenantRefreshQueues.get(tenantId) ?? Promise.resolve();
+  const next = previous.finally(() => task());
+  const tracking = next.then(() => undefined, () => undefined);
+  tenantRefreshQueues.set(tenantId, tracking);
+
+  try {
+    return await next;
+  } finally {
+    if (tenantRefreshQueues.get(tenantId) === tracking) {
+      tenantRefreshQueues.delete(tenantId);
+    }
+  }
+};
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, onTimeout: () => Error): Promise<T> => {
+  let timeoutHandle: NodeJS.Timeout | null = null;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(onTimeout()), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 };
 
 export const collectNumericFromSources = (
@@ -1375,95 +1409,122 @@ export const collectInstancesForTenant = async (
     }
   }
 
-  let synced = false;
+  const runCacheWrite = async (
+    name: 'setLastSyncAt' | 'setCachedSnapshots',
+    run: () => Promise<void>
+  ): Promise<{ name: 'setLastSyncAt' | 'setCachedSnapshots'; durationMs: number }> => {
+    const startedAt = Date.now();
 
-  if (shouldRefresh) {
-    await cache.invalidateCachedSnapshots(tenantId);
     try {
-      metrics.incrementHttpCounter();
-      const syncResult = await syncInstances(
-        tenantId,
-        storedInstances,
-        snapshots ?? undefined
+      await withTimeout(
+        run(),
+        CACHE_WRITE_TIMEOUT_MS,
+        () =>
+          Object.assign(
+            new Error(`cache write ${name} timed out after ${CACHE_WRITE_TIMEOUT_MS}ms`),
+            { code: 'timeout' }
+          )
       );
-      storedInstances = syncResult.instances;
-      snapshots = syncResult.snapshots;
-      if (!storageDegraded) {
-        const cacheWrites = [
-          {
-            name: 'setLastSyncAt' as const,
-            run: async () => {
-              await cache.setLastSyncAt(tenantId, new Date());
-            },
-          },
-          ...(snapshots && snapshots.length > 0
-            ? [
-                {
-                  name: 'setCachedSnapshots' as const,
-                  run: async () => {
-                    const cacheWrite = await cache.setCachedSnapshots(
-                      tenantId,
-                      snapshots as WhatsAppBrokerInstanceSnapshot[],
-                      30
-                    );
-                    cacheBackend ??= cacheWrite.backend;
-                    cacheHit = cacheHit ?? false;
-                    if (cacheWrite.error) {
-                      warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
-                    }
-                  },
-                },
-              ]
-            : []),
-        ];
-
-        const cacheWriteResults = await Promise.allSettled(
-          cacheWrites.map(async ({ name, run }) => {
-            const startedAt = Date.now();
-            try {
-              await run();
-              return { name, durationMs: Date.now() - startedAt };
-            } catch (error) {
-              throw { name, error, durationMs: Date.now() - startedAt };
-            }
-          })
-        );
-
-        for (const result of cacheWriteResults) {
-          if (result.status === 'fulfilled') {
-            logger.debug('whatsapp.instances.cache.write.success', {
-              tenantId,
-              operation: result.value.name,
-              durationMs: result.value.durationMs,
-            });
-          } else {
-            logger.warn('whatsapp.instances.cache.write.failure', {
-              tenantId,
-              operation: result.reason.name,
-              durationMs: result.reason.durationMs,
-              error: describeErrorForLog(result.reason.error),
-            });
-          }
-        }
-      }
-      metrics.recordRefreshOutcome(tenantId, 'success');
-      synced = true;
+      const durationMs = Date.now() - startedAt;
+      metrics.recordRefreshStepDuration(tenantId, name, durationMs, 'success');
+      return { name, durationMs };
     } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      metrics.recordRefreshStepDuration(tenantId, name, durationMs, 'failure');
       const errorCode =
         (error as { code?: string }).code ??
         (error as { name?: string }).name ??
-        (error instanceof Error ? error.name : null);
-      metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
-      if (error instanceof WhatsAppBrokerNotConfiguredError) {
-        if (options.refresh) {
+        (error instanceof Error ? error.name : 'unknown');
+      metrics.recordRefreshStepFailure(tenantId, name, errorCode);
+      throw { name, error, durationMs };
+    }
+  };
+
+  let synced = false;
+
+  if (shouldRefresh) {
+    await enqueueTenantRefresh(tenantId, async () => {
+      await cache.invalidateCachedSnapshots(tenantId);
+      try {
+        metrics.incrementHttpCounter();
+        const syncResult = await syncInstances(
+          tenantId,
+          storedInstances,
+          snapshots ?? undefined
+        );
+        storedInstances = syncResult.instances;
+        snapshots = syncResult.snapshots;
+        if (!storageDegraded) {
+          const cacheWrites = [
+            {
+              name: 'setLastSyncAt' as const,
+              run: async () => {
+                await cache.setLastSyncAt(tenantId, new Date());
+              },
+            },
+            ...(snapshots && snapshots.length > 0
+              ? [
+                  {
+                    name: 'setCachedSnapshots' as const,
+                    run: async () => {
+                      const cacheWrite = await cache.setCachedSnapshots(
+                        tenantId,
+                        snapshots as WhatsAppBrokerInstanceSnapshot[],
+                        30
+                      );
+                      cacheBackend ??= cacheWrite.backend;
+                      cacheHit = cacheHit ?? false;
+                      if (cacheWrite.error) {
+                        warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
+                      }
+                    },
+                  },
+                ]
+              : []),
+          ];
+
+          const cacheWriteResults = await Promise.allSettled(
+            cacheWrites.map(async ({ name, run }) => runCacheWrite(name, run))
+          );
+
+          for (const result of cacheWriteResults) {
+            if (result.status === 'fulfilled') {
+              logger.debug('whatsapp.instances.cache.write.success', {
+                tenantId,
+                operation: result.value.name,
+                durationMs: result.value.durationMs,
+                timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+              });
+            } else {
+              logger.warn('whatsapp.instances.cache.write.failure', {
+                tenantId,
+                operation: result.reason.name,
+                durationMs: result.reason.durationMs,
+                timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+                error: describeErrorForLog(result.reason.error),
+              });
+            }
+          }
+        }
+        metrics.recordRefreshOutcome(tenantId, 'success');
+        synced = true;
+      } catch (error) {
+        const errorCode =
+          (error as { code?: string }).code ??
+          (error as { name?: string }).name ??
+          (error instanceof Error ? error.name : null);
+        metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
+        if (error instanceof WhatsAppBrokerNotConfiguredError) {
+          if (options.refresh) {
+            throw error;
+          }
+          logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
+          snapshots = [];
+        } else {
           throw error;
         }
-        logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
-        snapshots = [];
-      } else {
-        throw error;
       }
-    }
+    });
   } else if (fetchSnapshots) {
     // Snapshot mode (read-only): use cache first, then broker, and cache the result
     if (!snapshots) {
@@ -1476,11 +1537,33 @@ export const collectInstancesForTenant = async (
         metrics.incrementHttpCounter();
         snapshots = await brokerClient.listInstances(tenantId);
         if (snapshots && snapshots.length > 0) {
-          const cacheWrite = await cache.setCachedSnapshots(tenantId, snapshots, 30);
-          cacheBackend ??= cacheWrite.backend;
-          cacheHit = cacheHit ?? false;
-          if (cacheWrite.error) {
-            warnings.push('Cache de snapshots não pôde ser preenchido após leitura direta do broker.');
+          try {
+            const cacheWrite = await runCacheWrite('setCachedSnapshots', async () => {
+              const result = await cache.setCachedSnapshots(
+                tenantId,
+                snapshots as WhatsAppBrokerInstanceSnapshot[],
+                30,
+              );
+              cacheBackend ??= result.backend;
+              cacheHit = cacheHit ?? false;
+              if (result.error) {
+                warnings.push('Cache de snapshots não pôde ser preenchido após leitura direta do broker.');
+              }
+            });
+
+            logger.debug('whatsapp.instances.cache.write.success', {
+              tenantId,
+              operation: cacheWrite.name,
+              durationMs: cacheWrite.durationMs,
+              timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+            });
+          } catch (error) {
+            logger.warn('whatsapp.instances.cache.write.failure', {
+              tenantId,
+              operation: 'setCachedSnapshots',
+              error: describeErrorForLog(error),
+              timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+            });
           }
         }
       } catch (error) {
