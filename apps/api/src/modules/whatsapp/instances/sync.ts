@@ -361,18 +361,25 @@ const createStoredInstanceFromSnapshot = async (
   metadataWithHistory.slug = derived.instanceId;
   const metadataWithoutError = deps.withInstanceLastError(metadataWithHistory, null);
 
-  await deps.prisma.whatsAppInstance.create({
-    data: {
+  const lastSeenData = derived.derivedLastSeenAt ? { lastSeenAt: derived.derivedLastSeenAt } : {};
+  const sharedData = {
+    tenantId,
+    name: snapshotDisplayName,
+    brokerId: derived.instanceId,
+    status: derived.derivedStatus,
+    connected: derived.derivedConnected,
+    phoneNumber: derived.phoneNumber,
+    ...lastSeenData,
+    metadata: metadataWithoutError,
+  };
+
+  await deps.prisma.whatsAppInstance.upsert({
+    where: { id: derived.instanceId },
+    create: {
       id: derived.instanceId,
-      tenantId,
-      name: snapshotDisplayName,
-      brokerId: derived.instanceId,
-      status: derived.derivedStatus,
-      connected: derived.derivedConnected,
-      phoneNumber: derived.phoneNumber,
-      ...(derived.derivedLastSeenAt ? { lastSeenAt: derived.derivedLastSeenAt } : {}),
-      metadata: metadataWithoutError,
+      ...sharedData,
     },
+    update: sharedData,
   });
 };
 
