@@ -6,7 +6,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
     class="w-full"
   >
     <ol
-      class="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-4 sm:overflow-x-auto"
+      class="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-4 sm:overflow-x-auto"
     >
       <li
         class="flex min-w-0"
@@ -14,7 +14,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
         <div
           aria-current="step"
           aria-label="Etapa atual: Proposta"
-          class="flex min-w-[200px] flex-1 items-start gap-3 rounded-xl border px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0 border-[color:var(--accent-inbox-primary)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_14%,transparent)] text-[color:var(--accent-inbox-primary)]"
+          class="flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl border px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0 border-[color:var(--accent-inbox-primary)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_14%,transparent)] text-[color:var(--accent-inbox-primary)]"
           data-stage-key="PROPOSTA"
           role="group"
         >
@@ -52,21 +52,21 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
               />
             </svg>
           </span>
-          <div
-            class="min-w-0"
+        <div
+          class="min-w-0"
+        >
+          <p
+            class="truncate text-sm font-semibold text-inherit"
           >
-            <p
-              class="truncate text-sm font-semibold text-inherit"
-            >
-              Proposta
-            </p>
-            <p
-              class="text-xs text-foreground-muted"
-            >
-              Você está aqui
-            </p>
-          </div>
+            Proposta
+          </p>
+          <p
+            class="hidden text-xs text-foreground-muted sm:block"
+          >
+            Você está aqui
+          </p>
         </div>
+      </div>
       </li>
       <div
         aria-hidden="true"
@@ -81,7 +81,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
       >
         <div
           aria-label="Próxima etapa: Documentação"
-          class="flex min-w-[200px] flex-1 items-start gap-3 rounded-xl px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
+          class="flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
           data-stage-key="DOCUMENTACAO"
           role="group"
         >
@@ -113,21 +113,21 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
               />
             </svg>
           </span>
-          <div
-            class="min-w-0"
+        <div
+          class="min-w-0"
+        >
+          <p
+            class="truncate text-sm font-semibold text-foreground"
           >
-            <p
-              class="truncate text-sm font-semibold text-foreground"
-            >
-              Documentação
-            </p>
-            <p
-              class="text-xs text-foreground-muted"
-            >
-              Próxima etapa do funil
-            </p>
-          </div>
+            Documentação
+          </p>
+          <p
+            class="hidden text-xs text-foreground-muted sm:block"
+          >
+            Próxima etapa do funil
+          </p>
         </div>
+      </div>
       </li>
       <div
         aria-hidden="true"
@@ -142,7 +142,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
       >
         <div
           aria-label="Próxima etapa: Documentos/Averbação"
-          class="flex min-w-[200px] flex-1 items-start gap-3 rounded-xl px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
+          class="flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
           data-stage-key="DOCUMENTOS_AVERBACAO"
           role="group"
         >
@@ -174,21 +174,21 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
               />
             </svg>
           </span>
-          <div
-            class="min-w-0"
+        <div
+          class="min-w-0"
+        >
+          <p
+            class="truncate text-sm font-semibold text-foreground"
           >
-            <p
-              class="truncate text-sm font-semibold text-foreground"
-            >
-              Documentos/Averbação
-            </p>
-            <p
-              class="text-xs text-foreground-muted"
-            >
-              Próxima etapa do funil
-            </p>
-          </div>
+            Documentos/Averbação
+          </p>
+          <p
+            class="hidden text-xs text-foreground-muted sm:block"
+          >
+            Próxima etapa do funil
+          </p>
         </div>
+      </div>
       </li>
       <div
         aria-hidden="true"
@@ -203,7 +203,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
       >
         <div
           aria-label="Próxima etapa: Aguardando"
-          class="flex min-w-[200px] flex-1 items-start gap-3 rounded-xl px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
+          class="flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
           data-stage-key="AGUARDANDO"
           role="group"
         >
@@ -247,7 +247,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
               Aguardando
             </p>
             <p
-              class="text-xs text-foreground-muted"
+              class="hidden text-xs text-foreground-muted sm:block"
             >
               Próxima etapa do funil
             </p>
@@ -267,7 +267,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
       >
         <div
           aria-label="Próxima etapa: Aguardando Cliente"
-          class="flex min-w-[200px] flex-1 items-start gap-3 rounded-xl px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
+          class="flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
           data-stage-key="AGUARDANDO_CLIENTE"
           role="group"
         >
@@ -307,7 +307,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
               Aguardando Cliente
             </p>
             <p
-              class="text-xs text-foreground-muted"
+              class="hidden text-xs text-foreground-muted sm:block"
             >
               Próxima etapa do funil
             </p>
@@ -327,7 +327,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
       >
         <div
           aria-label="Próxima etapa: Liquidação"
-          class="flex min-w-[200px] flex-1 items-start gap-3 rounded-xl px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
+          class="flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
           data-stage-key="LIQUIDACAO"
           role="group"
         >
@@ -370,7 +370,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
               Liquidação
             </p>
             <p
-              class="text-xs text-foreground-muted"
+              class="hidden text-xs text-foreground-muted sm:block"
             >
               Próxima etapa do funil
             </p>
@@ -390,7 +390,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
       >
         <div
           aria-label="Próxima etapa: Aprovado/Liquidação"
-          class="flex min-w-[200px] flex-1 items-start gap-3 rounded-xl px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
+          class="flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
           data-stage-key="APROVADO_LIQUIDACAO"
           role="group"
         >
@@ -428,7 +428,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
               Aprovado/Liquidação
             </p>
             <p
-              class="text-xs text-foreground-muted"
+              class="hidden text-xs text-foreground-muted sm:block"
             >
               Próxima etapa do funil
             </p>
@@ -448,7 +448,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
       >
         <div
           aria-label="Próxima etapa: Reciclar"
-          class="flex min-w-[200px] flex-1 items-start gap-3 rounded-xl px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
+          class="flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0 border border-dashed border-surface-overlay-glass-border bg-transparent text-foreground-muted"
           data-stage-key="RECICLAR"
           role="group"
         >
@@ -492,7 +492,7 @@ exports[`StageProgress > matches the snapshot for a mid-funnel stage 1`] = `
               Reciclar
             </p>
             <p
-              class="text-xs text-foreground-muted"
+              class="hidden text-xs text-foreground-muted sm:block"
             >
               Próxima etapa do funil
             </p>

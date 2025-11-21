@@ -1524,31 +1524,72 @@ const CreateCampaignWizard = ({
               disabled={stepIndex === 0 || isSubmitting}
             >
               Voltar
-            </Button>
-            {isLastStep ? (
-              <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {isSubmitting ? 'Criando…' : 'Criar campanha'}
-              </Button>
-            ) : (
-              <Tooltip delayDuration={120}>
-                <TooltipTrigger asChild>
-                  <span>
-                    <Button type="button" onClick={goToNextStep} disabled={isAdvanceDisabled}>
-                      Avançar
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {advanceDisabledReason ? (
-                  <TooltipContent side="top" className="max-w-[200px] text-xs">
-                    {advanceDisabledReason}
-                  </TooltipContent>
-                ) : null}
-              </Tooltip>
-            )}
-          </div>
+    <div className="flex min-h-0 flex-col lg:max-h-[78vh]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="sticky top-0 z-20 bg-background/95 backdrop-blur">
+          <StepperRail />
         </div>
-      </footer>
+        <div className="flex flex-col gap-6 px-5 pb-24 pt-5 sm:px-8 lg:flex-row lg:items-start lg:gap-8 lg:pb-28">
+          <section className="flex-1 min-w-0">
+            <div className="mx-auto w-full max-w-3xl space-y-6">
+              {renderStepContent()}
+              {stepError ? (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>{stepError}</span>
+                </div>
+              ) : null}
+              {submitError ? (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>{submitError}</span>
+                </div>
+              ) : null}
+            </div>
+          </section>
+          <aside className="mt-4 shrink-0 lg:mt-0 lg:w-80">
+            <CampaignSummary />
+          </aside>
+        </div>
+        <footer className="sticky bottom-0 z-20 border-t border-border/70 bg-background/95 px-5 py-4 backdrop-blur sm:px-8">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>
+              Cancelar
+            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={goToPreviousStep}
+                disabled={stepIndex === 0 || isSubmitting}
+              >
+                Voltar
+              </Button>
+              {isLastStep ? (
+                <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {isSubmitting ? 'Criando…' : 'Criar campanha'}
+                </Button>
+              ) : (
+                <Tooltip delayDuration={120}>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button type="button" onClick={goToNextStep} disabled={isAdvanceDisabled}>
+                        Avançar
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {advanceDisabledReason ? (
+                    <TooltipContent side="top" className="max-w-[200px] text-xs">
+                      {advanceDisabledReason}
+                    </TooltipContent>
+                  ) : null}
+                </Tooltip>
+              )}
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 };
