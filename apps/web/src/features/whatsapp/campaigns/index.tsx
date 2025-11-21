@@ -109,12 +109,8 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
       ? 'Tempo real está offline. Você ainda pode criar ou ajustar campanhas, mas métricas instantâneas ficarão indisponíveis até restabelecer a conexão.'
       : null;
 
-  const statusBadgeTone = connectionHealthy && realtimeConnected ? statusTone : 'warning';
-  const statusBadgeLabel = connectionHealthy
-    ? realtimeConnected
-      ? statusCopy.badge
-      : 'Tempo real offline'
-    : 'Desconectado';
+  const statusBadgeTone = statusTone;
+  const statusBadgeLabel = statusCopy.badge;
 
   const handlePrimaryAction = () => {
     if (primaryAction === 'create') {
