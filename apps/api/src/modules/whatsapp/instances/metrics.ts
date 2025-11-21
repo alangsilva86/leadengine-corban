@@ -2,12 +2,21 @@ import {
   whatsappHttpRequestsCounter,
   whatsappQrRequestCounter,
   whatsappRefreshOutcomeCounter,
+  whatsappRefreshStepDurationSummary,
+  whatsappRefreshStepFailureCounter,
   whatsappSnapshotCacheOutcomeCounter,
 } from '../../../lib/metrics';
 
 export type InstanceMetrics = {
   incrementHttpCounter: () => void;
   recordRefreshOutcome: (tenantId: string, outcome: 'success' | 'failure', errorCode?: string | null) => void;
+  recordRefreshStepDuration: (
+    tenantId: string,
+    operation: string,
+    durationMs: number,
+    outcome: 'success' | 'failure'
+  ) => void;
+  recordRefreshStepFailure: (tenantId: string, operation: string, errorCode?: string | null) => void;
   recordSnapshotCacheOutcome: (
     tenantId: string,
     backend: 'memory' | 'redis',
@@ -26,6 +35,8 @@ export const createInstanceMetrics = (
     http: whatsappHttpRequestsCounter,
     qr: whatsappQrRequestCounter,
     refreshOutcome: whatsappRefreshOutcomeCounter,
+    refreshStepDuration: whatsappRefreshStepDurationSummary,
+    refreshStepFailure: whatsappRefreshStepFailureCounter,
     snapshotCache: whatsappSnapshotCacheOutcomeCounter,
   }
 ): InstanceMetrics => {
@@ -45,6 +56,30 @@ export const createInstanceMetrics = (
   ): void => {
     try {
       counters.refreshOutcome.inc({ tenantId, outcome, errorCode: errorCode ?? undefined });
+    } catch {
+      // metrics are best effort
+    }
+  };
+
+  const recordRefreshStepDuration = (
+    tenantId: string,
+    operation: string,
+    durationMs: number,
+    outcome: 'success' | 'failure'
+  ): void => {
+    try {
+      counters.refreshStepDuration.observe(
+        { tenantId, operation, outcome },
+        Math.max(0, Number.isFinite(durationMs) ? durationMs : 0)
+      );
+    } catch {
+      // metrics are best effort
+    }
+  };
+
+  const recordRefreshStepFailure = (tenantId: string, operation: string, errorCode?: string | null): void => {
+    try {
+      counters.refreshStepFailure.inc({ tenantId, operation, errorCode: errorCode ?? undefined });
     } catch {
       // metrics are best effort
     }
@@ -83,6 +118,8 @@ export const createInstanceMetrics = (
   return {
     incrementHttpCounter,
     recordRefreshOutcome,
+    recordRefreshStepDuration,
+    recordRefreshStepFailure,
     recordSnapshotCacheOutcome,
     recordQrOutcome,
   } satisfies InstanceMetrics;

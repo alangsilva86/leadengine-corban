@@ -45,6 +45,16 @@ const WHATSAPP_REFRESH_RESULT_HELP =
   '# HELP whatsapp_refresh_requests_total Taxa de sucesso de refresh de instâncias do WhatsApp por tenant';
 const WHATSAPP_REFRESH_RESULT_TYPE = '# TYPE whatsapp_refresh_requests_total counter';
 
+const WHATSAPP_REFRESH_STEP_DURATION_METRIC = 'whatsapp_refresh_step_duration_ms';
+const WHATSAPP_REFRESH_STEP_DURATION_HELP =
+  '# HELP whatsapp_refresh_step_duration_ms Duração de etapas de refresh de instâncias do WhatsApp (ms)';
+const WHATSAPP_REFRESH_STEP_DURATION_TYPE = '# TYPE whatsapp_refresh_step_duration_ms summary';
+
+const WHATSAPP_REFRESH_STEP_FAILURE_METRIC = 'whatsapp_refresh_step_failures_total';
+const WHATSAPP_REFRESH_STEP_FAILURE_HELP =
+  '# HELP whatsapp_refresh_step_failures_total Falhas em etapas de refresh de instâncias do WhatsApp por tenant/etapa';
+const WHATSAPP_REFRESH_STEP_FAILURE_TYPE = '# TYPE whatsapp_refresh_step_failures_total counter';
+
 const WHATSAPP_SNAPSHOT_CACHE_METRIC = 'whatsapp_snapshot_cache_requests_total';
 const WHATSAPP_SNAPSHOT_CACHE_HELP =
   '# HELP whatsapp_snapshot_cache_requests_total Taxa de acertos/erros de cache de snapshots de instâncias por backend';
@@ -261,6 +271,16 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     outcome: OUTCOME_CONSTRAINT,
     errorCode: ERROR_CONSTRAINT,
   },
+  [WHATSAPP_REFRESH_STEP_DURATION_METRIC]: {
+    tenantId: TENANT_CONSTRAINT,
+    operation: OPERATION_CONSTRAINT,
+    outcome: OUTCOME_CONSTRAINT,
+  },
+  [WHATSAPP_REFRESH_STEP_FAILURE_METRIC]: {
+    tenantId: TENANT_CONSTRAINT,
+    operation: OPERATION_CONSTRAINT,
+    errorCode: ERROR_CONSTRAINT,
+  },
   [WHATSAPP_QR_RESULT_METRIC]: {
     ...BASE_LABEL_CONSTRAINTS,
     outcome: OUTCOME_CONSTRAINT,
@@ -295,6 +315,8 @@ const wsEmitCounterStore = new Map<string, number>();
 const whatsappStorageUnavailableCounterStore = new Map<string, number>();
 const whatsappStorageLatencyStore = new Map<string, { sum: number; count: number }>();
 const whatsappRefreshOutcomeStore = new Map<string, number>();
+const whatsappRefreshStepDurationStore = new Map<string, { sum: number; count: number }>();
+const whatsappRefreshStepFailureStore = new Map<string, number>();
 const whatsappSnapshotCacheOutcomeStore = new Map<string, number>();
 const whatsappQrOutcomeStore = new Map<string, number>();
 const inboundMessagesCounterStore = new Map<string, number>();
@@ -510,6 +532,26 @@ export const whatsappRefreshOutcomeCounter = {
     const key = buildLabelKey(WHATSAPP_REFRESH_RESULT_METRIC, labels);
     const current = whatsappRefreshOutcomeStore.get(key) ?? 0;
     whatsappRefreshOutcomeStore.set(key, current + value);
+  },
+};
+
+export const whatsappRefreshStepDurationSummary = {
+  observe(labels: CounterLabels = {}, durationMs: number): void {
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      return;
+    }
+
+    const key = buildLabelKey(WHATSAPP_REFRESH_STEP_DURATION_METRIC, labels);
+    const current = whatsappRefreshStepDurationStore.get(key) ?? { sum: 0, count: 0 };
+    whatsappRefreshStepDurationStore.set(key, { sum: current.sum + durationMs, count: current.count + 1 });
+  },
+};
+
+export const whatsappRefreshStepFailureCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(WHATSAPP_REFRESH_STEP_FAILURE_METRIC, labels);
+    const current = whatsappRefreshStepFailureStore.get(key) ?? 0;
+    whatsappRefreshStepFailureStore.set(key, current + value);
   },
 };
 
@@ -778,6 +820,28 @@ export const renderMetrics = async (): Promise<string> => {
     for (const [labelString, value] of whatsappRefreshOutcomeStore.entries()) {
       const suffix = labelString ? `{${labelString}}` : '';
       lines.push(`${WHATSAPP_REFRESH_RESULT_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(WHATSAPP_REFRESH_STEP_DURATION_HELP, WHATSAPP_REFRESH_STEP_DURATION_TYPE);
+  if (whatsappRefreshStepDurationStore.size === 0) {
+    lines.push(`${WHATSAPP_REFRESH_STEP_DURATION_METRIC}_sum 0`);
+    lines.push(`${WHATSAPP_REFRESH_STEP_DURATION_METRIC}_count 0`);
+  } else {
+    for (const [labelString, stats] of whatsappRefreshStepDurationStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_REFRESH_STEP_DURATION_METRIC}_sum${suffix} ${stats.sum}`);
+      lines.push(`${WHATSAPP_REFRESH_STEP_DURATION_METRIC}_count${suffix} ${stats.count}`);
+    }
+  }
+
+  lines.push(WHATSAPP_REFRESH_STEP_FAILURE_HELP, WHATSAPP_REFRESH_STEP_FAILURE_TYPE);
+  if (whatsappRefreshStepFailureStore.size === 0) {
+    lines.push(`${WHATSAPP_REFRESH_STEP_FAILURE_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of whatsappRefreshStepFailureStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_REFRESH_STEP_FAILURE_METRIC}${suffix} ${value}`);
     }
   }
 
