@@ -83,7 +83,7 @@ const StageProgress = ({ currentStage, className }) => {
 
   return (
     <div className={cn('w-full', className)}>
-      <ol className="flex flex-col gap-3 sm:flex-row sm:items-stretch sm:gap-4 sm:overflow-x-auto">
+      <ol className="flex flex-col gap-2 sm:flex-row sm:items-stretch sm:gap-4 sm:overflow-x-auto">
         {steps.map((step, index) => {
           const { stageKey, label, Icon, tone, isActive } = step;
           const stepToneClasses = isActive ? ACTIVE_STEP_TONE[tone] ?? ACTIVE_STEP_TONE.neutral : UPCOMING_STEP_CLASSES;
@@ -99,7 +99,7 @@ const StageProgress = ({ currentStage, className }) => {
                   aria-label={accessibilityLabel}
                   data-stage-key={stageKey}
                   className={cn(
-                    'flex min-w-[200px] flex-1 items-start gap-3 rounded-xl border px-3 py-2 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[180px] lg:min-w-0',
+                    'flex min-h-[44px] w-full flex-1 items-start gap-3 rounded-xl border px-3 py-3 shadow-[var(--shadow-xs)] transition-colors sm:min-w-[160px] sm:py-2 lg:min-w-0',
                     stepToneClasses,
                   )}
                 >
@@ -116,7 +116,7 @@ const StageProgress = ({ currentStage, className }) => {
                     <p className={cn('truncate text-sm font-semibold', isActive ? 'text-inherit' : 'text-foreground')}>
                       {label}
                     </p>
-                    <p className="text-xs text-foreground-muted">
+                    <p className="hidden text-xs text-foreground-muted sm:block">
                       {isActive ? 'Você está aqui' : 'Próxima etapa do funil'}
                     </p>
                   </div>
