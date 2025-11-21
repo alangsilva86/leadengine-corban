@@ -182,6 +182,7 @@ describe('campaigns router integration', () => {
           instanceId: 'inst-1',
           productType: 'Generic',
           tags: expect.arrayContaining(['foo', 'Generic', 'percentage']),
+          metadata: expect.objectContaining({ requestId: expect.any(String) }),
         })
       );
       expect(response.body).toMatchObject({ success: true, data: { id: 'campaign-2' } });
