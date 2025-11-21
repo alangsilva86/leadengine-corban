@@ -321,9 +321,61 @@ export const processStandardInboundEvent = async (
   }
 
   if (!instance && tenantIdForBrokerLookup) {
-    instance = await prisma.whatsAppInstance.findFirst({
-      where: { tenantId: tenantIdForBrokerLookup },
-    });
+    const tenantInstances =
+      (await prisma.whatsAppInstance.findMany({
+        where: { tenantId: tenantIdForBrokerLookup },
+      })) ?? [];
+
+    const isActiveInstance = (candidate: WhatsAppInstanceRecord): boolean =>
+      Boolean(candidate?.connected && candidate?.status === 'connected');
+
+    const scoredInstances = tenantInstances
+      .map((candidate) => {
+        const lastSeenAt = candidate?.lastSeenAt ? new Date(candidate.lastSeenAt).getTime() : 0;
+        const updatedAt = candidate?.updatedAt ? new Date(candidate.updatedAt).getTime() : 0;
+        const createdAt = candidate?.createdAt ? new Date(candidate.createdAt).getTime() : 0;
+
+        return {
+          candidate,
+          score: {
+            active: isActiveInstance(candidate),
+            lastSeenAt,
+            updatedAt,
+            createdAt,
+          },
+        };
+      })
+      .sort((left, right) => {
+        if (left.score.active !== right.score.active) {
+          return left.score.active ? -1 : 1;
+        }
+
+        if (left.score.updatedAt !== right.score.updatedAt) {
+          return right.score.updatedAt - left.score.updatedAt;
+        }
+
+        if (left.score.lastSeenAt !== right.score.lastSeenAt) {
+          return right.score.lastSeenAt - left.score.lastSeenAt;
+        }
+
+        if (left.score.createdAt !== right.score.createdAt) {
+          return right.score.createdAt - left.score.createdAt;
+        }
+
+        return (left.candidate?.id ?? '').localeCompare(right.candidate?.id ?? '');
+      });
+
+    const activeCandidates = scoredInstances.filter(({ candidate }) => candidate && isActiveInstance(candidate));
+
+    if (activeCandidates.length > 1) {
+      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Múltiplas instâncias ativas para o tenant', {
+        requestId,
+        tenantId: tenantIdForBrokerLookup,
+        instanceIds: activeCandidates.map(({ candidate }) => candidate?.id).filter(Boolean),
+      });
+    }
+
+    instance = scoredInstances[0]?.candidate ?? null;
   }
 
   if (!instance) {

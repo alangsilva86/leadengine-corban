@@ -10,6 +10,7 @@ import {
 } from '../provisioning';
 import { resolveTenantIdentifiersFromMetadata } from '../identifiers';
 import type { InboundWhatsAppEnvelope, InboundWhatsAppEvent } from '../types';
+import { logger } from '../../../../config/logger';
 
 const prismaMock = vi.hoisted(() => {
   const mock = {
@@ -22,6 +23,7 @@ const prismaMock = vi.hoisted(() => {
       findUnique: vi.fn(),
       create: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
     },
     tenant: {
@@ -100,6 +102,7 @@ const queueUpsertMock = prismaMock.queue.upsert;
 const whatsappInstanceFindUniqueMock = prismaMock.whatsAppInstance.findUnique;
 const whatsappInstanceCreateMock = prismaMock.whatsAppInstance.create;
 const whatsappInstanceFindFirstMock = prismaMock.whatsAppInstance.findFirst;
+const whatsappInstanceFindManyMock = prismaMock.whatsAppInstance.findMany;
 const whatsappInstanceUpdateMock = prismaMock.whatsAppInstance.update;
 const tenantFindFirstMock = prismaMock.tenant.findFirst;
 const campaignFindManyMock = prismaMock.campaign.findMany;
@@ -970,7 +973,10 @@ describe('upsertLeadFromInbound', () => {
       type: 'WHATSAPP_REPLIED',
       occurredAt: baseMessage.createdAt,
     };
-    leadCreateMock.mockResolvedValueOnce(leadRecord);
+    leadUpsertMock.mockImplementation(async (args) => {
+      leadCreateMock(args as any);
+      return leadRecord;
+    });
     leadActivityCreateMock.mockResolvedValueOnce(activityRecord);
 
     const message = baseMessage as unknown as UpsertParams['message'];
@@ -983,15 +989,17 @@ describe('upsertLeadFromInbound', () => {
       message,
     });
 
-    expect(leadCreateMock).toHaveBeenCalledWith(
+    expect(leadUpsertMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
+        where: { tenantId_contactId: { tenantId: 'tenant-1', contactId: 'contact-1' } },
+        create: expect.objectContaining({
           tenantId: 'tenant-1',
           contactId: 'contact-1',
           status: 'NEW',
           source: 'WHATSAPP',
           lastContactAt: baseMessage.createdAt,
         }),
+        update: expect.objectContaining({ lastContactAt: baseMessage.createdAt }),
       })
     );
 
@@ -1075,6 +1083,10 @@ describe('upsertLeadFromInbound', () => {
 
     leadFindFirstMock.mockResolvedValueOnce(leadRecord);
     leadUpdateMock.mockResolvedValueOnce(leadRecord);
+    leadUpsertMock.mockImplementation(async (args) => {
+      leadUpdateMock(args as any);
+      return leadRecord;
+    });
     leadActivityFindFirstMock.mockResolvedValueOnce(existingActivity);
 
     const message = baseMessage as unknown as UpsertParams['message'];
@@ -1092,10 +1104,10 @@ describe('upsertLeadFromInbound', () => {
     expect(emitToTenantMock).not.toHaveBeenCalled();
     expect(emitToTicketMock).not.toHaveBeenCalled();
     expect(leadLastContactGaugeSetMock).toHaveBeenCalledTimes(1);
-    expect(leadUpdateMock).toHaveBeenCalledWith(
+    expect(leadUpsertMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: leadRecord.id },
-        data: expect.objectContaining({ lastContactAt: baseMessage.createdAt }),
+        where: { tenantId_contactId: { tenantId: 'tenant-1', contactId: 'contact-1' } },
+        update: expect.objectContaining({ lastContactAt: baseMessage.createdAt }),
       })
     );
     expect(leadCreateMock).not.toHaveBeenCalled();
@@ -1117,6 +1129,10 @@ describe('upsertLeadFromInbound', () => {
 
     leadFindFirstMock.mockResolvedValueOnce(existingLead);
     leadUpdateMock.mockResolvedValueOnce({ ...existingLead, lastContactAt: message.createdAt });
+    leadUpsertMock.mockImplementation(async (args) => {
+      leadUpdateMock(args as any);
+      return { ...existingLead, lastContactAt: message.createdAt };
+    });
     leadActivityCreateMock.mockResolvedValueOnce({
       id: 'activity-2',
       tenantId: 'tenant-1',
@@ -1134,10 +1150,10 @@ describe('upsertLeadFromInbound', () => {
       message,
     });
 
-    expect(leadUpdateMock).toHaveBeenCalledWith(
+    expect(leadUpsertMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'lead-existing' },
-        data: expect.objectContaining({ lastContactAt: message.createdAt }),
+        where: { tenantId_contactId: { tenantId: 'tenant-1', contactId: 'contact-1' } },
+        update: expect.objectContaining({ lastContactAt: message.createdAt }),
       })
     );
     expect(leadCreateMock).not.toHaveBeenCalled();
@@ -1150,6 +1166,8 @@ describe('processStandardInboundEvent', () => {
     queueCacheByTenant.clear();
     vi.resetAllMocks();
     ticketFindUniqueMock.mockReset();
+    whatsappInstanceFindManyMock.mockReset();
+    whatsappInstanceFindManyMock.mockResolvedValue([]);
     applyDefaultPrismaTransactionMock();
     prismaMock.$transaction = vi.fn(async (callback) =>
       callback({
@@ -1369,6 +1387,253 @@ describe('processStandardInboundEvent', () => {
       });
     } finally {
       attemptSpy.mockRestore();
+      ensureQueueSpy.mockRestore();
+      ensureContactSpy.mockRestore();
+      ensureTicketSpy.mockRestore();
+      upsertLeadSpy.mockRestore();
+      emitRealtimeSpy.mockRestore();
+    }
+  });
+
+  it('selects the most recent active tenant instance deterministically and alerts on multiple active candidates', async () => {
+    const now = new Date('2024-04-02T10:00:00.000Z');
+    const tenantId = 'tenant-deterministic';
+
+    const event: InboundEvent = {
+      id: 'event-deterministic',
+      instanceId: null,
+      tenantId,
+      direction: 'INBOUND',
+      contact: { phone: '+5511888888888', name: 'Cliente Determinístico' },
+      message: { id: 'message-deterministic', text: 'Olá, LeadEngine!' },
+      timestamp: now.toISOString(),
+      metadata: { requestId: 'req-deterministic' },
+      chatId: '5511888888888@s.whatsapp.net',
+      externalId: null,
+      sessionId: null,
+    } as unknown as InboundEvent;
+
+    const provisioningModule = await import('../provisioning');
+    const contactModule = await import('../inbound-lead/contact-service');
+    const ticketModule = await import('../inbound-lead/ticket-service');
+    const leadModule = await import('../inbound-lead/lead-service');
+    const realtimeModule = await import('../inbound-lead/realtime-service');
+
+    const ensureQueueSpy = vi.spyOn(provisioningModule, 'ensureInboundQueueForInboundMessage');
+    const ensureContactSpy = vi.spyOn(contactModule, 'ensureContact');
+    const ensureTicketSpy = vi.spyOn(ticketModule, 'ensureTicketForContact');
+    const upsertLeadSpy = vi.spyOn(leadModule, 'upsertLeadFromInbound');
+    const emitRealtimeSpy = vi.spyOn(realtimeModule, 'emitRealtimeUpdatesForInbound');
+
+    const instances = [
+      {
+        id: 'wa-old-active',
+        tenantId,
+        name: 'WhatsApp Antigo',
+        brokerId: 'broker-old',
+        status: 'connected',
+        connected: true,
+        phoneNumber: null,
+        lastSeenAt: new Date('2024-03-31T10:00:00.000Z'),
+        createdAt: new Date('2024-02-01T10:00:00.000Z'),
+        updatedAt: new Date('2024-03-31T10:00:00.000Z'),
+      },
+      {
+        id: 'wa-new-active',
+        tenantId,
+        name: 'WhatsApp Mais Recente',
+        brokerId: 'broker-new',
+        status: 'connected',
+        connected: true,
+        phoneNumber: null,
+        lastSeenAt: new Date('2024-04-02T09:30:00.000Z'),
+        createdAt: new Date('2024-03-15T12:00:00.000Z'),
+        updatedAt: new Date('2024-04-02T09:30:00.000Z'),
+      },
+      {
+        id: 'wa-pending',
+        tenantId,
+        name: 'WhatsApp Pendente',
+        brokerId: 'broker-pending',
+        status: 'pending',
+        connected: false,
+        phoneNumber: null,
+        lastSeenAt: null,
+        createdAt: new Date('2024-03-20T08:00:00.000Z'),
+        updatedAt: new Date('2024-03-20T08:00:00.000Z'),
+      },
+    ];
+
+    whatsappInstanceFindUniqueMock.mockResolvedValue(null);
+    whatsappInstanceFindFirstMock.mockResolvedValue(null);
+    whatsappInstanceFindManyMock.mockResolvedValueOnce(instances as any);
+
+    campaignFindManyMock.mockResolvedValueOnce([
+      {
+        id: 'campaign-deterministic',
+        tenantId,
+        whatsappInstanceId: 'wa-new-active',
+        status: 'active',
+        name: 'Campanha Determinística',
+        agreementId: null,
+      },
+    ]);
+
+    ensureQueueSpy.mockResolvedValue({ queueId: 'queue-deterministic', wasProvisioned: false });
+    ensureContactSpy.mockResolvedValue({
+      id: 'contact-deterministic',
+      tenantId,
+      displayName: 'Cliente Determinístico',
+      fullName: 'Cliente Determinístico',
+      primaryPhone: '+5511888888888',
+      phones: [],
+      tags: [],
+    } as const);
+    ensureTicketSpy.mockResolvedValue('ticket-deterministic');
+    upsertLeadSpy.mockResolvedValue({ lead: { id: 'lead-deterministic' }, leadActivity: { id: 'activity-deterministic' } });
+    emitRealtimeSpy.mockResolvedValue();
+
+    sendMessageMock.mockResolvedValueOnce({
+      id: 'timeline-deterministic',
+      createdAt: now,
+      metadata: { eventMetadata: { requestId: 'req-deterministic' } },
+      content: 'Olá, LeadEngine!',
+    });
+
+    try {
+      const result = await testing.processStandardInboundEvent(event, now.getTime(), {
+        preloadedInstance: null,
+      });
+
+      expect(result).toBe(true);
+      expect(whatsappInstanceFindManyMock).toHaveBeenCalledWith({ where: { tenantId } });
+      expect(ensureQueueSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId, instanceId: 'wa-new-active' })
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('Múltiplas instâncias ativas'),
+        expect.objectContaining({
+          tenantId,
+          instanceIds: expect.arrayContaining(['wa-old-active', 'wa-new-active']),
+        })
+      );
+    } finally {
+      ensureQueueSpy.mockRestore();
+      ensureContactSpy.mockRestore();
+      ensureTicketSpy.mockRestore();
+      upsertLeadSpy.mockRestore();
+      emitRealtimeSpy.mockRestore();
+    }
+  });
+
+  it('falls back deterministically to the most recently updated instance when tenant has no active records', async () => {
+    const now = new Date('2024-04-03T08:00:00.000Z');
+    const tenantId = 'tenant-inactive';
+
+    const event: InboundEvent = {
+      id: 'event-inactive',
+      instanceId: null,
+      tenantId,
+      direction: 'INBOUND',
+      contact: { phone: '+5511777777777', name: 'Cliente Inativo' },
+      message: { id: 'message-inactive', text: 'Mensagem inativa' },
+      timestamp: now.toISOString(),
+      metadata: { requestId: 'req-inactive' },
+      chatId: '5511777777777@s.whatsapp.net',
+      externalId: null,
+      sessionId: null,
+    } as unknown as InboundEvent;
+
+    const provisioningModule = await import('../provisioning');
+    const contactModule = await import('../inbound-lead/contact-service');
+    const ticketModule = await import('../inbound-lead/ticket-service');
+    const leadModule = await import('../inbound-lead/lead-service');
+    const realtimeModule = await import('../inbound-lead/realtime-service');
+
+    const ensureQueueSpy = vi.spyOn(provisioningModule, 'ensureInboundQueueForInboundMessage');
+    const ensureContactSpy = vi.spyOn(contactModule, 'ensureContact');
+    const ensureTicketSpy = vi.spyOn(ticketModule, 'ensureTicketForContact');
+    const upsertLeadSpy = vi.spyOn(leadModule, 'upsertLeadFromInbound');
+    const emitRealtimeSpy = vi.spyOn(realtimeModule, 'emitRealtimeUpdatesForInbound');
+
+    const instances = [
+      {
+        id: 'wa-stale',
+        tenantId,
+        name: 'WhatsApp Antigo',
+        brokerId: 'broker-stale',
+        status: 'error',
+        connected: false,
+        phoneNumber: null,
+        lastSeenAt: new Date('2024-03-30T08:00:00.000Z'),
+        createdAt: new Date('2024-03-01T08:00:00.000Z'),
+        updatedAt: new Date('2024-03-30T08:00:00.000Z'),
+      },
+      {
+        id: 'wa-fresher',
+        tenantId,
+        name: 'WhatsApp Mais Atualizado',
+        brokerId: 'broker-fresher',
+        status: 'pending',
+        connected: false,
+        phoneNumber: null,
+        lastSeenAt: null,
+        createdAt: new Date('2024-03-10T09:00:00.000Z'),
+        updatedAt: new Date('2024-04-02T09:00:00.000Z'),
+      },
+    ];
+
+    whatsappInstanceFindUniqueMock.mockResolvedValue(null);
+    whatsappInstanceFindFirstMock.mockResolvedValue(null);
+    whatsappInstanceFindManyMock.mockResolvedValueOnce(instances as any);
+
+    campaignFindManyMock.mockResolvedValueOnce([
+      {
+        id: 'campaign-inactive',
+        tenantId,
+        whatsappInstanceId: 'wa-fresher',
+        status: 'active',
+        name: 'Campanha Inativa',
+        agreementId: null,
+      },
+    ]);
+
+    ensureQueueSpy.mockResolvedValue({ queueId: 'queue-inactive', wasProvisioned: false });
+    ensureContactSpy.mockResolvedValue({
+      id: 'contact-inactive',
+      tenantId,
+      displayName: 'Cliente Inativo',
+      fullName: 'Cliente Inativo',
+      primaryPhone: '+5511777777777',
+      phones: [],
+      tags: [],
+    } as const);
+    ensureTicketSpy.mockResolvedValue('ticket-inactive');
+    upsertLeadSpy.mockResolvedValue({ lead: { id: 'lead-inactive' }, leadActivity: { id: 'activity-inactive' } });
+    emitRealtimeSpy.mockResolvedValue();
+
+    sendMessageMock.mockResolvedValueOnce({
+      id: 'timeline-inactive',
+      createdAt: now,
+      metadata: { eventMetadata: { requestId: 'req-inactive' } },
+      content: 'Mensagem inativa',
+    });
+
+    try {
+      const result = await testing.processStandardInboundEvent(event, now.getTime(), {
+        preloadedInstance: null,
+      });
+
+      expect(result).toBe(true);
+      expect(whatsappInstanceFindManyMock).toHaveBeenCalledWith({ where: { tenantId } });
+      expect(ensureQueueSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId, instanceId: 'wa-fresher' })
+      );
+      expect(logger.error).not.toHaveBeenCalledWith(
+        expect.stringContaining('Múltiplas instâncias ativas'),
+        expect.anything()
+      );
+    } finally {
       ensureQueueSpy.mockRestore();
       ensureContactSpy.mockRestore();
       ensureTicketSpy.mockRestore();
