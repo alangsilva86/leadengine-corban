@@ -1,7 +1,13 @@
 import { Prisma } from '@prisma/client';
 
 import { prisma as defaultPrisma } from '../../lib/prisma';
-import type { QueueEntity, QueueInput, QueueReorderItem, QueueUpdateInput } from './queue.types';
+import type {
+  QueueEntity,
+  QueueInput,
+  QueueReorderItem,
+  QueueReorderResult,
+  QueueUpdateInput,
+} from './queue.types';
 
 const queueSelect = {
   id: true,
@@ -82,7 +88,11 @@ export class QueueService {
     });
   }
 
-  async reorderQueues(tenantId: string, items: QueueReorderItem[]): Promise<QueueEntity[]> {
+  async reorderQueues(
+    tenantId: string,
+    items: QueueReorderItem[],
+    includeItems = true
+  ): Promise<QueueReorderResult> {
     const queueIds = await this.prisma.queue.findMany({
       where: { tenantId, id: { in: items.map((item) => item.id) } },
       select: { id: true },
@@ -92,7 +102,7 @@ export class QueueService {
     const updates = items.filter((item) => allowedIds.has(item.id));
 
     if (updates.length === 0) {
-      return [];
+      return { updated: false };
     }
 
     await this.prisma.$transaction(
@@ -104,7 +114,12 @@ export class QueueService {
       )
     );
 
-    return this.listQueues(tenantId);
+    if (!includeItems) {
+      return { updated: true };
+    }
+
+    const queues = await this.listQueues(tenantId);
+    return { updated: true, queues };
   }
 
   async deleteQueue(tenantId: string, queueId: string): Promise<boolean> {

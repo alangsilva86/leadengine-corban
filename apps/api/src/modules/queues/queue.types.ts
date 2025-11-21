@@ -16,6 +16,11 @@ export interface QueueReorderItem {
   orderIndex: number;
 }
 
+export interface QueueReorderResult {
+  updated: boolean;
+  queues?: QueueEntity[];
+}
+
 export interface QueueEntity {
   id: string;
   tenantId: string;

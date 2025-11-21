@@ -274,6 +274,7 @@ curl -X GET "https://ticketzapi-production.up.railway.app/api/lead-engine/alloca
 ### Preferências e filas
 - `/api/preferences` – salva preferências de usuários (tema, filtros, layout).
 - `/api/queues` – CRUD de filas/etapas do fluxo de tickets.
+- `PATCH /api/queues/reorder` – reordena `orderIndex` em lote; envie `includeItems=false` na query para responder apenas com sucesso e pular a leitura das filas atualizadas.
 
 ### Integração WhatsApp
 - `/api/integrations/whatsapp/instances` – CRUD de instâncias, QR (`/qr.png`), pareamento (`/pair`), métricas e status.
