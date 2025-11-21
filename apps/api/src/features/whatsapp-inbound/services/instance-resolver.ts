@@ -61,10 +61,13 @@ const cacheResolvedInstance = (entry: ResolvedInstance, keys: string[], now: num
 };
 
 export const resolveWhatsappInstanceByIdentifiers = async (
-  identifiers: unknown[]
+  identifiers: unknown[],
+  expectedTenantId?: unknown
 ): Promise<ResolvedInstance | null> => {
   const now = Date.now();
   pruneExpiredEntries(now);
+
+  const tenantId = sanitizeIdentifier(expectedTenantId);
 
   const candidates = identifiers
     .map((identifier) => sanitizeIdentifier(identifier))
@@ -76,10 +79,10 @@ export const resolveWhatsappInstanceByIdentifiers = async (
 
   for (const candidate of candidates) {
     const cached = instanceCache.get(candidate);
-    if (cached && cached.expiresAt > now) {
+    if (cached && cached.expiresAt > now && (!tenantId || cached.tenantId === tenantId)) {
       return { instanceId: cached.instanceId, tenantId: cached.tenantId, brokerId: cached.brokerId };
     }
-    if (cached) {
+    if (cached && cached.expiresAt <= now) {
       instanceCache.delete(candidate);
     }
   }
@@ -88,6 +91,7 @@ export const resolveWhatsappInstanceByIdentifiers = async (
     try {
       const record = await prisma.whatsAppInstance.findFirst({
         where: {
+          tenantId: tenantId ?? undefined,
           OR: [
             { id: candidate },
             { brokerId: candidate },
