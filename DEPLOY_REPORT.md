@@ -18,6 +18,7 @@ O deploy do Ticketz LeadEngine foi executado com sucesso, incluindo todas as cor
 - [x] Configurações de segurança validadas
 - [x] Scripts de deploy preparados
 - [x] Documentação atualizada
+- [x] Auditoria de contas admin planejada para cada tenant com credencial única e autoria registrada
 
 ### Deploy
 - [x] Backup do banco de dados
@@ -28,6 +29,7 @@ O deploy do Ticketz LeadEngine foi executado com sucesso, incluindo todas as cor
 - [x] Deploy do Frontend
 - [x] Configuração de proxy reverso
 - [x] Health checks implementados
+- [x] Geração e registro no secret manager das credenciais administrativas únicas por tenant e por solicitante
 
 ### Pós-Deploy
 - [x] Testes de conectividade
@@ -174,9 +176,10 @@ logs/
 - **Health Check**: https://api.seudominio.com/healthz
 - **Docs**: https://api.seudominio.com/docs
 
-### Credenciais de Acesso
-- **Admin**: admin@ticketz.com / admin123
-- **Agente**: agente@ticketz.com / agent123
+### Criação e guarda de contas administrativas por tenant
+- **Provisionamento inicial**: cada tenant recebe um administrador próprio gerado automaticamente durante o onboarding ou pela rotina de provisionamento; o e-mail é registrado junto ao tenant e a senha é criada como segredo randômico, nunca reaproveitado entre ambientes.
+- **Rotação automática**: senhas administrativas são rotacionadas de forma programada ou sob demanda, com histórico de quem solicitou/gerou a nova credencial preservado para auditoria.
+- **Armazenamento seguro**: todas as credenciais são gravadas no secret manager da cloud (ou cofre equivalente) com tags do tenant e do solicitante; nenhuma senha circula em texto plano em playbooks ou variáveis.
 
 ## 📋 Próximos Passos
 
