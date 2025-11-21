@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { body, param } from 'express-validator';
+import { body, param, query } from 'express-validator';
 
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
@@ -29,6 +29,7 @@ const updateQueueValidation = [
 ];
 
 const reorderValidation = [
+  query('includeItems').optional().isBoolean().toBoolean(),
   body('items').isArray({ min: 1 }).withMessage('items must be a non-empty array'),
   body('items.*.id').isString().trim().isLength({ min: 1 }),
   body('items.*.orderIndex').isInt({ min: 0 }).toInt(),
@@ -98,16 +99,22 @@ router.patch(
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.tenantContext!.tenantId;
+    const includeItems = (req.query.includeItems as boolean | undefined) ?? true;
     const items = queueSerializer.buildReorderItems(req.body as Record<string, unknown>);
 
-    const reordered = await queueService.reorderQueues(tenantId, items);
+    const reordered = await queueService.reorderQueues(tenantId, items, includeItems);
 
-    if (reordered.length === 0) {
+    if (!reordered.updated) {
       queueHttpSerializer.respondNotFound(res, 'Nenhuma fila válida encontrada para reordenar.');
       return;
     }
 
-    queueHttpSerializer.respondWithQueueList(res, reordered);
+    if (!includeItems) {
+      queueHttpSerializer.respondWithSuccess(res);
+      return;
+    }
+
+    queueHttpSerializer.respondWithQueueList(res, reordered.queues ?? []);
   })
 );
 

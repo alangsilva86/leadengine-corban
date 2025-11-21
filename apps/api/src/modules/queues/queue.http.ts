@@ -44,6 +44,10 @@ export class QueueHttpSerializer {
     });
   }
 
+  respondWithSuccess(res: Response): void {
+    res.json({ success: true });
+  }
+
   respondWithDelete(res: Response): void {
     res.json({ success: true });
   }
