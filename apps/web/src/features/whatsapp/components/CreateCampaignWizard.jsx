@@ -215,6 +215,8 @@ const CreateCampaignWizard = ({
   const [stepError, setStepError] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingFocusStep, setPendingFocusStep] = useState(null);
+  const stepHeadingRefs = useRef({});
 
   useEffect(() => {
     onSubmittingChange?.(isSubmitting);
@@ -373,6 +375,14 @@ const CreateCampaignWizard = ({
     [selectedInstance, formState.agreementId, formState.product, formState.margin, formState.strategy, formState.name, formState.status],
   );
 
+  const stepIndexLookup = useMemo(() => {
+    const lookup = {};
+    STEP_SEQUENCE.forEach((step, index) => {
+      lookup[step.key] = index;
+    });
+    return lookup;
+  }, []);
+
   const stepStatuses = useMemo(() => {
     const statuses = {};
     STEP_SEQUENCE.forEach((step, index) => {
@@ -462,8 +472,26 @@ const CreateCampaignWizard = ({
     }
     setStepError(null);
     setSubmitError(null);
+    setPendingFocusStep(targetKey);
     setStepIndex(targetIndex);
   };
+
+  useEffect(() => {
+    if (!pendingFocusStep) {
+      return undefined;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      const targetHeading = stepHeadingRefs.current[pendingFocusStep];
+      if (targetHeading) {
+        targetHeading.focus({ preventScroll: true });
+        targetHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      setPendingFocusStep(null);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [currentStep?.key, pendingFocusStep]);
 
   const goToPreviousStep = () => {
     setStepError(null);
@@ -569,8 +597,20 @@ const CreateCampaignWizard = ({
     }
   };
 
-  const renderStepHeading = (title, description) => (
-    <header className="space-y-1">
+  const registerStepHeading = (stepKey) => (node) => {
+    if (node) {
+      stepHeadingRefs.current[stepKey] = node;
+    } else {
+      delete stepHeadingRefs.current[stepKey];
+    }
+  };
+
+  const renderStepHeading = (title, description, stepKey = currentStep?.key) => (
+    <header
+      ref={registerStepHeading(stepKey)}
+      tabIndex={-1}
+      className="space-y-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
       <h2 className="text-base font-semibold leading-6 text-foreground md:text-lg">{title}</h2>
       {description ? <p className="text-sm leading-5 text-muted-foreground">{description}</p> : null}
     </header>
@@ -596,6 +636,109 @@ const CreateCampaignWizard = ({
         return 'Conclua a etapa anterior para avançar.';
     }
   };
+
+  const reviewChecklistItems = useMemo(() => {
+    const marginNumber = Number(formState.margin);
+    const hasMarginValue = formState.margin !== '' && formState.margin !== null && formState.margin !== undefined;
+    const isMarginValid = Number.isFinite(marginNumber) && marginNumber > 0;
+
+    const items = [];
+
+    const instanceMessage = stepValidation.instance
+      ? 'Instância conectada'
+      : !formState.instanceId
+        ? 'Selecione uma instância na Etapa 1'
+        : 'Conecte a instância escolhida na Etapa 1';
+    const instanceTooltip = stepValidation.instance
+      ? 'Instância pronta para receber leads.'
+      : !formState.instanceId
+        ? 'Escolha uma instância para liberar Origem.'
+        : 'Instância precisa estar conectada.';
+
+    items.push({
+      key: 'instance',
+      isValid: stepValidation.instance,
+      message: instanceMessage,
+      helper: selectedInstance ? formatInstanceLabel(selectedInstance) : 'Ir para Instância',
+      tooltip: instanceTooltip,
+      stepIndex: stepIndexLookup.instance ?? 0,
+    });
+
+    const agreementMessage = stepValidation.agreement ? 'Origem válida' : 'Selecione o convênio na Etapa 2';
+    const agreementTooltip = stepValidation.agreement
+      ? 'Convênio selecionado para a campanha.'
+      : 'Defina o convênio para liberar Produto & margem.';
+
+    items.push({
+      key: 'agreement',
+      isValid: stepValidation.agreement,
+      message: agreementMessage,
+      helper: selectedAgreement ? formatAgreementLabel(selectedAgreement) : 'Ir para Origem',
+      tooltip: agreementTooltip,
+      stepIndex: stepIndexLookup.agreement ?? 1,
+    });
+
+    let productMessage = 'Produto compatível';
+    let productTooltip = 'Produto e margem validados.';
+    if (!stepValidation.product) {
+      if (!formState.product) {
+        productMessage = 'Escolha o produto na Etapa 3';
+        productTooltip = 'Selecione um produto compatível para seguir.';
+      } else if (!hasMarginValue) {
+        productMessage = 'Adicione margem na Etapa 3';
+        productTooltip = 'Informe a margem alvo para validar a combinação.';
+      } else if (!isMarginValid) {
+        productMessage = 'Use margem maior que zero na Etapa 3';
+        productTooltip = 'Margem deve ser numérica e positiva.';
+      } else {
+        productMessage = 'Revise produto e margem na Etapa 3';
+        productTooltip = 'Confirme os dados financeiros.';
+      }
+    }
+
+    items.push({
+      key: 'product',
+      isValid: stepValidation.product,
+      message: productMessage,
+      helper: selectedProduct?.label
+        ? `${selectedProduct.label}${formState.margin ? ` • ${formState.margin}%` : ''}`
+        : 'Ir para Produto & margem',
+      tooltip: productTooltip,
+      stepIndex: stepIndexLookup.product ?? 2,
+    });
+
+    const strategyMessage = stepValidation.strategy ? 'Estratégia definida' : 'Selecione a régua na Etapa 4';
+    const strategyTooltip = stepValidation.strategy
+      ? 'Régua configurada para os leads.'
+      : 'Escolha a estratégia antes de criar.';
+
+    items.push({
+      key: 'strategy',
+      isValid: stepValidation.strategy,
+      message: strategyMessage,
+      helper: selectedStrategyCard?.cadence || selectedStrategy?.label || 'Ir para Estratégia',
+      tooltip: strategyTooltip,
+      stepIndex: stepIndexLookup.strategy ?? 3,
+    });
+
+    return items;
+  }, [
+    formState.agreementId,
+    formState.instanceId,
+    formState.margin,
+    formState.product,
+    formState.strategy,
+    selectedAgreement,
+    selectedInstance,
+    selectedProduct,
+    selectedStrategy,
+    selectedStrategyCard,
+    stepIndexLookup,
+    stepValidation.agreement,
+    stepValidation.instance,
+    stepValidation.product,
+    stepValidation.strategy,
+  ]);
 
   const renderStepContent = () => {
     switch (currentStep?.key) {
@@ -961,63 +1104,45 @@ const CreateCampaignWizard = ({
                   </div>
                 </div>
               </div>
-                <div className="grid gap-2">
-                  <div className="flex items-center gap-2">
-                    {stepValidation.instance ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                    ) : (
-                      <AlertCircle className="h-4 w-4 text-amber-500" />
+              <div className="grid gap-2">
+                {reviewChecklistItems.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => goToStep(item.stepIndex)}
+                    className={cn(
+                      'group flex items-start gap-3 rounded-lg border px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      item.isValid
+                        ? 'border-emerald-300/60 bg-emerald-500/5 hover:border-emerald-300/80'
+                        : 'border-border hover:border-primary/50 hover:bg-primary/5',
                     )}
-                    <button
-                      type="button"
-                      onClick={() => goToStep(0)}
-                      className="text-left text-sm leading-5 text-muted-foreground underline-offset-2 hover:underline"
-                    >
-                      {stepValidation.instance ? 'Instância conectada' : 'Ajustar na Etapa 1'}
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                  {stepValidation.agreement ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 text-amber-500" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => goToStep(1)}
-                    className="text-left text-sm leading-5 text-muted-foreground underline-offset-2 hover:underline"
                   >
-                    {stepValidation.agreement ? 'Origem válida' : 'Ajustar na Etapa 2'}
+                    <Tooltip delayDuration={80}>
+                      <TooltipTrigger asChild>
+                        <span className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background">
+                          {item.isValid ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
+                          ) : (
+                            <AlertCircle className="h-4 w-4 text-amber-500" aria-hidden />
+                          )}
+                          <span className="sr-only">{item.tooltip}</span>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {item.tooltip}
+                      </TooltipContent>
+                    </Tooltip>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm font-medium leading-5 text-foreground">{item.message}</span>
+                      {item.helper ? (
+                        <span className="text-xs leading-4 text-muted-foreground">{item.helper}</span>
+                      ) : null}
+                    </div>
+                    <span className="ml-auto text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground/80">
+                      Etapa {item.stepIndex + 1}
+                    </span>
                   </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  {stepValidation.product ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 text-amber-500" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => goToStep(2)}
-                    className="text-left text-sm leading-5 text-muted-foreground underline-offset-2 hover:underline"
-                  >
-                    {stepValidation.product ? 'Produto compatível' : 'Ajustar na Etapa 3'}
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  {stepValidation.strategy ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4 text-amber-500" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => goToStep(3)}
-                    className="text-left text-sm leading-5 text-muted-foreground underline-offset-2 hover:underline"
-                  >
-                    {stepValidation.strategy ? 'Estratégia definida' : 'Ajustar na Etapa 4'}
-                  </button>
-                </div>
+                ))}
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
