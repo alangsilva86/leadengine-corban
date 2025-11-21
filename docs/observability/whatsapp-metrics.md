@@ -43,3 +43,51 @@ Este documento descreve os painéis de Grafana e alertas de Prometheus recomenda
 * Aplique `tenantId` nos painéis quando investigar problemas específicos de clientes corporativos.
 * Utilize `instanceId="overflow"` como indicador de que a cardinalidade está acima do limite recomendado e revise a configuração do tenant/instância.
 * Remova filtros/legendas que dependiam de `transport="sidecar"` ou `mode="sidecar"`; o único valor esperado é `http`. Configure alertas para disparar se `/healthz` reportar qualquer modo diferente de `http`.
+
+## Esquema de identificação obrigatória
+
+Todos os eventos de observabilidade (logs, métricas e traces) devem carregar os identificadores `tenant_id` e `creator_id` para permitir correlação ponta a ponta.
+
+### Formato de log recomendado
+
+Use logs estruturados em JSON com os campos a seguir:
+
+```json
+{
+  "timestamp": "2024-04-20T12:34:56.789Z",
+  "level": "info",
+  "message": "ticket sent",
+  "tenant_id": "tenant-123",
+  "creator_id": "user-999",
+  "request_id": "req-abc",
+  "span_id": "a1b2c3d4",
+  "context": { "ticketId": "t-42", "instanceId": "inst-7" }
+}
+```
+
+Campos padrão obrigatórios:
+
+| Campo | Descrição | Observações |
+| ----- | --------- | ----------- |
+| `tenant_id` | Identificador do tenant no domínio do produto. | Deve estar presente em todas as entradas; para chamadas internas sem tenant conhecido, preencher com `unknown`. |
+| `creator_id` | Usuário que originou a ação (agentId ou system). | Usar `system` para jobs automatizados. |
+| `request_id` | ID da requisição HTTP ou background job. | Propagar entre serviços. |
+| `span_id` | ID do span ativo no trace. | Gerado pelo tracer; garante correlação com o APM. |
+| `origin` | Fonte do evento (api/frontend/worker/webhook). | Mantém consistência com métricas existentes. |
+
+### Métricas e traces
+
+* **Métricas**: adiciona rótulos `tenant_id` e `creator_id` em todas as séries novas. Evitar cardinalidade explosiva removendo valores nulos; preferir `unknown`.
+* **Traces**: propagar `tenant_id` e `creator_id` como atributos de span e no `resource` do tracer para permitir filtros rápidos em APM.
+
+### Configuração por serviço
+
+* **API**: configurar o middleware de logging/observabilidade para extrair `tenant_id` do token ou header `X-Tenant-Id` e `creator_id` do usuário autenticado. Injetar os campos no `request_id` logger (ex.: `pino` bindings) e como atributos padrão do tracer. Atualizar exporters Prometheus/OpenTelemetry para incluir labels/attributes.
+* **Frontend**: incluir `tenant_id` e `creator_id` ao inicializar o cliente de monitoramento (Sentry/New Relic). Os eventos de console/logging enviados ao backend devem serializar esses campos junto ao `session_id`. Para métricas Web Vitals customizadas, anexar `tenant_id` como label e `creator_id` como atributo.
+* **Workers**: nas filas, propagar `tenant_id` e `creator_id` no payload das mensagens. O worker deve copiar esses valores para o contexto de logger e tracer do job, além de rotular métricas de processamento (latência, retries) com esses labels.
+
+### Dashboards e alertas
+
+* **Dashboards Grafana**: adicionar variáveis `tenant_id` e `creator_id` (com `includeAll` desativado para evitar explosão) e reescrever queries para filtrar pelos labels correspondentes. Nos painéis existentes que usam `tenantId`, garantir mapeamento/alias para `tenant_id` quando ambos coexistirem durante a migração.
+* **Alertas Prometheus**: incluir `for` clauses e labels de roteamento com `tenant_id` para direcionar notificações. Reescrever regras que fazem `sum by (instanceId)` para `sum by (tenant_id, instanceId)` onde aplicável, permitindo disparos específicos por tenant sem gerar falsos positivos globais.
+* **Tracing dashboards**: criar saved searches com `resource.tenant_id` e `span.tenant_id` e campos `creator_id` para facilitar filtros por cliente/operador.
