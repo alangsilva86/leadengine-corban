@@ -38,6 +38,55 @@ O deploy do Ticketz LeadEngine foi executado com sucesso, incluindo todas as cor
 - [x] Logs configurados
 - [x] Backup automático configurado
 
+## 🧭 Ciclo de Provisionamento de Novo Tenant
+
+O provisionamento de um tenant deve seguir o mesmo rigor do deploy geral, mas com foco em isolamento (banco, chaves e seeds) e rastreabilidade do criador. O fluxo abaixo está organizado em Pré-Deploy, Deploy e Pós-Deploy específicos para **cada tenant**.
+
+### Pré-Deploy (por tenant)
+- **Coleta da requisição**: registrar _owner_ (nome, e-mail, squad) e SLA esperado na _issue_ ou planilha de tenants.
+- **Validação de limites**: confirmar headroom de conexões PostgreSQL, storage disponível, sessões Redis e throughput do broker WhatsApp antes de aprovar o provisionamento.
+- **Plano de isolamento**: definir se o tenant usará banco dedicado (`CREATE DATABASE`) ou schema compartilhado, e quais segredos serão exclusivos (JWT, webhooks, OAuth).
+- **Checklist de artefatos**:
+  - Ticket/issue com dados do solicitante e justificativa.
+  - Template de `.env` específico para o tenant (com variações de `DATABASE_URL`, `JWT_SECRET` e segredos de integrações).
+  - Plano de rollback (dump inicial + credenciais temporárias) anexado ao ticket.
+
+### Deploy (por tenant)
+- **Criar banco dedicado** (quando aplicável):
+  - `CREATE DATABASE tenant_<slug> OWNER <db_owner>;`
+  - Aplicar migrações no banco alvo: `DATABASE_URL=postgresql://.../tenant_<slug> pnpm --filter @ticketz/api db:push`.
+- **Seed inicial**: executar `pnpm --filter @ticketz/api db:seed` apontando para o banco do tenant para criar operador padrão e filas iniciais.
+- **Isolamento de chaves**: gerar `JWT_SECRET`, `WHATSAPP_WEBHOOK_API_KEY` e chaves de brokers exclusivos do tenant; armazenar apenas no secret store e no `.env` derivado.
+- **Checklist de artefatos**:
+  - Dump pós-migração do banco dedicado.
+  - Registro dos segredos emitidos (cofre/secret manager) com labels do tenant.
+  - Logs do comando de seed anexados ao ticket.
+
+### Pós-Deploy (por tenant)
+- **Smoke test**: login do operador seed, criação de ticket e lead de teste, envio/recepção de mensagem via broker configurado.
+- **Auditoria de isolamento**: confirmar que o tenant não aparece em `tenants` de bancos vizinhos e que as conexões do service mesh apontam para o host correto.
+- **Rotação opcional de segredos**: após validação, rotacionar `JWT_SECRET`/webhook keys para valores definitivos e atualizar secret store.
+- **Checklist de artefatos**:
+  - Evidência de smoke test (prints ou logs) anexada ao ticket.
+  - Confirmação de monitoramento habilitado (dashboards/alertas com tag do tenant).
+  - Nota de handover para o time de suporte com contatos do criador do tenant.
+
+### Registro do criador do tenant e execução por tenant
+- **Captura formal do criador**: no momento da aprovação, registrar `createdBy.name`, `createdBy.email` e data em dois lugares: (1) no ticket/planilha de tenants e (2) no próprio registro do tenant (campo `settings` JSON na tabela `tenants`). Exemplo SQL pós-criação:
+  ```sql
+  UPDATE tenants
+     SET settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{createdBy}', '{"name":"<nome>","email":"<email>","at":"<ISO8601>"}'::jsonb)
+   WHERE slug = '<slug-do-tenant>';
+  ```
+- **Execução step-by-step** (por tenant):
+  1. Criar/selecionar o banco alvo (dedicado ou schema) e aplicar migrações.
+  2. Rodar seed inicial com o `.env` do tenant carregado para garantir que usuários/filas pertençam ao novo `tenantId`.
+  3. Gerar e guardar segredos exclusivos no cofre, atualizando o `.env` derivado e o registro do ticket.
+  4. Registrar o criador do tenant no `settings` e anexar evidências (logs, dumps, checklist) ao ticket.
+  5. Executar smoke test e validar monitoramento específico do tenant.
+
+> Para execuções paralelas, repetir o checklist completo para cada tenant e nunca reutilizar `.env` ou segredos entre execuções.
+
 ## 🏗️ Arquitetura Implementada
 
 ### Componentes
