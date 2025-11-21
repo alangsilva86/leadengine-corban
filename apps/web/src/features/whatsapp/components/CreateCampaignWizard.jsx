@@ -1468,62 +1468,6 @@ const CreateCampaignWizard = ({
   );
 
   return (
-    <div className="flex min-h-0 flex-col lg:h-[78vh]">
-      <StepperRail />
-      <div className="flex flex-1 min-h-0 flex-col lg:flex-row lg:overflow-hidden">
-        <section className="flex-1 min-h-0 px-5 pb-8 pt-5 sm:px-8 lg:pb-12 lg:overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl space-y-6">
-            {!isLg ? (
-              <Accordion
-                type="single"
-                collapsible
-                defaultValue="summary"
-                className="rounded-2xl border border-border/70 bg-background/80 shadow-sm"
-              >
-                <AccordionItem value="summary">
-                  <AccordionTrigger className="px-4 text-sm font-semibold text-foreground">
-                    Resumo da campanha
-                  </AccordionTrigger>
-                  <AccordionContent className="px-4 pb-5">
-                    <CampaignSummary />
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            ) : null}
-            {renderStepContent()}
-            {stepError ? (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
-                <AlertCircle className="h-4 w-4" />
-                <span>{stepError}</span>
-              </div>
-            ) : null}
-            {submitError ? (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
-                <AlertCircle className="h-4 w-4" />
-                <span>{submitError}</span>
-              </div>
-            ) : null}
-          </div>
-        </section>
-        {isLg ? (
-          <aside className="min-h-0 border-t border-border/60 bg-slate-950/40 px-5 py-5 backdrop-blur lg:w-80 lg:border-t-0 lg:border-l lg:px-6 lg:py-6 lg:overflow-y-auto">
-            <CampaignSummary />
-          </aside>
-        ) : null}
-      </div>
-      <footer className="border-t border-border/70 bg-background/95 px-5 py-4 backdrop-blur sm:px-8">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>
-            Cancelar
-          </Button>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={goToPreviousStep}
-              disabled={stepIndex === 0 || isSubmitting}
-            >
-              Voltar
     <div className="flex min-h-0 flex-col lg:max-h-[78vh]">
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="sticky top-0 z-20 bg-background/95 backdrop-blur">
