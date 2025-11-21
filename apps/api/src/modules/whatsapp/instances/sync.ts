@@ -104,6 +104,26 @@ const buildInstanceLookups = (existing: StoredInstance[]): InstanceLookups => {
   return lookups;
 };
 
+const resolveSnapshotTenantId = (snapshot: WhatsAppBrokerInstanceSnapshot): string => {
+  const instanceRecord = snapshot.instance as Record<string, unknown>;
+  const directTenant = typeof instanceRecord?.tenantId === 'string' ? instanceRecord.tenantId.trim() : '';
+  if (directTenant) {
+    return directTenant;
+  }
+
+  const metadata =
+    instanceRecord?.metadata && typeof instanceRecord.metadata === 'object'
+      ? (instanceRecord.metadata as Record<string, unknown>)
+      : null;
+  const metadataTenant = metadata && typeof metadata.tenantId === 'string' ? metadata.tenantId.trim() : '';
+  if (metadataTenant) {
+    return metadataTenant;
+  }
+
+  const metadataAltTenant = metadata && typeof metadata.tenant_id === 'string' ? metadata.tenant_id.trim() : '';
+  return metadataAltTenant ?? '';
+};
+
 const collectSnapshots = async (
   deps: SyncDependencies,
   tenantId: string,
@@ -113,16 +133,45 @@ const collectSnapshots = async (
   const snapshots =
     prefetchedSnapshots ?? (await deps.whatsappBrokerClient.listInstances(tenantId));
 
-  if (!snapshots.length) {
+  const filteredSnapshots: WhatsAppBrokerInstanceSnapshot[] = [];
+  let discardedMismatchedTenant = 0;
+  let discardedMissingTenant = 0;
+
+  for (const snapshot of snapshots) {
+    const snapshotTenantId = resolveSnapshotTenantId(snapshot);
+    if (!snapshotTenantId) {
+      discardedMissingTenant += 1;
+      continue;
+    }
+    if (snapshotTenantId !== tenantId) {
+      discardedMismatchedTenant += 1;
+      continue;
+    }
+
+    filteredSnapshots.push(snapshot);
+  }
+
+  if (discardedMismatchedTenant || discardedMissingTenant) {
+    deps.logger.info('whatsapp.instances.sync.discardedSnapshots', {
+      tenantId,
+      discarded: {
+        total: discardedMismatchedTenant + discardedMissingTenant,
+        mismatchedTenant: discardedMismatchedTenant,
+        missingTenant: discardedMissingTenant,
+      },
+    });
+  }
+
+  if (!filteredSnapshots.length) {
     deps.logger.info('whatsapp.instances.sync.brokerEmpty', { tenantId });
     return {
-      snapshots,
+      snapshots: filteredSnapshots,
       archivedInstances: new Map(),
       lookups: buildInstanceLookups(existing),
     };
   }
 
-  const snapshotInstanceIds = snapshots
+  const snapshotInstanceIds = filteredSnapshots
     .map((snapshot) => (typeof snapshot.instance?.id === 'string' ? snapshot.instance.id : ''))
     .filter((value) => value.length > 0);
 
@@ -132,10 +181,11 @@ const collectSnapshots = async (
   deps.logger.info('whatsapp.instances.sync.snapshot', {
     tenantId,
     brokerCount: snapshots.length,
-    ids: snapshots.map((snapshot) => snapshot.instance.id),
+    validCount: filteredSnapshots.length,
+    ids: filteredSnapshots.map((snapshot) => snapshot.instance.id),
   });
 
-  return { snapshots, archivedInstances, lookups };
+  return { snapshots: filteredSnapshots, archivedInstances, lookups };
 };
 
 const resolveSnapshotState = (
@@ -270,7 +320,7 @@ const deriveSnapshot = (
 
 const reconcileExistingInstance = async (
   deps: SyncDependencies,
-  tenantId: string,
+  snapshotTenantId: string,
   derived: SnapshotDerivation,
   existingInstance: StoredInstance
 ): Promise<boolean> => {
@@ -289,7 +339,7 @@ const reconcileExistingInstance = async (
 
   if (existingDisplayName && hasBrokerName && existingDisplayName !== brokerNameCandidate) {
     deps.logger.debug('whatsapp.instances.sync.preserveStoredName', {
-      tenantId,
+      tenantId: snapshotTenantId,
       instanceId: derived.instanceId,
       existingDisplayName,
       brokerNameCandidate,
@@ -297,7 +347,7 @@ const reconcileExistingInstance = async (
     });
   } else if (hasBrokerName && !existingDisplayName) {
     deps.logger.debug('whatsapp.instances.sync.useBrokerDisplayNameFallback', {
-      tenantId,
+      tenantId: snapshotTenantId,
       instanceId: derived.instanceId,
       brokerNameCandidate,
       reason: 'no-stored-name',
@@ -321,7 +371,7 @@ const reconcileExistingInstance = async (
   const hasChange = statusChanged || connectedChanged || phoneChanged;
 
   const updateData: Prisma.WhatsAppInstanceUpdateArgs['data'] = {
-    tenantId,
+    tenantId: snapshotTenantId,
     status: derived.derivedStatus,
     connected: derived.derivedConnected,
     brokerId: derived.instanceId,
@@ -340,7 +390,7 @@ const reconcileExistingInstance = async (
 
 const createStoredInstanceFromSnapshot = async (
   deps: SyncDependencies,
-  tenantId: string,
+  snapshotTenantId: string,
   derived: SnapshotDerivation
 ): Promise<void> => {
   const baseMetadata: InstanceMetadata = {
@@ -363,7 +413,7 @@ const createStoredInstanceFromSnapshot = async (
 
   const lastSeenData = derived.derivedLastSeenAt ? { lastSeenAt: derived.derivedLastSeenAt } : {};
   const sharedData = {
-    tenantId,
+    tenantId: snapshotTenantId,
     name: snapshotDisplayName,
     brokerId: derived.instanceId,
     status: derived.derivedStatus,
@@ -403,11 +453,13 @@ const processSnapshot = async (
     return {};
   }
 
+  const snapshotTenantId = resolveSnapshotTenantId(snapshot) || tenantId;
+
   const action = resolveSnapshotState(existingInstance, archivedInstances, derived.instanceId);
 
   if (action === 'skip') {
     deps.logger.info('whatsapp.instances.sync.skipDeleted', {
-      tenantId,
+      tenantId: snapshotTenantId,
       instanceId: derived.instanceId,
       deletedAt: archivedInstances.get(derived.instanceId)?.deletedAt ?? null,
     });
@@ -416,14 +468,19 @@ const processSnapshot = async (
 
   if (action === 'update' && existingInstance) {
     deps.logger.info('whatsapp.instances.sync.updateStored', {
-      tenantId,
+      tenantId: snapshotTenantId,
       instanceId: derived.instanceId,
       status: derived.derivedStatus,
       connected: derived.derivedConnected,
       phoneNumber: derived.phoneNumber,
     });
 
-    const hasChange = await reconcileExistingInstance(deps, tenantId, derived, existingInstance);
+    const hasChange = await reconcileExistingInstance(
+      deps,
+      snapshotTenantId,
+      derived,
+      existingInstance
+    );
     return hasChange
       ? {
           updated: {
@@ -437,14 +494,14 @@ const processSnapshot = async (
   }
 
   deps.logger.info('whatsapp.instances.sync.createMissing', {
-    tenantId,
+    tenantId: snapshotTenantId,
     instanceId: derived.instanceId,
     status: derived.derivedStatus,
     connected: derived.derivedConnected,
     phoneNumber: derived.phoneNumber,
   });
 
-  await createStoredInstanceFromSnapshot(deps, tenantId, derived);
+  await createStoredInstanceFromSnapshot(deps, snapshotTenantId, derived);
   return {
     created: {
       id: derived.instanceId,

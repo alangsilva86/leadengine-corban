@@ -1035,8 +1035,7 @@ class WhatsAppBrokerClient {
 
     const { status, connected } = this.normalizeStatus(statusValue, connectedCandidate);
 
-    const resolvedTenantId =
-      this.pickString(source.tenantId, metadata.tenantId, metadata.tenant_id) ?? tenantId;
+    const resolvedTenantId = this.pickString(source.tenantId, metadata.tenantId, metadata.tenant_id) ?? '';
 
     const createdAt =
       this.pickString(source.createdAt, source.created_at, metadata.createdAt, metadata.created_at) ||
