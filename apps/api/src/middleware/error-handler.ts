@@ -15,6 +15,7 @@ import { RateLimitError } from '../utils/rate-limit';
 import { CircuitBreakerOpenError } from '../utils/circuit-breaker';
 import { PhoneNormalizationError } from '../utils/phone';
 import { DatabaseDisabledError } from '../lib/prisma';
+import { HandledError } from '../utils/http-validation';
 
 const readErrorDetails = (err: unknown): unknown => {
   if (typeof err === 'object' && err !== null && 'details' in err) {
@@ -105,7 +106,14 @@ export const errorHandler = (
   const requestId = req.rid ?? null;
 
   // Tratar diferentes tipos de erro
-  if (error instanceof ValidationError || hasErrorName(error, 'ValidationError')) {
+  if (error instanceof HandledError || hasErrorName(error, 'HandledError')) {
+    apiError = {
+      status: error.status,
+      code: error.code,
+      message: error.message,
+      details: readErrorDetails(error) ?? error.details,
+    };
+  } else if (error instanceof ValidationError || hasErrorName(error, 'ValidationError')) {
     apiError = {
       status: 400,
       code: 'VALIDATION_ERROR',
