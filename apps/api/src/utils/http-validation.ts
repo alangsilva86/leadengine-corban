@@ -6,6 +6,32 @@ export interface ValidationErrorDetail {
   message: string;
 }
 
+export class HandledError extends Error {
+  status: number;
+  code: string;
+  details?: unknown;
+
+  constructor({
+    status,
+    code,
+    message,
+    details,
+  }: {
+    status: number;
+    code: string;
+    message: string;
+    details?: unknown;
+  }) {
+    super(message);
+    this.name = 'HandledError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+
+    Object.setPrototypeOf(this, HandledError.prototype);
+  }
+}
+
 export const formatZodIssues = (issues: ZodIssue[]): ValidationErrorDetail[] => {
   const seen = new Map<string, ValidationErrorDetail>();
 
@@ -30,3 +56,11 @@ export const respondWithValidationError = (res: Response, issues: ZodIssue[]): v
     },
   });
 };
+
+export const buildValidationError = (issues: ZodIssue[]): HandledError =>
+  new HandledError({
+    status: 400,
+    code: 'VALIDATION_ERROR',
+    message: 'Corpo da requisição inválido.',
+    details: { errors: formatZodIssues(issues) },
+  });
