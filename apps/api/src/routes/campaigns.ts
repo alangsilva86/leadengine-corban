@@ -4,7 +4,9 @@ import { validateRequest } from '../middleware/validation';
 import { resolveRequestTenantId } from '../services/tenant-service';
 import { HttpErrorTranslator } from '../utils/http-error-translator';
 import { withRequestContext } from '../utils/request-context';
+import { logger } from '../config/logger';
 import type { CampaignDTO } from './campaigns.types';
+import type { CreateCampaignInput } from '../services/campaigns-service';
 import {
   buildFilters,
   createCampaignValidators,
@@ -70,6 +72,84 @@ const errorTranslator = new HttpErrorTranslator({
 });
 
 const router = Router();
+
+export const buildCreateCampaignInput = (
+  body: Record<string, unknown>,
+  req: Request
+): CreateCampaignInput => {
+  const rid = (req as Request & { rid?: string }).rid;
+  const requestId = typeof rid === 'string' ? rid : undefined;
+  const logContext = {
+    scope: 'campaigns:create',
+    requestId,
+    tenantId: req.user?.tenantId ?? null,
+  };
+
+  logger.info('Building campaign creation payload', logContext);
+
+  const requestedTenantId = resolveRequestTenantId(req);
+  const rawAgreementId = typeof body.agreementId === 'string' ? body.agreementId.trim() : '';
+  const rawAgreementName = normalizeClassificationValue(body.agreementName);
+  const rawInstanceId = typeof body.instanceId === 'string' ? body.instanceId.trim() : '';
+  const rawBrokerId = typeof body.brokerId === 'string' ? body.brokerId.trim() : '';
+  const providedName = typeof body.name === 'string' ? body.name.trim() : '';
+  const budget = typeof body.budget === 'number' ? body.budget : undefined;
+  const cplTarget = typeof body.cplTarget === 'number' ? body.cplTarget : undefined;
+  const schedule = body.schedule ?? { type: 'immediate' };
+  const channel = typeof body.channel === 'string' ? body.channel : 'whatsapp';
+  const audienceCount = Array.isArray(body.audience) ? body.audience.length : 0;
+  const productType = normalizeClassificationValue(body.productType) ?? 'generic';
+  const marginType = normalizeClassificationValue(body.marginType) ?? 'percentage';
+  const strategy = normalizeClassificationValue(body.strategy);
+  const explicitTags = normalizeTagsInput(body.tags);
+  const resolvedTags = Array.from(
+    new Set([
+      ...explicitTags,
+      ...([productType, marginType, strategy].filter((value): value is string => Boolean(value)) as string[]),
+    ])
+  );
+  const metadata = parseMetadataPayload(body.metadata);
+  const marginValue = readNumericField(body, 'marginValue');
+
+  if (marginValue !== null) {
+    metadata.margin = marginValue;
+  }
+
+  if (requestId && !metadata.requestId) {
+    metadata.requestId = requestId;
+  }
+
+  const actorId = req.user?.id ?? 'system';
+  const status = normalizeStatus(body.status);
+
+  const payload = {
+    requestedTenantId,
+    explicitTenantId:
+      typeof body.tenantId === 'string' && body.tenantId.trim().length > 0 ? body.tenantId.trim() : undefined,
+    agreementId: rawAgreementId,
+    agreementName: rawAgreementName,
+    instanceId: rawInstanceId,
+    brokerId: rawBrokerId || null,
+    name: providedName,
+    budget,
+    cplTarget,
+    schedule,
+    channel,
+    audienceCount,
+    productType,
+    marginType,
+    marginValue,
+    strategy,
+    tags: resolvedTags,
+    metadata,
+    actorId,
+    status,
+  };
+
+  logger.debug('Campaign creation payload built', { ...logContext, payload });
+
+  return payload;
+};
 
 router.get(
   '/',
@@ -141,62 +221,10 @@ router.post(
   validateRequest,
   requireTenant,
   withRequestContext(async ({ req, res, requestId }) => {
-    const requestedTenantId = resolveRequestTenantId(req);
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const rawAgreementId = typeof body.agreementId === 'string' ? body.agreementId.trim() : '';
-    const rawAgreementName = normalizeClassificationValue(body.agreementName);
-    const rawInstanceId = typeof body.instanceId === 'string' ? body.instanceId.trim() : '';
-    const rawBrokerId = typeof body.brokerId === 'string' ? body.brokerId.trim() : '';
-    const providedName = typeof body.name === 'string' ? body.name.trim() : '';
-    const budget = typeof body.budget === 'number' ? body.budget : undefined;
-    const cplTarget = typeof body.cplTarget === 'number' ? body.cplTarget : undefined;
-    const schedule = body.schedule ?? { type: 'immediate' };
-    const channel = typeof body.channel === 'string' ? body.channel : 'whatsapp';
-    const audienceCount = Array.isArray(body.audience) ? body.audience.length : 0;
-    const productType = normalizeClassificationValue(body.productType) ?? 'generic';
-    const marginType = normalizeClassificationValue(body.marginType) ?? 'percentage';
-    const strategy = normalizeClassificationValue(body.strategy);
-    const explicitTags = normalizeTagsInput(body.tags);
-    const resolvedTags = Array.from(
-      new Set([
-        ...explicitTags,
-        ...([productType, marginType, strategy].filter((value): value is string => Boolean(value)) as string[]),
-      ])
-    );
-    const metadata = parseMetadataPayload(body.metadata);
-    const marginValue = readNumericField(body, 'marginValue');
-    if (marginValue !== null) {
-      metadata.margin = marginValue;
-    }
-    const actorId = req.user?.id ?? 'system';
-    const status = normalizeStatus(body.status);
+    const input = buildCreateCampaignInput((req.body ?? {}) as Record<string, unknown>, req);
 
     try {
-      const result = await createCampaign({
-        requestedTenantId,
-        explicitTenantId:
-          typeof body.tenantId === 'string' && body.tenantId.trim().length > 0
-            ? body.tenantId.trim()
-            : undefined,
-        agreementId: rawAgreementId,
-        agreementName: rawAgreementName,
-        instanceId: rawInstanceId,
-        brokerId: rawBrokerId || null,
-        name: providedName,
-        budget,
-        cplTarget,
-        schedule,
-        channel,
-        audienceCount,
-        productType,
-        marginType,
-        marginValue,
-        strategy,
-        tags: resolvedTags,
-        metadata,
-        actorId,
-        status,
-      });
+      const result = await createCampaign(input);
 
       const responsePayload: { success: true; data: CampaignDTO; warnings?: typeof result.warnings; meta?: typeof result.meta } = {
         success: true,
