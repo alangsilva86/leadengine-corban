@@ -203,6 +203,40 @@ const collectAllowedProducts = (agreement) => {
   return new Set(candidates[0]);
 };
 
+const resolveTenantContextLabel = (agreement) => {
+  if (!agreement || typeof agreement !== 'object') {
+    return null;
+  }
+  const candidates = [
+    agreement.tenantName,
+    agreement.tenantLabel,
+    agreement.accountName,
+    agreement.accountLabel,
+    agreement.branchName,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+  if (agreement.tenant && typeof agreement.tenant === 'object') {
+    const tenantNameCandidates = [
+      agreement.tenant.name,
+      agreement.tenant.displayName,
+      agreement.tenant.label,
+    ];
+    for (const candidate of tenantNameCandidates) {
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
+    }
+  }
+  if (typeof agreement.tenantId === 'string' && agreement.tenantId.trim().length > 0) {
+    return agreement.tenantId.trim();
+  }
+  return null;
+};
+
 const CreateCampaignWizard = ({
   open,
   agreement,
@@ -243,6 +277,10 @@ const CreateCampaignWizard = ({
     }
     return agreements;
   }, [agreements]);
+  const tenantContextLabel = useMemo(
+    () => resolveTenantContextLabel(agreement),
+    [agreement],
+  );
 
   const agreementErrorMessage = useMemo(() => {
     if (!agreementsError) {
@@ -796,6 +834,20 @@ const CreateCampaignWizard = ({
         return (
           <div className="space-y-6">
             {renderStepHeading('Escolha a instância', 'Use um número conectado para receber os leads.')}
+            <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+              {tenantContextLabel ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="border-primary/40 bg-primary/10 px-2 py-0.5 text-primary">
+                    Tenant · {tenantContextLabel}
+                  </Badge>
+                  <span>Mostrando apenas instâncias vinculadas a este tenant.</span>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed border-border/70 bg-muted/10 p-3">
+                  Vincule um convênio com tenant definido para liberar instâncias específicas.
+                </div>
+              )}
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2 min-w-0">
                 <Label htmlFor="campaign-instance">Instância</Label>
@@ -858,7 +910,9 @@ const CreateCampaignWizard = ({
             ) : null}
             {!hasInstances ? (
               <div className="rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
-                Nenhuma instância encontrada. Gere um QR para conectar e liberar as próximas etapas.
+                {tenantContextLabel
+                  ? `Nenhuma instância do tenant ${tenantContextLabel} foi encontrada. Gere ou conecte uma instância para liberar as próximas etapas.`
+                  : 'Nenhuma instância encontrada. Gere um QR para conectar e liberar as próximas etapas.'}
               </div>
             ) : null}
             {hasInstances && !hasConnectedInstances ? (

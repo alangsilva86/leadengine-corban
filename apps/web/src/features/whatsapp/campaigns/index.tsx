@@ -68,6 +68,10 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
     realtimeConnected,
     connectionStatus,
     connectionHealthy,
+    tenantFilterId,
+    tenantFilterLabel,
+    tenantScopeNotice,
+    selectedInstanceBelongsToTenant,
   } = useWhatsAppConnect(props);
 
   const backLabel = 'Voltar';
@@ -92,6 +96,7 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
   };
   const objectiveCopy = stageObjectives[currentStage?.id ?? ''] ?? 'Avance na jornada de integração';
   const supportCopy = `${objectiveCopy}. ${onboardingDescription}`;
+  const tenantDisplayName = tenantFilterLabel ?? tenantFilterId ?? null;
 
   const hasCampaigns = (campaigns?.length ?? 0) > 0;
   const primaryAction = hasCampaigns ? 'continue' : 'create';
@@ -103,6 +108,10 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
     : realtimeConnected
       ? 'Conecte uma instância ativa e com tempo real para gerenciar as campanhas.'
       : 'Tempo real está offline. Reative a conexão para gerenciar as campanhas.';
+  const tenantWarningMessage =
+    tenantFilterId && !selectedInstanceBelongsToTenant
+      ? 'A instância ativa não pertence ao tenant selecionado; escolha uma instância compatível.'
+      : tenantScopeNotice ?? null;
 
   const realtimeWarningMessage =
     connectionHealthy && !realtimeConnected
@@ -162,6 +171,11 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
                 Instância ativa · {selectedInstance.name ?? selectedInstance.id}
               </Badge>
             ) : null}
+            {tenantDisplayName ? (
+              <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary">
+                Tenant · {tenantDisplayName}
+              </Badge>
+            ) : null}
             <Badge variant="status" tone={statusBadgeTone as any} className="gap-2 text-xs font-medium uppercase">
               {statusBadgeLabel}
             </Badge>
@@ -219,6 +233,12 @@ const WhatsAppCampaigns = (props: WhatsAppCampaignsProps) => {
           </div>
         </div>
       </header>
+
+      {tenantWarningMessage ? (
+        <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
+          {tenantWarningMessage}
+        </NoticeBanner>
+      ) : null}
 
       {connectionBlockedMessage ? (
         <NoticeBanner tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>

@@ -257,6 +257,7 @@ export default function useWhatsAppInstances(options = {}) {
   const rateLimitUntil = useInstancesStore((state) => state.rateLimitUntil);
   const lastForcedAt = useInstancesStore((state) => state.lastForcedAt);
   const hasFetchedOnce = useInstancesStore((state) => state.hasFetchedOnce);
+  const lastTenantIdRef = useRef(selectedAgreement?.tenantId ?? null);
 
   useEffect(() => {
     const desiredConfig = {
@@ -418,6 +419,18 @@ export default function useWhatsAppInstances(options = {}) {
     },
     [store],
   );
+
+  useEffect(() => {
+    const nextTenantId = selectedAgreement?.tenantId ?? null;
+    if (lastTenantIdRef.current === nextTenantId) {
+      return;
+    }
+    lastTenantIdRef.current = nextTenantId;
+    store.getState().resetForTenantChange?.();
+    if (nextTenantId) {
+      void loadInstances({ forceRefresh: true });
+    }
+  }, [selectedAgreement?.tenantId, loadInstances, store]);
 
   const connectInstance = useCallback(
     async (instanceId, pairingOptions = {}) => {

@@ -216,6 +216,156 @@ const initialState = (status: string | undefined, activeCampaign: any | undefine
   persistentWarning: null,
 });
 
+const readTenantString = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const pickTenantId = (record: unknown): string | null => {
+  if (!record || typeof record !== 'object') {
+    return readTenantString(record);
+  }
+
+  const source = record as Record<string, unknown>;
+  const directCandidates = [
+    source.tenantId,
+    source.tenant_id,
+    source.tenantSlug,
+    source.scopeTenantId,
+    source.scope_tenant_id,
+  ];
+
+  for (const candidate of directCandidates) {
+    const resolved = readTenantString(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const nestedSources = ['tenant', 'account', 'scope'];
+  for (const key of nestedSources) {
+    if (source[key] && typeof source[key] === 'object') {
+      const nested = pickTenantId(source[key]);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+};
+
+const resolveInstanceTenantId = (instance: unknown): string | null => {
+  if (!instance || typeof instance !== 'object') {
+    return readTenantString(instance);
+  }
+
+  const baseTenant = pickTenantId(instance);
+  if (baseTenant) {
+    return baseTenant;
+  }
+
+  const metadata =
+    (instance as Record<string, unknown>).metadata &&
+    typeof (instance as Record<string, unknown>).metadata === 'object'
+      ? ((instance as Record<string, unknown>).metadata as Record<string, unknown>)
+      : null;
+
+  return metadata ? pickTenantId(metadata) : null;
+};
+
+const resolveAgreementTenantId = (agreement: unknown): string | null => {
+  if (!agreement || typeof agreement !== 'object') {
+    return readTenantString(agreement);
+  }
+
+  const directTenant = pickTenantId(agreement);
+  if (directTenant) {
+    return directTenant;
+  }
+
+  const metadata =
+    (agreement as Record<string, unknown>).metadata &&
+    typeof (agreement as Record<string, unknown>).metadata === 'object'
+      ? ((agreement as Record<string, unknown>).metadata as Record<string, unknown>)
+      : null;
+  if (metadata) {
+    const metaTenant = pickTenantId(metadata);
+    if (metaTenant) {
+      return metaTenant;
+    }
+  }
+
+  const account =
+    (agreement as Record<string, unknown>).account &&
+    typeof (agreement as Record<string, unknown>).account === 'object'
+      ? ((agreement as Record<string, unknown>).account as Record<string, unknown>)
+      : null;
+  if (account) {
+    const accountTenant = pickTenantId(account);
+    if (accountTenant) {
+      return accountTenant;
+    }
+  }
+
+  return null;
+};
+
+const resolveTenantDisplayName = (agreement: unknown): string | null => {
+  if (!agreement || typeof agreement !== 'object') {
+    return null;
+  }
+  const record = agreement as Record<string, unknown>;
+  const candidates = [
+    record.tenantName,
+    record.tenantLabel,
+    record.tenantSlug,
+    record.accountName,
+    record.accountLabel,
+    record.scopeName,
+  ];
+  for (const candidate of candidates) {
+    const resolved = readTenantString(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const tenant =
+    record.tenant && typeof record.tenant === 'object'
+      ? (record.tenant as Record<string, unknown>)
+      : null;
+  if (tenant) {
+    const tenantName =
+      readTenantString(tenant.name) ??
+      readTenantString(tenant.displayName) ??
+      readTenantString(tenant.label) ??
+      readTenantString(tenant.slug);
+    if (tenantName) {
+      return tenantName;
+    }
+  }
+
+  const account =
+    record.account && typeof record.account === 'object'
+      ? (record.account as Record<string, unknown>)
+      : null;
+  if (account) {
+    const accountName =
+      readTenantString(account.name) ??
+      readTenantString(account.displayName) ??
+      readTenantString(account.label);
+    if (accountName) {
+      return accountName;
+    }
+  }
+
+  return resolveAgreementTenantId(agreement);
+};
+
 type SessionStateParams = Parameters<typeof useWhatsappSessionState>[0];
 
 const useWhatsAppConnect = ({
@@ -279,10 +429,40 @@ const useWhatsAppConnect = ({
   });
 
   const localStatus = (selectedInstanceStatus || rawStatus || 'disconnected').toLowerCase();
+  const tenantFilterId = useMemo(
+    () => resolveAgreementTenantId(selectedAgreement),
+    [selectedAgreement]
+  );
+  const tenantFilterLabel = useMemo(
+    () => resolveTenantDisplayName(selectedAgreement),
+    [selectedAgreement]
+  );
+  const tenantScopedInstances = useMemo(() => {
+    if (!tenantFilterId) {
+      return instances;
+    }
+    return instances.filter((entry) => resolveInstanceTenantId(entry) === tenantFilterId);
+  }, [instances, tenantFilterId]);
+  const tenantFilteredOutCount = tenantFilterId
+    ? instances.length - tenantScopedInstances.length
+    : 0;
+  const selectedInstanceBelongsToTenant = useMemo(() => {
+    if (!tenantFilterId || !instance) {
+      return true;
+    }
+    return resolveInstanceTenantId(instance) === tenantFilterId;
+  }, [instance, tenantFilterId]);
 
   useEffect(() => {
     persistShowAllPreference(state.showAllInstances);
   }, [state.showAllInstances]);
+
+  useEffect(() => {
+    if (!tenantFilterId || !instance || selectedInstanceBelongsToTenant) {
+      return;
+    }
+    selectInstance(null, { skipAutoQr: true });
+  }, [instance, selectInstance, selectedInstanceBelongsToTenant, tenantFilterId]);
 
   const setErrorMessage = useCallback(
     (message: string | null, meta: Partial<ErrorState> = {}) => {
@@ -345,7 +525,7 @@ const useWhatsAppConnect = ({
     selectedAgreement,
     activeCampaign,
     instance,
-    instances,
+    instances: tenantScopedInstances,
     handleAuthFallback,
     logError,
     ...(onCampaignReady ? { onCampaignReady } : {}),
@@ -455,22 +635,29 @@ const useWhatsAppConnect = ({
   const agreementDisplayName = agreementName ?? 'Nenhuma origem vinculada';
   const hasCampaign = Boolean(campaign);
   const isAuthenticated = hookIsAuthenticated;
-  const confirmLabel = hasCampaign ? 'Ir para a Inbox' : 'Continuar';
-  const confirmDisabled = !canContinue;
-  
+ 
   const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
   const onboardingDescription =
     '1. Conecte seus números ao Lead Engine. 2. Vincule origens comerciais (convênios, parceiros ou filas) quando fizer sentido. 3. Ative campanhas apenas se precisar de roteamento avançado.';
-  const nextInstanceOrdinal = instances.length + 1;
+  const nextInstanceOrdinal = tenantScopedInstances.length + 1;
   const defaultInstanceName = hasAgreement && agreementName
     ? `${agreementName} • WhatsApp ${nextInstanceOrdinal}`
     : `Instância WhatsApp ${nextInstanceOrdinal}`;
-  const visibleInstances = useMemo(() => instances.filter(shouldDisplayInstance), [instances]);
-  const totalInstanceCount = instances.length;
+  const visibleInstances = useMemo(
+    () => tenantScopedInstances.filter(shouldDisplayInstance),
+    [tenantScopedInstances]
+  );
+  const totalInstanceCount = tenantScopedInstances.length;
   const visibleInstanceCount = visibleInstances.length;
   const hasHiddenInstances = totalInstanceCount > visibleInstanceCount;
-  const renderInstances = state.showAllInstances ? instances : visibleInstances;
+  const renderInstances = state.showAllInstances ? tenantScopedInstances : visibleInstances;
+  const tenantScopeNotice =
+    tenantFilterId && tenantFilteredOutCount > 0
+      ? `${tenantFilteredOutCount} instância(s) ocultadas por pertencerem a tenants diferentes de ${
+          tenantFilterLabel ?? tenantFilterId
+        }.`
+      : null;
   const isInstanceConnected = (entry: unknown) => {
     const status = resolveInstanceStatus(entry);
     const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : null;
@@ -482,9 +669,16 @@ const useWhatsAppConnect = ({
   };
 
   const hasConnectedInstances =
-    renderInstances.some(isInstanceConnected) || (instance ? isInstanceConnected(instance) : false);
-  const connectionHealthy = localStatus === 'connected';
+    renderInstances.some(isInstanceConnected) ||
+    (selectedInstanceBelongsToTenant && instance ? isInstanceConnected(instance) : false);
+  const connectionHealthy =
+    Boolean(instance) &&
+    selectedInstanceBelongsToTenant &&
+    isInstanceConnected(instance) &&
+    localStatus === 'connected';
   const canCreateCampaigns = hasConnectedInstances && connectionHealthy;
+  const confirmLabel = hasCampaign ? 'Ir para a Inbox' : 'Continuar';
+  const confirmDisabled = !canContinue || !connectionHealthy;
   const instanceViewModels = useMemo<WhatsAppInstanceViewModel[]>(() => {
     return renderInstances.map((entry, index) => {
       const statusInfo = getStatusInfo(entry);
@@ -679,6 +873,11 @@ const useWhatsAppConnect = ({
     hasAgreement,
     agreementDisplayName,
     selectedAgreement,
+    tenantFilterId,
+    tenantFilterLabel,
+    tenantFilteredOutCount,
+    tenantScopeNotice,
+    selectedInstanceBelongsToTenant,
     selectedInstance: instance,
     selectedInstancePhone,
     selectedInstanceStatusInfo,

@@ -287,6 +287,21 @@ export const createCoreSlice = (
     set({ error: error ?? null });
   },
 
+  resetForTenantChange() {
+    deps.clearCache();
+    set({
+      instances: [],
+      currentInstance: null,
+      status: 'disconnected',
+      loadStatus: 'idle',
+      instancesReady: false,
+      loadingInstances: false,
+      preferredInstanceId: null,
+      hasFetchedOnce: false,
+      error: null,
+    });
+  },
+
   handleAuthFallback(options = {}) {
     const shouldReset = options.reset === true;
     if (shouldReset) {

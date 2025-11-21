@@ -116,6 +116,7 @@ export interface InstancesSlice {
   updateInstance(instanceId: string, updates: Partial<NormalizedInstance>): void;
   removeInstance(instanceId: string): void;
   setError(error: Nullable<ErrorMeta>): void;
+  resetForTenantChange(): void;
   handleAuthFallback(options?: { reset?: boolean; error?: unknown }): void;
   markRateLimitUntil(timestamp: number): void;
   markForcedAt(timestamp: number): void;

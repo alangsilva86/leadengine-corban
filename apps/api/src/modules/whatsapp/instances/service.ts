@@ -78,6 +78,7 @@ import type {
 
 const MAX_BFS_NODES = 5_000;
 const CACHE_WRITE_TIMEOUT_MS = 5_000;
+const MAX_SYNC_ATTEMPTS = 3;
 
 type BrokerRateLimit = {
   limit: number | null;
@@ -1444,83 +1445,103 @@ export const collectInstancesForTenant = async (
 
   if (shouldRefresh) {
     await enqueueTenantRefresh(tenantId, async () => {
-      await cache.invalidateCachedSnapshots(tenantId);
-      try {
-        metrics.incrementHttpCounter();
-        const syncResult = await syncInstances(
-          tenantId,
-          storedInstances,
-          snapshots ?? undefined
-        );
-        storedInstances = syncResult.instances;
-        snapshots = syncResult.snapshots;
-        if (!storageDegraded) {
-          const cacheWrites = [
-            {
-              name: 'setLastSyncAt' as const,
-              run: async () => {
-                await cache.setLastSyncAt(tenantId, new Date());
-              },
-            },
-            ...(snapshots && snapshots.length > 0
-              ? [
-                  {
-                    name: 'setCachedSnapshots' as const,
-                    run: async () => {
-                      const cacheWrite = await cache.setCachedSnapshots(
-                        tenantId,
-                        snapshots as WhatsAppBrokerInstanceSnapshot[],
-                        30
-                      );
-                      cacheBackend ??= cacheWrite.backend;
-                      cacheHit = cacheHit ?? false;
-                      if (cacheWrite.error) {
-                        warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
-                      }
-                    },
-                  },
-                ]
-              : []),
-          ];
-
-          const cacheWriteResults = await Promise.allSettled(
-            cacheWrites.map(async ({ name, run }) => runCacheWrite(name, run))
+      for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt += 1) {
+        await cache.invalidateCachedSnapshots(tenantId);
+        try {
+          metrics.incrementHttpCounter();
+          const syncResult = await syncInstances(
+            tenantId,
+            storedInstances,
+            snapshots ?? undefined
           );
+          storedInstances = syncResult.instances;
+          snapshots = syncResult.snapshots;
+          if (!storageDegraded) {
+            const cacheWrites = [
+              {
+                name: 'setLastSyncAt' as const,
+                run: async () => {
+                  await cache.setLastSyncAt(tenantId, new Date());
+                },
+              },
+              ...(snapshots && snapshots.length > 0
+                ? [
+                    {
+                      name: 'setCachedSnapshots' as const,
+                      run: async () => {
+                        const cacheWrite = await cache.setCachedSnapshots(
+                          tenantId,
+                          snapshots as WhatsAppBrokerInstanceSnapshot[],
+                          30
+                        );
+                        cacheBackend ??= cacheWrite.backend;
+                        cacheHit = cacheHit ?? false;
+                        if (cacheWrite.error) {
+                          warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
+                        }
+                      },
+                    },
+                  ]
+                : []),
+            ];
 
-          for (const result of cacheWriteResults) {
-            if (result.status === 'fulfilled') {
-              logger.debug('whatsapp.instances.cache.write.success', {
-                tenantId,
-                operation: result.value.name,
-                durationMs: result.value.durationMs,
-                timeoutMs: CACHE_WRITE_TIMEOUT_MS,
-              });
-            } else {
-              logger.warn('whatsapp.instances.cache.write.failure', {
-                tenantId,
-                operation: result.reason.name,
-                durationMs: result.reason.durationMs,
-                timeoutMs: CACHE_WRITE_TIMEOUT_MS,
-                error: describeErrorForLog(result.reason.error),
-              });
+            const cacheWriteResults = await Promise.allSettled(
+              cacheWrites.map(async ({ name, run }) => runCacheWrite(name, run))
+            );
+
+            for (const result of cacheWriteResults) {
+              if (result.status === 'fulfilled') {
+                logger.debug('whatsapp.instances.cache.write.success', {
+                  tenantId,
+                  operation: result.value.name,
+                  durationMs: result.value.durationMs,
+                  timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+                });
+              } else {
+                logger.warn('whatsapp.instances.cache.write.failure', {
+                  tenantId,
+                  operation: result.reason.name,
+                  durationMs: result.reason.durationMs,
+                  timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+                  error: describeErrorForLog(result.reason.error),
+                });
+              }
             }
           }
-        }
-        metrics.recordRefreshOutcome(tenantId, 'success');
-        synced = true;
-      } catch (error) {
-        const errorCode =
-          (error as { code?: string }).code ??
-          (error as { name?: string }).name ??
-          (error instanceof Error ? error.name : null);
-        metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
-        if (error instanceof WhatsAppBrokerNotConfiguredError) {
-          if (options.refresh) {
-            throw error;
+          metrics.recordRefreshOutcome(tenantId, 'success');
+          synced = true;
+          return;
+        } catch (error) {
+          const shouldRetryAfterUniqueConstraint =
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002' &&
+            attempt < MAX_SYNC_ATTEMPTS - 1;
+
+          if (shouldRetryAfterUniqueConstraint) {
+            logger.warn('whatsapp.instances.sync.retryAfterP2002', {
+              tenantId,
+              attempt,
+              error: describeErrorForLog(error),
+            });
+            await cache.invalidateCachedSnapshots(tenantId);
+            snapshots = await brokerClient.listInstances(tenantId);
+            storedInstances = await repository.findByTenant(tenantId);
+            continue;
           }
-          logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
-          snapshots = [];
-        } else {
+
+          const errorCode =
+            (error as { code?: string }).code ??
+            (error as { name?: string }).name ??
+            (error instanceof Error ? error.name : null);
+          metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
+          if (error instanceof WhatsAppBrokerNotConfiguredError) {
+            if (options.refresh) {
+              throw error;
+            }
+            logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
+            snapshots = [];
+            return;
+          }
           throw error;
         }
       }

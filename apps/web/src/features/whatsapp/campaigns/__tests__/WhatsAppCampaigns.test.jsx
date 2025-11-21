@@ -55,6 +55,11 @@ const defaultHookValue = {
   realtimeConnected: true,
   connectionStatus: 'connected',
   connectionHealthy: true,
+  tenantFilterId: null,
+  tenantFilterLabel: null,
+  tenantFilteredOutCount: 0,
+  tenantScopeNotice: null,
+  selectedInstanceBelongsToTenant: true,
 };
 
 vi.mock('../../connect/useWhatsAppConnect', () => ({
