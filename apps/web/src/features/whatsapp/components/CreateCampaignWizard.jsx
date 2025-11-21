@@ -1030,7 +1030,7 @@ const CreateCampaignWizard = ({
             {renderStepHeading('Escolha o produto e a margem', 'Opções válidas para o convênio.')}
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_200px]">
               <div className="space-y-6">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {WHATSAPP_CAMPAIGN_PRODUCTS.map((option) => {
                     const isSelected = formState.product === option.value;
                     const isCompatible = allowedProducts ? allowedProducts.has(option.value) : true;
