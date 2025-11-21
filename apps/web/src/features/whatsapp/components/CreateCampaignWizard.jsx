@@ -478,7 +478,7 @@ const CreateCampaignWizard = ({
           return 'Escolha uma instância para continuar.';
         }
         if (selectedInstance && !selectedInstance.connected) {
-          return 'Conecte a instância para liberar Origem.';
+          return 'Conecte para liberar Origem.';
         }
         return null;
       case 'agreement':
@@ -646,6 +646,24 @@ const CreateCampaignWizard = ({
                 </p>
               </div>
             </div>
+            {!isConnected && selectedInstance ? (
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-foreground">Conecte para liberar Origem</p>
+                    <p className="text-sm leading-5 text-muted-foreground">
+                      Gere o QR Code para ativar a instância e liberar a próxima etapa.
+                    </p>
+                    <Button variant="link" asChild size="sm" className="px-0 text-primary hover:text-primary">
+                      <Link to="/ajuda">Precisa de ajuda?</Link>
+                    </Button>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <Button onClick={() => selectedInstance?.onGenerateQr?.()}>Gerar QR agora</Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             {!hasInstances ? (
               <div className="rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
                 Nenhuma instância encontrada. Gere um QR para conectar e liberar as próximas etapas.
@@ -1060,7 +1078,7 @@ const CreateCampaignWizard = ({
   const isLastStep = stepIndex === totalSteps - 1;
   const advanceDisabledReason =
     currentStep?.key === 'instance' && selectedInstance && !selectedInstance.connected
-      ? 'Conecte a instância para continuar.'
+      ? 'Conecte para liberar Origem.'
       : null;
   const isAdvanceDisabled = Boolean(advanceDisabledReason) || isSubmitting;
 
