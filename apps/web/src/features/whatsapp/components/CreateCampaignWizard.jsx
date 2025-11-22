@@ -47,6 +47,7 @@ import {
 } from '@/features/whatsapp/utils/campaign-options.js';
 import { cn } from '@/lib/utils.js';
 import { toast } from 'sonner';
+import { resolveTenantDisplayName } from '../lib/instances';
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Ativar imediatamente' },
@@ -155,16 +156,11 @@ const formatInstanceLabel = (instance) => {
 };
 
 const formatAgreementLabel = (agreement) => {
-  if (!agreement) {
-    return '';
+  const resolved = resolveTenantDisplayName(agreement);
+  if (resolved) {
+    return resolved;
   }
-  if (typeof agreement.name === 'string' && agreement.name.trim().length > 0) {
-    return agreement.name.trim();
-  }
-  if (typeof agreement.displayName === 'string' && agreement.displayName.trim().length > 0) {
-    return agreement.displayName.trim();
-  }
-  if (typeof agreement.id === 'string' && agreement.id.trim().length > 0) {
+  if (typeof agreement?.id === 'string' && agreement.id.trim().length > 0) {
     return agreement.id.trim();
   }
   return 'Origem';
@@ -201,40 +197,6 @@ const collectAllowedProducts = (agreement) => {
     return null;
   }
   return new Set(candidates[0]);
-};
-
-const resolveTenantContextLabel = (agreement) => {
-  if (!agreement || typeof agreement !== 'object') {
-    return null;
-  }
-  const candidates = [
-    agreement.tenantName,
-    agreement.tenantLabel,
-    agreement.accountName,
-    agreement.accountLabel,
-    agreement.branchName,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim().length > 0) {
-      return candidate.trim();
-    }
-  }
-  if (agreement.tenant && typeof agreement.tenant === 'object') {
-    const tenantNameCandidates = [
-      agreement.tenant.name,
-      agreement.tenant.displayName,
-      agreement.tenant.label,
-    ];
-    for (const candidate of tenantNameCandidates) {
-      if (typeof candidate === 'string' && candidate.trim().length > 0) {
-        return candidate.trim();
-      }
-    }
-  }
-  if (typeof agreement.tenantId === 'string' && agreement.tenantId.trim().length > 0) {
-    return agreement.tenantId.trim();
-  }
-  return null;
 };
 
 const CreateCampaignWizard = ({
@@ -278,7 +240,7 @@ const CreateCampaignWizard = ({
     return agreements;
   }, [agreements]);
   const tenantContextLabel = useMemo(
-    () => resolveTenantContextLabel(agreement),
+    () => resolveTenantDisplayName(agreement),
     [agreement],
   );
 

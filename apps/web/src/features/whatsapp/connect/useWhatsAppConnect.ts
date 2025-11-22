@@ -8,6 +8,8 @@ import {
   getStatusInfo,
   resolveInstancePhone,
   resolveInstanceStatus,
+  resolveTenantDisplayName,
+  resolveTenantId,
   shouldDisplayInstance,
 } from '../lib/instances';
 import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
@@ -217,156 +219,6 @@ const initialState = (status: string | undefined, activeCampaign: any | undefine
   persistentWarning: null,
 });
 
-const readTenantString = (value: unknown): string | null => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  return null;
-};
-
-const pickTenantId = (record: unknown): string | null => {
-  if (!record || typeof record !== 'object') {
-    return readTenantString(record);
-  }
-
-  const source = record as Record<string, unknown>;
-  const directCandidates = [
-    source.tenantId,
-    source.tenant_id,
-    source.tenantSlug,
-    source.scopeTenantId,
-    source.scope_tenant_id,
-  ];
-
-  for (const candidate of directCandidates) {
-    const resolved = readTenantString(candidate);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  const nestedSources = ['tenant', 'account', 'scope'];
-  for (const key of nestedSources) {
-    if (source[key] && typeof source[key] === 'object') {
-      const nested = pickTenantId(source[key]);
-      if (nested) {
-        return nested;
-      }
-    }
-  }
-
-  return null;
-};
-
-const resolveInstanceTenantId = (instance: unknown): string | null => {
-  if (!instance || typeof instance !== 'object') {
-    return readTenantString(instance);
-  }
-
-  const baseTenant = pickTenantId(instance);
-  if (baseTenant) {
-    return baseTenant;
-  }
-
-  const metadata =
-    (instance as Record<string, unknown>).metadata &&
-    typeof (instance as Record<string, unknown>).metadata === 'object'
-      ? ((instance as Record<string, unknown>).metadata as Record<string, unknown>)
-      : null;
-
-  return metadata ? pickTenantId(metadata) : null;
-};
-
-const resolveAgreementTenantId = (agreement: unknown): string | null => {
-  if (!agreement || typeof agreement !== 'object') {
-    return readTenantString(agreement);
-  }
-
-  const directTenant = pickTenantId(agreement);
-  if (directTenant) {
-    return directTenant;
-  }
-
-  const metadata =
-    (agreement as Record<string, unknown>).metadata &&
-    typeof (agreement as Record<string, unknown>).metadata === 'object'
-      ? ((agreement as Record<string, unknown>).metadata as Record<string, unknown>)
-      : null;
-  if (metadata) {
-    const metaTenant = pickTenantId(metadata);
-    if (metaTenant) {
-      return metaTenant;
-    }
-  }
-
-  const account =
-    (agreement as Record<string, unknown>).account &&
-    typeof (agreement as Record<string, unknown>).account === 'object'
-      ? ((agreement as Record<string, unknown>).account as Record<string, unknown>)
-      : null;
-  if (account) {
-    const accountTenant = pickTenantId(account);
-    if (accountTenant) {
-      return accountTenant;
-    }
-  }
-
-  return null;
-};
-
-const resolveTenantDisplayName = (agreement: unknown): string | null => {
-  if (!agreement || typeof agreement !== 'object') {
-    return null;
-  }
-  const record = agreement as Record<string, unknown>;
-  const candidates = [
-    record.tenantName,
-    record.tenantLabel,
-    record.tenantSlug,
-    record.accountName,
-    record.accountLabel,
-    record.scopeName,
-  ];
-  for (const candidate of candidates) {
-    const resolved = readTenantString(candidate);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  const tenant =
-    record.tenant && typeof record.tenant === 'object'
-      ? (record.tenant as Record<string, unknown>)
-      : null;
-  if (tenant) {
-    const tenantName =
-      readTenantString(tenant.name) ??
-      readTenantString(tenant.displayName) ??
-      readTenantString(tenant.label) ??
-      readTenantString(tenant.slug);
-    if (tenantName) {
-      return tenantName;
-    }
-  }
-
-  const account =
-    record.account && typeof record.account === 'object'
-      ? (record.account as Record<string, unknown>)
-      : null;
-  if (account) {
-    const accountName =
-      readTenantString(account.name) ??
-      readTenantString(account.displayName) ??
-      readTenantString(account.label);
-    if (accountName) {
-      return accountName;
-    }
-  }
-
-  return resolveAgreementTenantId(agreement);
-};
-
 type SessionStateParams = Parameters<typeof useWhatsappSessionState>[0];
 
 const useWhatsAppConnect = ({
@@ -430,15 +282,12 @@ const useWhatsAppConnect = ({
   });
 
   const localStatus = (selectedInstanceStatus || rawStatus || 'disconnected').toLowerCase();
-  const hasTenantScope = Boolean(selectedAgreement?.tenantId);
+  const hasTenantScope = Boolean(resolveTenantId(selectedAgreement));
   const createInstanceWarning = hasTenantScope
     ? null
     : 'Selecione um acordo com tenantId válido para criar um novo canal do WhatsApp.';
   const canCreateInstance = hasTenantScope;
-  const tenantFilterId = useMemo(
-    () => resolveAgreementTenantId(selectedAgreement),
-    [selectedAgreement]
-  );
+  const tenantFilterId = useMemo(() => resolveTenantId(selectedAgreement), [selectedAgreement]);
   const tenantFilterLabel = useMemo(
     () => resolveTenantDisplayName(selectedAgreement),
     [selectedAgreement]
@@ -447,7 +296,7 @@ const useWhatsAppConnect = ({
     if (!tenantFilterId) {
       return instances;
     }
-    return instances.filter((entry) => resolveInstanceTenantId(entry) === tenantFilterId);
+    return instances.filter((entry) => resolveTenantId(entry) === tenantFilterId);
   }, [instances, tenantFilterId]);
   const tenantFilteredOutCount = tenantFilterId
     ? instances.length - tenantScopedInstances.length
@@ -456,7 +305,7 @@ const useWhatsAppConnect = ({
     if (!tenantFilterId || !instance) {
       return true;
     }
-    return resolveInstanceTenantId(instance) === tenantFilterId;
+    return resolveTenantId(instance) === tenantFilterId;
   }, [instance, tenantFilterId]);
 
   useEffect(() => {
