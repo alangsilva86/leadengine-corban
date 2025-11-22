@@ -18,6 +18,7 @@ const CreateInstanceDialog = ({
   onOpenChange,
   defaultName,
   onSubmit,
+  disabledReason = null,
 }) => {
   const suggestedName = defaultName || 'Novo canal';
   const [name, setName] = useState(suggestedName);
@@ -68,8 +69,8 @@ const CreateInstanceDialog = ({
   }, [open, suggestedName]);
 
   const canSubmit = useMemo(() => {
-    return name.trim().length > 0 && identifierValidation.isValid;
-  }, [identifierValidation.isValid, name]);
+    return name.trim().length > 0 && identifierValidation.isValid && !disabledReason;
+  }, [disabledReason, identifierValidation.isValid, name]);
 
   const handleClose = (nextOpen) => {
     if (submitting) {
@@ -81,6 +82,9 @@ const CreateInstanceDialog = ({
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!canSubmit || submitting) {
+      if (disabledReason) {
+        setError(disabledReason);
+      }
       return;
     }
 
@@ -161,6 +165,13 @@ const CreateInstanceDialog = ({
               </p>
             ) : null}
           </div>
+
+          {disabledReason ? (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+              <AlertCircle className="h-4 w-4" />
+              <span>{disabledReason}</span>
+            </div>
+          ) : null}
 
           {error ? (
             <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">

@@ -68,6 +68,8 @@ const InstancesPanel = ({
   countdownMessage,
   canContinue,
   canCreateCampaigns,
+  createInstanceDisabled = false,
+  createInstanceWarning = null,
 }) => {
   const [statusDrawerTarget, setStatusDrawerTarget] = useState(null);
   const [healthDrawerTarget, setHealthDrawerTarget] = useState(null);
@@ -251,6 +253,8 @@ const InstancesPanel = ({
         localStatus={localStatus}
         onRefresh={onRefresh}
         onCreateInstance={onCreateInstance}
+        createInstanceDisabled={createInstanceDisabled}
+        createInstanceWarning={createInstanceWarning}
         onViewLogs={onViewLogs}
         loadingInstances={loadingInstances}
         isAuthenticated={isAuthenticated}
@@ -335,6 +339,11 @@ const InstancesPanel = ({
               Mostrando apenas instâncias conectadas. Utilize os filtros para incluir sessões desconectadas.
             </div>
           ) : null}
+          {createInstanceWarning ? (
+            <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
+              {createInstanceWarning}
+            </div>
+          ) : null}
 
           <InstanceGrid
             instancesReady={instancesReady}
@@ -348,6 +357,8 @@ const InstancesPanel = ({
             zeroInstances={zeroInstances}
             onShowAll={onShowAll}
             onCreateInstance={onCreateInstance}
+            createInstanceDisabled={createInstanceDisabled}
+            createInstanceWarning={createInstanceWarning}
             onSelectInstance={onSelectInstance}
             onViewQr={onViewQr}
             onRequestDelete={onRequestDelete}

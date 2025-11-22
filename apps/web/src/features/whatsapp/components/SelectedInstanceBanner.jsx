@@ -42,6 +42,8 @@ const SelectedInstanceBanner = ({
   localStatus,
   onRefresh,
   onCreateInstance,
+  createInstanceDisabled = false,
+  createInstanceWarning = null,
   onViewLogs,
   loadingInstances,
   isAuthenticated,
@@ -243,6 +245,8 @@ const SelectedInstanceBanner = ({
                     event.preventDefault();
                     onCreateInstance?.();
                   }}
+                  disabled={createInstanceDisabled}
+                  title={createInstanceWarning ?? undefined}
                   className="gap-2"
                 >
                   <Plus className="h-4 w-4" /> Nova instância
