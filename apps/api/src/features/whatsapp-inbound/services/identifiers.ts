@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
+import { sanitizePhone } from '@ticketz/shared';
+
+export { sanitizePhone };
+
 export const readString = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
@@ -52,19 +56,6 @@ export const composeDeterministicId = (
   }
 
   return normalizedParts.join(':');
-};
-
-export const sanitizePhone = (value?: string | null): string | undefined => {
-  if (!value) {
-    return undefined;
-  }
-
-  const digits = value.replace(/\D/g, '');
-  if (digits.length < 10) {
-    return undefined;
-  }
-
-  return `+${digits.replace(/^\+/, '')}`;
 };
 
 export const sanitizeDocument = (

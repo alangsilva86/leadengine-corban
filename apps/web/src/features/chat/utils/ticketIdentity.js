@@ -1,3 +1,5 @@
+import { extractPhoneDigits, normalizePhoneE164, PHONE_MAX_DIGITS, PHONE_MIN_DIGITS } from '@ticketz/shared';
+
 import { formatPhoneNumber } from '@/lib/utils.js';
 
 const toRecord = (value) => (value && typeof value === 'object' ? value : {});
@@ -72,15 +74,13 @@ const isMeaningfulDisplayName = (value) => {
 };
 
 const sanitizePhone = (value) => {
-  const normalizedValue = normalizeCandidate(value);
-  if (typeof normalizedValue !== 'string') return null;
-  const trimmed = normalizedValue.trim();
-  if (!trimmed) return null;
-  const withoutDomain = trimmed.includes('@') ? trimmed.split('@')[0] : trimmed;
-  const hasPlus = withoutDomain.trim().startsWith('+');
-  const digits = withoutDomain.replace(/\D/g, '');
-  if (!digits) return null;
-  return hasPlus ? `+${digits}` : digits;
+  const normalized = normalizePhoneE164(value, { minDigits: PHONE_MIN_DIGITS, maxDigits: PHONE_MAX_DIGITS });
+  if (normalized) {
+    return normalized;
+  }
+
+  const digits = extractPhoneDigits(value ?? null);
+  return digits ?? null;
 };
 
 export const getTicketIdentity = (ticket) => {

@@ -44,7 +44,7 @@ describe('getTicketIdentity', () => {
 
     const identity = getTicketIdentity(ticket);
 
-    expect(identity.displayName).toBe('5511987654321');
+    expect(identity.displayName).toBe('+5511987654321');
     expect(identity.displayPhone).toBe('+55 (11) 98765-4321');
     expect(identity.remoteJid).toBe('5511987654321');
   });
@@ -60,7 +60,7 @@ describe('getTicketIdentity', () => {
 
     const identity = getTicketIdentity(ticket);
 
-    expect(identity.displayName).toBe('5511555555555');
+    expect(identity.displayName).toBe('+5511555555555');
     expect(identity.remoteJid).toBe('5511555555555');
   });
 });

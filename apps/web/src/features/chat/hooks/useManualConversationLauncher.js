@@ -1,32 +1,23 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api.js';
-import { looksLikeWhatsAppJid } from '@/features/whatsapp/lib/instances';
+import { extractPhoneDigits, normalizePhoneE164, PHONE_MAX_DIGITS, PHONE_MIN_DIGITS } from '@ticketz/shared';
 
-const MIN_PHONE_DIGITS = 8;
-const MAX_PHONE_DIGITS = 15;
+const MIN_PHONE_DIGITS = PHONE_MIN_DIGITS;
 const CONTACT_LOOKUP_LIMIT = 5;
 
-const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
-
-const extractDigitsFromInput = (value) => {
-  if (!value) {
+const normalizePhonePayload = (value) => {
+  const phoneE164 = normalizePhoneE164(value, { minDigits: MIN_PHONE_DIGITS, maxDigits: PHONE_MAX_DIGITS });
+  if (!phoneE164) {
     return null;
   }
 
-  if (looksLikeWhatsAppJid(value)) {
-    const [localPart] = value.split('@');
-    return sanitizePhone(localPart ?? '');
-  }
-
-  const digits = sanitizePhone(value);
+  const digits = extractPhoneDigits(phoneE164);
   if (!digits) {
     return null;
   }
 
-  return digits;
+  return { digits, phoneE164 };
 };
-
-const toE164 = (digits) => `+${digits}`;
 
 const generateIdempotencyKey = () => {
   const rand = Math.random().toString(36).slice(2, 10);
@@ -53,11 +44,11 @@ const matchesPhoneDigits = (contact, digits) => {
   if (!contact) {
     return false;
   }
-  const phone = sanitizePhone(contact.phone ?? contact.primaryPhone ?? '');
+  const phone = extractPhoneDigits(contact.phone ?? contact.primaryPhone ?? null);
   if (phone) {
     return phone === digits;
   }
-  const metadataPhone = sanitizePhone(contact.metadata?.phone ?? '');
+  const metadataPhone = extractPhoneDigits(contact.metadata?.phone ?? null);
   return metadataPhone === digits;
 };
 
@@ -80,8 +71,11 @@ const findContactByPhone = async (digits) => {
   return null;
 };
 
-const ensureContactForPhone = async (digits) => {
-  const fallbackE164 = toE164(digits);
+const ensureContactForPhone = async ({ digits, phoneE164 }) => {
+  const fallbackE164 = phoneE164 ?? normalizePhoneE164(digits, { minDigits: MIN_PHONE_DIGITS, maxDigits: PHONE_MAX_DIGITS });
+  if (!fallbackE164) {
+    throw new Error('Informe um telefone válido com DDD e país.');
+  }
   const existing = await findContactByPhone(digits);
   if (existing?.id) {
     const contactPhone = typeof existing.phone === 'string' && existing.phone.trim().length > 0 ? existing.phone : fallbackE164;
@@ -119,13 +113,15 @@ export const useManualConversationLauncher = () => {
   const mutation = useMutation({
     mutationKey: ['lead-inbox', 'manual-conversation'],
     mutationFn: async ({ phone, message, instanceId }) => {
-      const digits = extractDigitsFromInput(phone);
+      const normalizedPhone = normalizePhonePayload(phone);
       const trimmedMessage = typeof message === 'string' ? message.trim() : '';
       const normalizedInstance = typeof instanceId === 'string' ? instanceId.trim() : '';
 
-      if (!digits || digits.length < MIN_PHONE_DIGITS || digits.length > MAX_PHONE_DIGITS) {
+      if (!normalizedPhone) {
         throw new Error('Informe um telefone válido com DDD e país.');
       }
+
+      const { digits, phoneE164 } = normalizedPhone;
 
       if (!trimmedMessage) {
         throw new Error('Digite a mensagem inicial.');
@@ -135,7 +131,7 @@ export const useManualConversationLauncher = () => {
         throw new Error('Selecione uma instância conectada.');
       }
 
-      const { contact, phoneE164 } = await ensureContactForPhone(digits);
+      const { contact, phoneE164: resolvedPhone } = await ensureContactForPhone({ digits, phoneE164 });
       if (!contact?.id) {
         throw new Error('Não foi possível localizar o contato para o envio manual.');
       }
@@ -149,7 +145,7 @@ export const useManualConversationLauncher = () => {
             text: trimmedMessage,
           },
           idempotencyKey,
-          to: phoneE164,
+          to: resolvedPhone,
           instanceId: normalizedInstance,
         },
         {
