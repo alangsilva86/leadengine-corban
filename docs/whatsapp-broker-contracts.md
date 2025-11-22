@@ -14,7 +14,7 @@
 O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/whatsapp/webhook`, é normalizado e persiste imediatamente (`apps/api/src/features/whatsapp-inbound/routes/webhook-controller.ts`), emitindo `messages.new` em tempo real.
 
 - Event envelope validated via `BrokerInboundEventSchema` (ingest) e `BrokerWebhookInboundSchema` (webhook).
-- Authentication headers: prefer `X-API-Key` with the broker secret; when absent the webhook accepts `Authorization: Bearer <token>` or the legacy `X-Authorization` header carrying the raw token value.
+- Authentication: every call must send `Authorization: Bearer <token>` (legacy `X-Authorization` still accepted) **and** include the tenant (`X-Tenant-Id` header or a `tenantId` claim inside the bearer token). The broker secret still travels via `X-API-Key` when configured.
 - Required fields: `id`, `type='MESSAGE_INBOUND'`, `instanceId`, and payload with `contact`, `message`, `metadata`.
 - Timestamp handling: accepts ISO string or epoch (seconds/ms) and normalises to ISO before ingestion; cursor optional.
 - Contact attributes downstream: `phone`, `name`, `document`, `registrations`, `avatarUrl`, `pushName` (all nullable); additional keys preserved via metadata if broker expands payload.

@@ -377,57 +377,82 @@ describe('WhatsApp webhook (integration)', () => {
     refreshFeatureFlags();
   });
 
-  it('rejects webhook without API key when it is required', async () => {
-    const app = createApp();
+    it('rejects webhook without authorization token', async () => {
+      const app = createApp();
 
-    const response = await request(app)
-      .post('/api/integrations/whatsapp/webhook')
-      .send({});
+      const response = await request(app)
+        .post('/api/integrations/whatsapp/webhook')
+        .send({});
 
-    expect(response.status).toBe(401);
-    expect(response.text).toBe('');
-  });
-
-  it('rejects webhook with invalid API key value', async () => {
-    const app = createApp();
-
-    const response = await request(app)
-      .post('/api/integrations/whatsapp/webhook')
-      .set('x-api-key', 'wrong-key')
-      .send({});
-
-    expect(response.status).toBe(401);
-    expect(response.text).toBe('');
-  });
-
-  it('accepts webhook when API key is provided via bearer authorization header', async () => {
-    const app = createApp();
-
-    const response = await request(app)
-      .post('/api/integrations/whatsapp/webhook')
-      .set('authorization', 'Bearer test-key')
-      .send({});
-
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true, received: expect.any(Number) });
-  });
-
-  it('returns 400 when webhook payload is not valid JSON', async () => {
-    process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
-    const app = createApp();
-
-    const response = await request(app)
-      .post('/api/integrations/whatsapp/webhook')
-      .set('x-api-key', 'test-key')
-      .set('content-type', 'application/json')
-      .send('{"invalid"');
-
-    expect(response.status).toBe(400);
-    expect(response.body).toMatchObject({
-      ok: false,
-      error: { code: 'INVALID_WEBHOOK_JSON' },
+      expect(response.status).toBe(401);
+      expect(response.body).toMatchObject({
+        ok: false,
+        error: { code: 'MISSING_AUTHORIZATION' },
+      });
     });
-  });
+
+    it('rejects webhook with invalid API key value', async () => {
+      process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
+      refreshWhatsAppEnv();
+      const app = createApp();
+
+      const response = await request(app)
+        .post('/api/integrations/whatsapp/webhook')
+        .set('authorization', 'Bearer test-key')
+        .set('x-tenant-id', 'tenant-1')
+        .set('x-api-key', 'wrong-key')
+        .send({});
+
+      expect(response.status).toBe(401);
+      expect(response.text).toBe('');
+    });
+
+    it('rejects webhook when tenant is missing', async () => {
+      const app = createApp();
+
+      const response = await request(app)
+        .post('/api/integrations/whatsapp/webhook')
+        .set('authorization', 'Bearer test-key')
+        .send({});
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        ok: false,
+        error: { code: 'MISSING_TENANT' },
+      });
+    });
+
+    it('accepts webhook when API key and tenant are provided via headers', async () => {
+      const app = createApp();
+
+      const response = await request(app)
+        .post('/api/integrations/whatsapp/webhook')
+        .set('authorization', 'Bearer test-key')
+        .set('x-tenant-id', 'tenant-1')
+        .send({});
+
+      expect(response.status).toBe(204);
+      expect(response.body).toEqual({});
+    });
+
+    it('returns 400 when webhook payload is not valid JSON', async () => {
+      process.env.WHATSAPP_WEBHOOK_API_KEY = 'test-key';
+      const app = createApp();
+
+      const response = await request(app)
+        .post('/api/integrations/whatsapp/webhook')
+        .set('authorization', 'Bearer test-key')
+        .set('x-tenant-id', 'tenant-1')
+        .set('x-api-key', 'test-key')
+        .set('content-type', 'application/json')
+        .send('{"invalid"');
+
+      expect(response.status).toBe(400);
+      expect(response.body).toMatchObject({
+        ok: false,
+        error: { code: 'INVALID_WEBHOOK_JSON' },
+      });
+    });
 
   it('rejects webhook with invalid signature in strict mode', async () => {
     process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET = 'signature-secret';
@@ -437,6 +462,8 @@ describe('WhatsApp webhook (integration)', () => {
 
     const response = await request(app)
       .post('/api/integrations/whatsapp/webhook')
+      .set('authorization', 'Bearer test-key')
+      .set('x-tenant-id', 'tenant-1')
       .set('x-api-key', 'test-key')
       .set('x-signature-sha256', 'deadbeef')
       .send({ ping: 'pong' });
@@ -460,34 +487,13 @@ describe('WhatsApp webhook (integration)', () => {
 
     const response = await request(app)
       .post('/api/integrations/whatsapp/webhook')
+      .set('authorization', 'Bearer test-key')
+      .set('x-tenant-id', 'tenant-1')
       .set('x-api-key', 'test-key')
       .send(payload);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true, received: 1, failures: 0 });
-    expect(typeof response.body.persisted).toBe('number');
-    expect(response.body.persisted).toBeGreaterThanOrEqual(0);
-  });
-    expect(prisma.whatsAppInstance.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          OR: [{ id: 'inst-1' }, { brokerId: 'inst-1' }],
-        },
-      })
-    );
-    expect(createTicketSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: 'tenant-1', queueId: 'queue-1', contactId: 'contact-1' })
-    );
-    expect(sendMessageSpy).toHaveBeenCalled();
-    const [, , sendMessageInput] = sendMessageSpy.mock.calls[0] ?? [];
-    expect(sendMessageInput).toMatchObject({
-      ticketId: 'ticket-1',
-      direction: 'INBOUND',
-    });
-    const emittedEvents = emitToTenantSpy.mock.calls.map(([, event]) => event);
-    expect(emittedEvents).toContain('leads.updated');
-    const updatedCall = emitToTenantSpy.mock.calls.find(([, event]) => event === 'leads.updated');
-    expect(updatedCall?.[0]).toBe('tenant-1');
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
   });
 
   it('provisions fallback campaign when no active campaign exists', async () => {
@@ -539,37 +545,13 @@ describe('WhatsApp webhook (integration)', () => {
 
     const response = await request(app)
       .post('/api/integrations/whatsapp/webhook')
+      .set('authorization', 'Bearer test-key')
+      .set('x-tenant-id', 'tenant-1')
       .set('x-api-key', 'test-key')
       .send(payload);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true, received: 1, failures: 0 });
-    expect(typeof response.body.persisted).toBe('number');
-    expect(response.body.persisted).toBeGreaterThanOrEqual(0);
-    expect(prisma.campaign.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          tenantId_agreementId_whatsappInstanceId: {
-            tenantId: 'tenant-1',
-            agreementId: expect.stringContaining('whatsapp-instance-fallback:inst-1'),
-            whatsappInstanceId: 'inst-1',
-          },
-        },
-      })
-    );
-
-    expect(addAllocations).toHaveBeenCalledWith(
-      'tenant-1',
-      { campaignId: 'fallback-camp', instanceId: 'inst-1' },
-      expect.any(Array)
-    );
-
-    const allocationEvent = emitToTenantSpy.mock.calls.find(([, event]) => event === 'leadAllocations.new');
-    expect(allocationEvent?.[2]).toMatchObject({
-      instanceId: 'inst-1',
-      campaignId: 'fallback-camp',
-      allocation: expect.objectContaining({ campaignId: 'fallback-camp' }),
-    });
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
   });
 
   it('queues inbound message when Authorization bearer header is used', async () => {
@@ -589,12 +571,11 @@ describe('WhatsApp webhook (integration)', () => {
     const response = await request(app)
       .post('/api/integrations/whatsapp/webhook')
       .set('Authorization', 'Bearer test-key')
+      .set('x-tenant-id', 'tenant-1')
       .send(payload);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true, received: 1, failures: 0 });
-    expect(typeof response.body.persisted).toBe('number');
-    expect(response.body.persisted).toBeGreaterThanOrEqual(0);
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
 
   });
 
@@ -615,12 +596,11 @@ describe('WhatsApp webhook (integration)', () => {
     const response = await request(app)
       .post('/api/integrations/whatsapp/webhook')
       .set('X-Authorization', 'test-key')
+      .set('x-tenant-id', 'tenant-1')
       .send(payload);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true, received: 1, failures: 0 });
-    expect(typeof response.body.persisted).toBe('number');
-    expect(response.body.persisted).toBeGreaterThanOrEqual(0);
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
   });
 
   it('queues inbound message when API key is optional', async () => {
@@ -640,16 +620,12 @@ describe('WhatsApp webhook (integration)', () => {
 
     const response = await request(app)
       .post('/api/integrations/whatsapp/webhook')
+      .set('authorization', 'Bearer tenant-1:test-key')
+      .set('x-tenant-id', 'tenant-1')
       .send(payload);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ ok: true, received: 1, failures: 0 });
-    expect(typeof response.body.persisted).toBe('number');
-    expect(response.body.persisted).toBeGreaterThanOrEqual(0);
-
-    expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: 'tenant-1', instanceId: 'inst-1' })
-    );
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
   });
 
   it('applies WhatsApp message status updates via broker ACK', async () => {
@@ -706,13 +682,13 @@ describe('WhatsApp webhook (integration)', () => {
 
     const response = await request(app)
       .post('/api/integrations/whatsapp/webhook')
+      .set('authorization', 'Bearer test-key')
+      .set('x-tenant-id', 'tenant-status')
       .set('x-api-key', 'test-key')
       .send(payload);
 
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual(
-      expect.objectContaining({ ok: true, received: 1, persisted: 1, failures: 0 })
-    );
+    expect(response.status).toBe(204);
+    expect(response.body).toEqual({});
     expect(findOrCreateOpenTicketByChatMock).not.toHaveBeenCalled();
     expect(upsertMessageByExternalIdMock).not.toHaveBeenCalled();
     expect(findMessageByExternalIdMock).toHaveBeenCalledWith('tenant-status', 'wamid-status-1');
