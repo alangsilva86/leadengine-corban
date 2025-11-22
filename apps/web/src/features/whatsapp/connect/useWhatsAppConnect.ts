@@ -3,20 +3,15 @@ import { toast } from 'sonner';
 
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
-import useWhatsAppInstances from '../hooks/useWhatsAppInstances.jsx';
-import {
-  getStatusInfo,
-  resolveInstancePhone,
-  resolveInstanceStatus,
-  shouldDisplayInstance,
-} from '../lib/instances';
-import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
-import { getInstanceMetrics } from '../lib/metrics';
+import { getStatusInfo, resolveInstancePhone } from '../lib/instances';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
-import useWhatsappSessionState, { STATUS_COPY } from './hooks/useWhatsappSessionState';
-import useWhatsappCampaignActions from './hooks/useWhatsappCampaignActions';
-import useWhatsappPairing from './hooks/useWhatsappPairing';
+import useCampaignWorkflow from './useCampaignWorkflow';
+import useSessionUiState from './useSessionUiState';
+import useTenantInstances from './useTenantInstances';
+import { STATUS_COPY } from './hooks/useWhatsappSessionState';
 import { createInstanceSchema } from './schemas';
+import { buildInstanceViewModels, isInstanceConnected, resolveInstanceId } from './utils/instances';
+import { readShowAllPreference } from './utils/preferences';
 
 type Nullable<T> = T | null;
 
@@ -217,158 +212,6 @@ const initialState = (status: string | undefined, activeCampaign: any | undefine
   persistentWarning: null,
 });
 
-const readTenantString = (value: unknown): string | null => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  return null;
-};
-
-const pickTenantId = (record: unknown): string | null => {
-  if (!record || typeof record !== 'object') {
-    return readTenantString(record);
-  }
-
-  const source = record as Record<string, unknown>;
-  const directCandidates = [
-    source.tenantId,
-    source.tenant_id,
-    source.tenantSlug,
-    source.scopeTenantId,
-    source.scope_tenant_id,
-  ];
-
-  for (const candidate of directCandidates) {
-    const resolved = readTenantString(candidate);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  const nestedSources = ['tenant', 'account', 'scope'];
-  for (const key of nestedSources) {
-    if (source[key] && typeof source[key] === 'object') {
-      const nested = pickTenantId(source[key]);
-      if (nested) {
-        return nested;
-      }
-    }
-  }
-
-  return null;
-};
-
-const resolveInstanceTenantId = (instance: unknown): string | null => {
-  if (!instance || typeof instance !== 'object') {
-    return readTenantString(instance);
-  }
-
-  const baseTenant = pickTenantId(instance);
-  if (baseTenant) {
-    return baseTenant;
-  }
-
-  const metadata =
-    (instance as Record<string, unknown>).metadata &&
-    typeof (instance as Record<string, unknown>).metadata === 'object'
-      ? ((instance as Record<string, unknown>).metadata as Record<string, unknown>)
-      : null;
-
-  return metadata ? pickTenantId(metadata) : null;
-};
-
-const resolveAgreementTenantId = (agreement: unknown): string | null => {
-  if (!agreement || typeof agreement !== 'object') {
-    return readTenantString(agreement);
-  }
-
-  const directTenant = pickTenantId(agreement);
-  if (directTenant) {
-    return directTenant;
-  }
-
-  const metadata =
-    (agreement as Record<string, unknown>).metadata &&
-    typeof (agreement as Record<string, unknown>).metadata === 'object'
-      ? ((agreement as Record<string, unknown>).metadata as Record<string, unknown>)
-      : null;
-  if (metadata) {
-    const metaTenant = pickTenantId(metadata);
-    if (metaTenant) {
-      return metaTenant;
-    }
-  }
-
-  const account =
-    (agreement as Record<string, unknown>).account &&
-    typeof (agreement as Record<string, unknown>).account === 'object'
-      ? ((agreement as Record<string, unknown>).account as Record<string, unknown>)
-      : null;
-  if (account) {
-    const accountTenant = pickTenantId(account);
-    if (accountTenant) {
-      return accountTenant;
-    }
-  }
-
-  return null;
-};
-
-const resolveTenantDisplayName = (agreement: unknown): string | null => {
-  if (!agreement || typeof agreement !== 'object') {
-    return null;
-  }
-  const record = agreement as Record<string, unknown>;
-  const candidates = [
-    record.tenantName,
-    record.tenantLabel,
-    record.tenantSlug,
-    record.accountName,
-    record.accountLabel,
-    record.scopeName,
-  ];
-  for (const candidate of candidates) {
-    const resolved = readTenantString(candidate);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  const tenant =
-    record.tenant && typeof record.tenant === 'object'
-      ? (record.tenant as Record<string, unknown>)
-      : null;
-  if (tenant) {
-    const tenantName =
-      readTenantString(tenant.name) ??
-      readTenantString(tenant.displayName) ??
-      readTenantString(tenant.label) ??
-      readTenantString(tenant.slug);
-    if (tenantName) {
-      return tenantName;
-    }
-  }
-
-  const account =
-    record.account && typeof record.account === 'object'
-      ? (record.account as Record<string, unknown>)
-      : null;
-  if (account) {
-    const accountName =
-      readTenantString(account.name) ??
-      readTenantString(account.displayName) ??
-      readTenantString(account.label);
-    if (accountName) {
-      return accountName;
-    }
-  }
-
-  return resolveAgreementTenantId(agreement);
-};
-
-type SessionStateParams = Parameters<typeof useWhatsappSessionState>[0];
-
 const useWhatsAppConnect = ({
   selectedAgreement,
   status = 'disconnected',
@@ -381,118 +224,6 @@ const useWhatsAppConnect = ({
 }: UseWhatsAppConnectParams) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
   const [state, dispatch] = useReducer(reducer, initialState(status, activeCampaign));
-  const {
-    instances,
-    instancesReady,
-    currentInstance: instance,
-    status: rawStatus,
-    qrData,
-    secondsLeft,
-    loadingInstances,
-    loadingQr,
-    isAuthenticated: hookIsAuthenticated,
-    deletingInstanceId,
-    liveEvents,
-    loadInstances,
-    selectInstance,
-    generateQr,
-    connectInstance,
-    createInstance: createInstanceAction,
-    deleteInstance: deleteInstanceAction,
-    markConnected,
-    handleAuthFallback,
-    setSecondsLeft,
-    setGeneratingQrState,
-    setStatus: setInstanceStatus,
-    realtimeConnected,
-    selectedInstanceStatus,
-  } = useWhatsAppInstances({
-    selectedAgreement,
-    status,
-    onStatusChange,
-    onError: (message: string | null, meta?: any) => {
-      if (!message) {
-        dispatch({ type: 'set-error-state', value: null });
-        return;
-      }
-      const copy = resolveWhatsAppErrorCopy(meta?.code ?? null, message);
-      dispatch({
-        type: 'set-error-state',
-        value: {
-          code: copy.code ?? meta?.code ?? null,
-          title: meta?.title ?? copy.title ?? 'Algo deu errado',
-          message: copy.description ?? message,
-        },
-      });
-    },
-    logger: { log, warn, error: logError },
-    campaignInstanceId: activeCampaign?.instanceId ?? null,
-  });
-
-  const localStatus = (selectedInstanceStatus || rawStatus || 'disconnected').toLowerCase();
-  const hasTenantScope = Boolean(selectedAgreement?.tenantId);
-  const createInstanceWarning = hasTenantScope
-    ? null
-    : 'Selecione um acordo com tenantId válido para criar um novo canal do WhatsApp.';
-  const canCreateInstance = hasTenantScope;
-  const tenantFilterId = useMemo(
-    () => resolveAgreementTenantId(selectedAgreement),
-    [selectedAgreement]
-  );
-  const tenantFilterLabel = useMemo(
-    () => resolveTenantDisplayName(selectedAgreement),
-    [selectedAgreement]
-  );
-  const tenantScopedInstances = useMemo(() => {
-    if (!tenantFilterId) {
-      return instances;
-    }
-    return instances.filter((entry) => resolveInstanceTenantId(entry) === tenantFilterId);
-  }, [instances, tenantFilterId]);
-  const tenantFilteredOutCount = tenantFilterId
-    ? instances.length - tenantScopedInstances.length
-    : 0;
-  const selectedInstanceBelongsToTenant = useMemo(() => {
-    if (!tenantFilterId || !instance) {
-      return true;
-    }
-    return resolveInstanceTenantId(instance) === tenantFilterId;
-  }, [instance, tenantFilterId]);
-
-  useEffect(() => {
-    persistShowAllPreference(state.showAllInstances);
-  }, [state.showAllInstances]);
-
-  useEffect(() => {
-    if (!tenantFilterId || !instance || selectedInstanceBelongsToTenant) {
-      return;
-    }
-    selectInstance(null, { skipAutoQr: true });
-  }, [instance, selectInstance, selectedInstanceBelongsToTenant, tenantFilterId]);
-
-  const setErrorMessage = useCallback(
-    (message: string | null, meta: Partial<ErrorState> = {}) => {
-      if (message) {
-        const copy = resolveWhatsAppErrorCopy(meta.code ?? null, message);
-        dispatch({
-          type: 'set-error-state',
-          value: {
-            code: copy.code ?? meta.code ?? null,
-            title: meta.title ?? copy.title ?? 'Algo deu errado',
-            message: copy.description ?? message,
-          },
-        });
-      } else {
-        dispatch({ type: 'set-error-state', value: null });
-      }
-    },
-    []
-  );
-
-  const setShowAllInstances = useCallback((value: boolean) => {
-    dispatch({ type: 'set-show-all-instances', value });
-  }, []);
-
   const setQrPanelOpen = useCallback((value: boolean) => {
     dispatch({ type: 'set-qr-panel-open', value });
   }, []);
@@ -525,61 +256,85 @@ const useWhatsAppConnect = ({
     dispatch({ type: 'set-expanded-instance-id', value });
   }, []);
 
-  const campaignState = useWhatsappCampaignActions({
+  const setErrorMessage = useCallback(
+    (message: string | null, meta: Partial<ErrorState> = {}) => {
+      if (message) {
+        const copy = resolveWhatsAppErrorCopy(meta.code ?? null, message);
+        dispatch({
+          type: 'set-error-state',
+          value: {
+            code: copy.code ?? meta.code ?? null,
+            title: meta.title ?? copy.title ?? 'Algo deu errado',
+            message: copy.description ?? message,
+          },
+        });
+      } else {
+        dispatch({ type: 'set-error-state', value: null });
+      }
+    },
+    []
+  );
+
+  const tenantState = useTenantInstances({
+    selectedAgreement,
+    status,
+    activeCampaign,
+    onStatusChange,
+    onError: (message: string | null, meta?: any) => {
+      if (!message) {
+        dispatch({ type: 'set-error-state', value: null });
+        return;
+      }
+      const copy = resolveWhatsAppErrorCopy(meta?.code ?? null, message);
+      dispatch({
+        type: 'set-error-state',
+        value: {
+          code: copy.code ?? meta?.code ?? null,
+          title: meta?.title ?? copy.title ?? 'Algo deu errado',
+          message: copy.description ?? message,
+        },
+      });
+    },
+    logger: { log, warn, error: logError },
+    dispatch,
+    state,
+    campaignInstanceId: activeCampaign?.instanceId ?? null,
+  });
+
+  const campaignState = useCampaignWorkflow({
     state,
     dispatch,
     selectedAgreement,
     activeCampaign,
-    instance,
-    instances: tenantScopedInstances,
-    handleAuthFallback,
+    instance: tenantState.instance,
+    instances: tenantState.tenantScopedInstances,
+    handleAuthFallback: tenantState.handleAuthFallback,
     logError,
     ...(onCampaignReady ? { onCampaignReady } : {}),
   });
 
-  const selectInstanceAsync = useCallback<SessionStateParams['selectInstance']>(
-    async (target, options) => {
-      await Promise.resolve(selectInstance(target, options));
-    },
-    [selectInstance],
-  );
-
-  const sessionStateParams: SessionStateParams = {
+  const sessionUiState = useSessionUiState({
     state,
-    localStatus,
-    qrData,
-    secondsLeft,
-    setSecondsLeft,
-    setInstanceStatus,
-    setGeneratingQrState,
-    loadingInstances,
-    loadingQr,
-    requestingPairingCode: state.requestingPairingCode,
-    instance,
-    realtimeConnected,
-    selectInstance: selectInstanceAsync,
-    generateQr,
-    markConnected,
-    setQrPanelOpen,
-    setQrDialogOpen,
-  };
-
-  if (onStatusChange) {
-    sessionStateParams.onStatusChange = onStatusChange;
-  }
-
-  const sessionState = useWhatsappSessionState(sessionStateParams);
-
-  const pairingState = useWhatsappPairing({
-    state,
-    setPairingPhoneInput,
-    setPairingPhoneError,
-    setRequestingPairing,
-    instanceId: instance?.id,
-    selectedAgreementId: selectedAgreement?.id,
-    connectInstance,
-    loadInstances,
+    dispatch,
+    localStatus: tenantState.localStatus,
+    qrData: tenantState.qrData,
+    secondsLeft: tenantState.secondsLeft,
+    setSecondsLeft: tenantState.setSecondsLeft,
+    setInstanceStatus: tenantState.setInstanceStatus,
+    onStatusChange,
+    setGeneratingQrState: tenantState.setGeneratingQrState,
+    loadingInstances: tenantState.loadingInstances,
+    loadingQr: tenantState.loadingQr,
+    instance: tenantState.instance,
+    realtimeConnected: tenantState.realtimeConnected,
+    selectInstance: tenantState.selectInstance,
+    generateQr: tenantState.generateQr,
+    markConnected: tenantState.markConnected,
+    connectInstance: tenantState.connectInstance,
+    loadInstances: tenantState.loadInstances,
     setErrorMessage,
+    selectedAgreementId: selectedAgreement?.id,
+    requestingPairingCode: state.requestingPairingCode,
   });
 
   const {
@@ -618,15 +373,52 @@ const useWhatsAppConnect = ({
     handleViewQr,
     handleGenerateQr,
     handleMarkConnected,
-  } = sessionState;
-
-  const {
     pairingPhoneInput,
     pairingPhoneError,
     requestingPairingCode,
     handlePairingPhoneChange,
     handleRequestPairingCode,
-  } = pairingState;
+  } = sessionUiState;
+
+  const {
+    instance,
+    renderInstances,
+    instancesReady,
+    hasHiddenInstances,
+    visibleInstanceCount,
+    totalInstanceCount,
+    tenantScopeNotice,
+    tenantFilterId,
+    tenantFilterLabel,
+    tenantFilteredOutCount,
+    selectedInstanceBelongsToTenant,
+    tenantScopedInstances,
+    localStatus,
+    qrData,
+    loadingInstances,
+    loadingQr,
+    isAuthenticated,
+    deletingInstanceId,
+    liveEvents,
+    loadInstances,
+    selectInstance,
+    generateQr,
+    connectInstance,
+    createInstance,
+    deleteInstance,
+    markConnected,
+    handleAuthFallback,
+    setSecondsLeft,
+    setGeneratingQrState,
+    setInstanceStatus,
+    realtimeConnected,
+    selectedInstanceStatus,
+    showAllInstances,
+    setShowAllInstances,
+    createInstanceWarning,
+    canCreateInstance,
+    nextInstanceOrdinal,
+  } = tenantState;
 
   const { stepLabel, nextStage } = useOnboardingStepLabel({
     stages: onboarding?.stages,
@@ -640,40 +432,14 @@ const useWhatsAppConnect = ({
   const agreementName = selectedAgreement?.name ?? null;
   const agreementDisplayName = agreementName ?? 'Nenhuma origem vinculada';
   const hasCampaign = Boolean(campaign);
-  const isAuthenticated = hookIsAuthenticated;
- 
+
   const selectedInstanceStatusInfo = instance ? getStatusInfo(instance) : null;
   const selectedInstancePhone = instance ? resolveInstancePhone(instance) : '';
   const onboardingDescription =
     '1. Conecte seus números ao Lead Engine. 2. Vincule origens comerciais (convênios, parceiros ou filas) quando fizer sentido. 3. Ative campanhas apenas se precisar de roteamento avançado.';
-  const nextInstanceOrdinal = tenantScopedInstances.length + 1;
   const defaultInstanceName = hasAgreement && agreementName
     ? `${agreementName} • WhatsApp ${nextInstanceOrdinal}`
     : `Instância WhatsApp ${nextInstanceOrdinal}`;
-  const visibleInstances = useMemo(
-    () => tenantScopedInstances.filter(shouldDisplayInstance),
-    [tenantScopedInstances]
-  );
-  const totalInstanceCount = tenantScopedInstances.length;
-  const visibleInstanceCount = visibleInstances.length;
-  const hasHiddenInstances = totalInstanceCount > visibleInstanceCount;
-  const renderInstances = state.showAllInstances ? tenantScopedInstances : visibleInstances;
-  const tenantScopeNotice =
-    tenantFilterId && tenantFilteredOutCount > 0
-      ? `${tenantFilteredOutCount} instância(s) ocultadas por pertencerem a tenants diferentes de ${
-          tenantFilterLabel ?? tenantFilterId
-        }.`
-      : null;
-  const isInstanceConnected = (entry: unknown) => {
-    const status = resolveInstanceStatus(entry);
-    const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : null;
-
-    return Boolean((entry as Record<string, unknown>)?.connected) ||
-      normalizedStatus === 'connected' ||
-      normalizedStatus === 'online' ||
-      normalizedStatus === 'ready';
-  };
-
   const hasConnectedInstances =
     renderInstances.some(isInstanceConnected) ||
     (selectedInstanceBelongsToTenant && instance ? isInstanceConnected(instance) : false);
@@ -686,56 +452,15 @@ const useWhatsAppConnect = ({
   const confirmLabel = hasCampaign ? 'Ir para a Inbox' : 'Continuar';
   const confirmDisabled = !canContinue || !connectionHealthy;
   const instanceViewModels = useMemo<WhatsAppInstanceViewModel[]>(() => {
-    return renderInstances.map((entry, index) => {
-      const statusInfo = getStatusInfo(entry);
-      const metrics = getInstanceMetrics(entry);
-      const phoneLabel = resolveInstancePhone(entry) ?? '';
-      const formattedPhone = formatPhoneNumber(phoneLabel);
-      const addressCandidate =
-        (typeof entry?.address === 'string' && entry.address) ||
-        (typeof entry?.jid === 'string' && entry.jid) ||
-        (typeof entry?.session === 'string' && entry.session) ||
-        null;
-      const lastUpdated = entry?.updatedAt ?? entry?.lastSeen ?? entry?.connectedAt ?? null;
-      const user = typeof entry?.user === 'string' ? entry.user : null;
-      const rateUsage = metrics.rateUsage;
-      const ratePercentage = Math.max(0, Math.min(100, rateUsage?.percentage ?? 0));
-      const key =
-        (typeof entry?.id === 'string' && entry.id) ||
-        (typeof entry?.name === 'string' && entry.name) ||
-        `instance-${index}`;
-
-      return {
-        key,
-        id: typeof entry?.id === 'string' ? entry.id : null,
-        displayName:
-          (typeof entry?.name === 'string' && entry.name) ||
-          (typeof entry?.id === 'string' ? entry.id : 'Instância'),
-        phoneLabel,
-        formattedPhone,
-        addressLabel:
-          addressCandidate && addressCandidate !== phoneLabel ? addressCandidate : null,
-        statusInfo,
-        metrics,
-        statusValues: metrics.status,
-        rateUsage,
-        ratePercentage,
-        lastUpdatedLabel: formatTimestampLabel(lastUpdated),
-        user,
-        instance: entry,
-        isCurrent:
-          Boolean(instance?.id && entry?.id && instance.id === entry.id) ||
-          instance === entry,
-      };
-    });
+    return buildInstanceViewModels(renderInstances, instance ?? null);
   }, [instance?.id, renderInstances]);
   const hasRenderableInstances = instanceViewModels.length > 0;
   const instancesCountLabel = instancesReady
-    ? state.showAllInstances
+    ? showAllInstances
       ? `${totalInstanceCount} instância(s)`
       : `${visibleInstanceCount} ativa(s)`
     : 'Sincronizando…';
-  const showFilterNotice = instancesReady && hasHiddenInstances && !state.showAllInstances;
+  const showFilterNotice = instancesReady && hasHiddenInstances && !showAllInstances;
 
   const timelineItems = useMemo(() => {
     if (!instance) {
@@ -814,7 +539,7 @@ const useWhatsAppConnect = ({
       }
 
       try {
-        await createInstanceAction({ name: parsed.data.name, id: parsed.data.id ?? '' });
+        await createInstance({ name: parsed.data.name, id: parsed.data.id ?? '' });
         setCreateInstanceOpen(false);
       } catch (err: any) {
         const message =
@@ -826,23 +551,11 @@ const useWhatsAppConnect = ({
     [
       canCreateInstance,
       createInstanceWarning,
-      createInstanceAction,
+      createInstance,
       setCreateInstanceOpen,
       setErrorMessage,
     ]
   );
-
-  const resolveInstanceId = useCallback((target: any): string | null => {
-    if (!target) return null;
-    if (typeof target === 'string') return target;
-    if (typeof target.id === 'string' && target.id.trim().length > 0) {
-      return target.id.trim();
-    }
-    if (target.instance && typeof target.instance.id === 'string') {
-      return target.instance.id.trim();
-    }
-    return null;
-  }, []);
 
   const handleInstanceSelect = useCallback(
     async (inst: any, { skipAutoQr = false } = {}) => {
@@ -855,7 +568,7 @@ const useWhatsAppConnect = ({
 
       await selectInstance(targetId, { skipAutoQr });
     },
-    [campaign, clearCampaign, selectInstance, resolveInstanceId]
+    [campaign, clearCampaign, selectInstance]
   );
 
   const handleDeleteInstance = useCallback(
@@ -864,10 +577,10 @@ const useWhatsAppConnect = ({
         return;
       }
 
-      await deleteInstanceAction(target);
+      await deleteInstance(target);
       setInstancePendingDelete(null);
     },
-    [deleteInstanceAction, setInstancePendingDelete]
+    [deleteInstance, setInstancePendingDelete]
   );
 
   const removalTargetLabel =
@@ -965,7 +678,7 @@ const useWhatsAppConnect = ({
     errorState: state.errorState,
     loadInstances,
     reloadCampaigns,
-    showAllInstances: state.showAllInstances,
+    showAllInstances,
     handleRetry: () => loadInstances(),
     setCreateInstanceOpen,
     setCreateCampaignOpen,
