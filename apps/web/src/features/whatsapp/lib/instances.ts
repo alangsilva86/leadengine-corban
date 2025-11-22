@@ -29,6 +29,171 @@ export const pickStringValue = (...values: unknown[]): string | null => {
   return null;
 };
 
+export const readTenantString = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const pickTenantId = (record: unknown): string | null => {
+  if (!isPlainRecord(record)) {
+    return readTenantString(record);
+  }
+
+  const directCandidates = [
+    record.tenantId,
+    record.tenant_id,
+    record.tenantSlug,
+    record.tenant_slug,
+    record.scopeTenantId,
+    record.scope_tenant_id,
+    record.accountTenantId,
+    record.account_tenant_id,
+    record.agreementId,
+    record.agreement_id,
+    record.accountId,
+    record.account_id,
+  ];
+
+  for (const candidate of directCandidates) {
+    const resolved = readTenantString(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const nestedSources = ['tenant', 'account', 'scope'] as const;
+  for (const key of nestedSources) {
+    if (record[key] && typeof record[key] === 'object') {
+      const nested = pickTenantId(record[key]);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  if (typeof record.id === 'string') {
+    const resolved = readTenantString(record.id);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return null;
+};
+
+export const resolveTenantId = (record: unknown): string | null => {
+  if (!record || typeof record !== 'object') {
+    return readTenantString(record);
+  }
+
+  const baseTenant = pickTenantId(record);
+  if (baseTenant) {
+    return baseTenant;
+  }
+
+  const metadata = isPlainRecord((record as Record<string, unknown>).metadata)
+    ? ((record as Record<string, unknown>).metadata as Record<string, unknown>)
+    : null;
+  if (metadata) {
+    const metaTenant = pickTenantId(metadata);
+    if (metaTenant) {
+      return metaTenant;
+    }
+  }
+
+  const account = isPlainRecord((record as Record<string, unknown>).account)
+    ? ((record as Record<string, unknown>).account as Record<string, unknown>)
+    : null;
+  if (account) {
+    const accountTenant = pickTenantId(account);
+    if (accountTenant) {
+      return accountTenant;
+    }
+  }
+
+  const tenant = isPlainRecord((record as Record<string, unknown>).tenant)
+    ? ((record as Record<string, unknown>).tenant as Record<string, unknown>)
+    : null;
+  if (tenant) {
+    const tenantId = pickTenantId(tenant);
+    if (tenantId) {
+      return tenantId;
+    }
+  }
+
+  const scope = isPlainRecord((record as Record<string, unknown>).scope)
+    ? ((record as Record<string, unknown>).scope as Record<string, unknown>)
+    : null;
+  if (scope) {
+    const scopeTenant = pickTenantId(scope);
+    if (scopeTenant) {
+      return scopeTenant;
+    }
+  }
+
+  return null;
+};
+
+export const resolveTenantDisplayName = (record: unknown): string | null => {
+  if (!record || typeof record !== 'object') {
+    return readTenantString(record);
+  }
+
+  const source = record as Record<string, unknown>;
+  const directCandidates = [
+    source.tenantName,
+    source.tenantLabel,
+    source.tenantSlug,
+    source.accountName,
+    source.accountLabel,
+    source.scopeName,
+    source.name,
+    source.displayName,
+    source.label,
+    source.slug,
+  ];
+
+  for (const candidate of directCandidates) {
+    const resolved = readTenantString(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  const tenant = isPlainRecord(source.tenant) ? (source.tenant as Record<string, unknown>) : null;
+  if (tenant) {
+    const tenantName = resolveTenantDisplayName(tenant);
+    if (tenantName) {
+      return tenantName;
+    }
+  }
+
+  const account = isPlainRecord(source.account)
+    ? (source.account as Record<string, unknown>)
+    : null;
+  if (account) {
+    const accountName = resolveTenantDisplayName(account);
+    if (accountName) {
+      return accountName;
+    }
+  }
+
+  const metadata = isPlainRecord(source.metadata)
+    ? (source.metadata as Record<string, unknown>)
+    : null;
+  if (metadata) {
+    const metaName = resolveTenantDisplayName(metadata);
+    if (metaName) {
+      return metaName;
+    }
+  }
+
+  return resolveTenantId(record);
+};
+
 export const extractInstanceFromPayload = (
   payload: unknown,
 ): Record<string, unknown> | null => {
@@ -172,17 +337,7 @@ export const normalizeInstanceRecord = (entry: unknown): NormalizedInstance | nu
 
   const normalizedStatusResult = normalizeWhatsAppStatus({ status: rawStatus, connected: connectedValue });
 
-  const tenantId =
-    pickStringValue(
-      base.tenantId,
-      (base as Record<string, unknown>).tenant_id,
-      mergedMetadata.tenantId,
-      mergedMetadata.tenant_id,
-      base.agreementId,
-      mergedMetadata.agreementId,
-      base.accountId,
-      mergedMetadata.accountId,
-    ) ?? null;
+  const tenantId = resolveTenantId({ ...base, metadata: mergedMetadata });
 
   const name =
     pickStringValue(
@@ -195,7 +350,7 @@ export const normalizeInstanceRecord = (entry: unknown): NormalizedInstance | nu
       mergedMetadata.instanceName,
       mergedMetadata.sessionName,
       mergedMetadata.profileName,
-    ) ?? null;
+    ) ?? resolveTenantDisplayName({ ...base, metadata: mergedMetadata });
 
   const phoneNumber =
     pickStringValue(
