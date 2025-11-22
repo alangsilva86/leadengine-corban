@@ -224,6 +224,25 @@ const useWhatsAppConnect = ({
 }: UseWhatsAppConnectParams) => {
   const { log, warn, error: logError } = usePlayfulLogger('🎯 LeadEngine • WhatsApp');
   const [state, dispatch] = useReducer(reducer, initialState(status, activeCampaign));
+
+  const setErrorMessage = useCallback(
+    (message: string | null, meta: Partial<ErrorState> = {}) => {
+      if (message) {
+        const copy = resolveWhatsAppErrorCopy(meta.code ?? null, message);
+        dispatch({
+          type: 'set-error-state',
+          value: {
+            code: copy.code ?? meta.code ?? null,
+            title: meta.title ?? copy.title ?? 'Algo deu errado',
+            message: copy.description ?? message,
+          },
+        });
+      } else {
+        dispatch({ type: 'set-error-state', value: null });
+      }
+    },
+    []
+  );
   const {
     instances,
     instancesReady,
@@ -253,21 +272,7 @@ const useWhatsAppConnect = ({
     selectedAgreement,
     status,
     onStatusChange,
-    onError: (message: string | null, meta?: any) => {
-      if (!message) {
-        dispatch({ type: 'set-error-state', value: null });
-        return;
-      }
-      const copy = resolveWhatsAppErrorCopy(meta?.code ?? null, message);
-      dispatch({
-        type: 'set-error-state',
-        value: {
-          code: copy.code ?? meta?.code ?? null,
-          title: meta?.title ?? copy.title ?? 'Algo deu errado',
-          message: copy.description ?? message,
-        },
-      });
-    },
+    onError: setErrorMessage,
     logger: { log, warn, error: logError },
     campaignInstanceId: activeCampaign?.instanceId ?? null,
   });
@@ -310,25 +315,6 @@ const useWhatsAppConnect = ({
     selectInstance(null, { skipAutoQr: true });
   }, [instance, selectInstance, selectedInstanceBelongsToTenant, tenantFilterId]);
 
-  const setErrorMessage = useCallback(
-    (message: string | null, meta: Partial<ErrorState> = {}) => {
-      if (message) {
-        const copy = resolveWhatsAppErrorCopy(meta.code ?? null, message);
-        dispatch({
-          type: 'set-error-state',
-          value: {
-            code: copy.code ?? meta.code ?? null,
-            title: meta.title ?? copy.title ?? 'Algo deu errado',
-            message: copy.description ?? message,
-          },
-        });
-      } else {
-        dispatch({ type: 'set-error-state', value: null });
-      }
-    },
-    []
-  );
-
   const setShowAllInstances = useCallback((value: boolean) => {
     dispatch({ type: 'set-show-all-instances', value });
   }, []);
@@ -365,45 +351,12 @@ const useWhatsAppConnect = ({
     dispatch({ type: 'set-expanded-instance-id', value });
   }, []);
 
-  const setErrorMessage = useCallback(
-    (message: string | null, meta: Partial<ErrorState> = {}) => {
-      if (message) {
-        const copy = resolveWhatsAppErrorCopy(meta.code ?? null, message);
-        dispatch({
-          type: 'set-error-state',
-          value: {
-            code: copy.code ?? meta.code ?? null,
-            title: meta.title ?? copy.title ?? 'Algo deu errado',
-            message: copy.description ?? message,
-          },
-        });
-      } else {
-        dispatch({ type: 'set-error-state', value: null });
-      }
-    },
-    []
-  );
-
   const tenantState = useTenantInstances({
     selectedAgreement,
     status,
     activeCampaign,
     onStatusChange,
-    onError: (message: string | null, meta?: any) => {
-      if (!message) {
-        dispatch({ type: 'set-error-state', value: null });
-        return;
-      }
-      const copy = resolveWhatsAppErrorCopy(meta?.code ?? null, message);
-      dispatch({
-        type: 'set-error-state',
-        value: {
-          code: copy.code ?? meta?.code ?? null,
-          title: meta?.title ?? copy.title ?? 'Algo deu errado',
-          message: copy.description ?? message,
-        },
-      });
-    },
+    onError: setErrorMessage,
     logger: { log, warn, error: logError },
     dispatch,
     state,
