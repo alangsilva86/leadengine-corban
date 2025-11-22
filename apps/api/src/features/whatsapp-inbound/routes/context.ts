@@ -11,6 +11,7 @@ export type WhatsAppWebhookContext = {
   remoteIp: string | null;
   userAgent: string | null;
   signatureRequired: boolean;
+  tenantId: string | null;
 };
 
 export type WebhookResponseLocals = Record<string, unknown> & {
@@ -47,6 +48,7 @@ export const ensureWebhookContext = (req: Request, res: Response): WhatsAppWebho
     remoteIp,
     userAgent,
     signatureRequired: isWebhookSignatureRequired(),
+    tenantId: readString((req as Request & { tenantId?: string | null }).tenantId),
   };
 
   locals.whatsappWebhook = context;
@@ -69,7 +71,12 @@ export const logWebhookEvent = (
   });
 };
 
-export type WebhookRejectionReason = 'invalid_api_key' | 'invalid_signature' | 'rate_limited';
+export type WebhookRejectionReason =
+  | 'invalid_api_key'
+  | 'invalid_signature'
+  | 'rate_limited'
+  | 'missing_authorization'
+  | 'missing_tenant';
 
 export const trackWebhookRejection = (reason: WebhookRejectionReason) => {
   whatsappWebhookEventsCounter.inc({

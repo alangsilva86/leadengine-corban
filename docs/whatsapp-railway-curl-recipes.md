@@ -18,7 +18,7 @@ export INSTANCE_ID="alan"
 
 > ℹ️ With `MVP_AUTH_BYPASS=true` (enabled in demos), the API injects the bypass user automatically and you **do not** need the `Authorization` header. Keep the header enabled in production environments.
 
-> 🔐 O webhook sempre valida `x-api-key` e, quando configurado, `x-signature` (com fallback para o alias legado `x-signature-sha256`). Certifique-se de exportar as credenciais corretas antes de testar.
+> 🔐 O webhook sempre valida `Authorization: Bearer <token>` (ou o alias legado `x-authorization`), `x-tenant-id` e `x-api-key` quando configurado. Se `WHATSAPP_WEBHOOK_HMAC_SECRET` estiver ativo, envie também `x-signature` (ou `x-signature-sha256`).
 
 ## Inbound webhook check
 
@@ -27,7 +27,9 @@ Trigger ingestion with a representative WhatsApp event:
 ```bash
 curl -X POST "$API_URL/api/integrations/whatsapp/webhook" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
   -H "x-api-key: $WHATSAPP_WEBHOOK_API_KEY" \
+  -H "x-tenant-id: $TENANT_ID" \
   -d '{
     "events": [
       {

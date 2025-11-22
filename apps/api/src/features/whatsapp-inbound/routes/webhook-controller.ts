@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
+import { Buffer } from 'node:buffer';
 
 import { logger } from '../../../config/logger';
 import {
@@ -80,11 +81,64 @@ const createWebhookRateLimiter = (config: WhatsAppWebhookControllerConfig) =>
     },
   });
 
+const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return null;
+  }
+
+  try {
+    const base64 = parts[1]?.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64?.padEnd(Math.ceil((base64?.length ?? 0) / 4) * 4, '=');
+    const json = Buffer.from(padded ?? '', 'base64').toString('utf8');
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch (error) {
+    logger.debug('Failed to decode webhook bearer token payload', { error });
+    return null;
+  }
+};
+
+const resolveTenantId = (token: string | null, req: Request): string | null => {
+  const fromHeader = readString(req.header('x-tenant-id'));
+  if (fromHeader) {
+    return fromHeader;
+  }
+
+  if (!token) {
+    return null;
+  }
+
+  const jwtPayload = decodeJwtPayload(token);
+  const fromJwt = readString(jwtPayload?.tenantId, jwtPayload?.tenant, jwtPayload?.subTenant);
+  if (fromJwt) {
+    return fromJwt;
+  }
+
+  const colonTenant = /^tenant[:/](.+)$/i.exec(token)?.[1];
+  return colonTenant?.trim() ?? null;
+};
+
 const createVerifyWhatsAppWebhookRequest = (config: WhatsAppWebhookControllerConfig) =>
   async (req: Request, res: Response, next: NextFunction) => {
     const context = config.ensureWebhookContext(req, res);
     const expectedApiKey = getWebhookApiKey();
     const trustedIpBypass = isTrustedWebhookIp(context.remoteIp);
+
+    const rawAuthorization = readString(req.header('authorization'), req.header('x-authorization'));
+    const bearerToken = normalizeApiKey(rawAuthorization);
+
+    if (!bearerToken) {
+      config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: missing bearer token', context);
+      config.trackWebhookRejection('missing_authorization');
+      res.status(401).json({
+        ok: false,
+        error: {
+          code: 'MISSING_AUTHORIZATION',
+          message: 'Envie Authorization: Bearer <token> para acessar o webhook.',
+        },
+      });
+      return;
+    }
 
     if (trustedIpBypass) {
       config.logWebhookEvent('debug', '✅ WhatsApp webhook authenticated via trusted IP', context, {
@@ -92,12 +146,7 @@ const createVerifyWhatsAppWebhookRequest = (config: WhatsAppWebhookControllerCon
       });
     } else if (expectedApiKey) {
       const providedApiKey = normalizeApiKey(
-        readString(
-          req.header('x-webhook-token'),
-          req.header('x-api-key'),
-          req.header('authorization'),
-          req.header('x-authorization')
-        )
+        readString(req.header('x-webhook-token'), req.header('x-api-key'), rawAuthorization)
       );
 
       if (!providedApiKey) {
@@ -114,6 +163,23 @@ const createVerifyWhatsAppWebhookRequest = (config: WhatsAppWebhookControllerCon
         return;
       }
     }
+
+    const tenantId = resolveTenantId(bearerToken, req);
+    if (!tenantId) {
+      config.logWebhookEvent('error', '🛑 WhatsApp webhook rejected: tenantId missing', context);
+      config.trackWebhookRejection('missing_tenant');
+      res.status(400).json({
+        ok: false,
+        error: {
+          code: 'MISSING_TENANT',
+          message: 'Inclua o tenant no Authorization ou no header X-Tenant-Id.',
+        },
+      });
+      return;
+    }
+
+    (req as Request & { tenantId?: string }).tenantId = tenantId;
+    context.tenantId = tenantId;
 
     if (context.signatureRequired) {
       const secret = getWebhookSignatureSecret();
