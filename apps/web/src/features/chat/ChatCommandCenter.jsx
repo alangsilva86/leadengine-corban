@@ -20,6 +20,7 @@ export const ChatCommandCenter = ({
           onSubmit={manualConversation.onSubmit}
           onSuccess={manualConversation.onSuccess}
           isSubmitting={manualConversation.isPending}
+          error={manualConversation.error}
         />
       ) : null}
 

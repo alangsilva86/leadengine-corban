@@ -26,9 +26,17 @@ vi.mock('@tanstack/react-query', async (importOriginal) => {
 });
 
 let useManualConversationLauncher;
+let validateManualPayload;
+let MANUAL_PAYLOAD_ERRORS;
+let MANUAL_PAYLOAD_LIMITS;
 
 beforeEach(async () => {
-  ({ useManualConversationLauncher } = await import('../useManualConversationLauncher.js'));
+  ({
+    useManualConversationLauncher,
+    validateManualPayload,
+    MANUAL_PAYLOAD_ERRORS,
+    MANUAL_PAYLOAD_LIMITS,
+  } = await import('../useManualConversationLauncher.js'));
 });
 
 describe('useManualConversationLauncher', () => {
@@ -184,6 +192,44 @@ describe('useManualConversationLauncher', () => {
     await expect(
       result.current.launch({ phone: '(11) 90000-0000', message: 'olá', instanceId: '' })
     ).rejects.toThrow('Selecione uma instância conectada.');
+  });
+
+  it('valida e normaliza o payload em um único ponto', () => {
+    const valid = validateManualPayload({
+      phone: '+55 (11) 98888-1234',
+      message: '  Olá  ',
+      instanceId: ' instance-001 ',
+    });
+
+    expect(valid.errors).toBeNull();
+    expect(valid.payload).toEqual({
+      phone: '+5511988881234',
+      digits: '5511988881234',
+      message: 'Olá',
+      instanceId: 'instance-001',
+    });
+
+    const invalid = validateManualPayload({
+      phone: '1234',
+      message: '',
+      instanceId: '',
+    });
+
+    expect(invalid.payload).toBeNull();
+    expect(invalid.errors).toEqual({
+      phone: MANUAL_PAYLOAD_ERRORS.phone,
+      message: MANUAL_PAYLOAD_ERRORS.message,
+      instanceId: MANUAL_PAYLOAD_ERRORS.instance,
+    });
+
+    const tooLong = validateManualPayload({
+      phone: `+55${'9'.repeat(MANUAL_PAYLOAD_LIMITS.maxPhoneDigits + 2)}`,
+      message: 'ok',
+      instanceId: 'abc',
+    });
+
+    expect(tooLong.payload).toBeNull();
+    expect(tooLong.errors?.phone).toBe(MANUAL_PAYLOAD_ERRORS.phone);
   });
 });
 

@@ -4,20 +4,13 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockUseWhatsAppInstances, mockToastError } = vi.hoisted(() => ({
+const { mockUseWhatsAppInstances } = vi.hoisted(() => ({
   mockUseWhatsAppInstances: vi.fn(),
-  mockToastError: vi.fn(),
 }));
 
 vi.mock('@/features/whatsapp/hooks/useWhatsAppInstances.jsx', () => ({
   __esModule: true,
   default: (...args) => mockUseWhatsAppInstances(...args),
-}));
-
-vi.mock('sonner', () => ({
-  toast: {
-    error: (...args) => mockToastError(...args),
-  },
 }));
 
 let ManualConversationDialog;
@@ -41,7 +34,6 @@ describe('ManualConversationDialog', () => {
   beforeEach(async () => {
     vi.resetModules();
     mockUseWhatsAppInstances.mockReset();
-    mockToastError.mockReset();
     mockUseWhatsAppInstances.mockReturnValue({
       instances: [],
       loadInstances: vi.fn(),
@@ -124,5 +116,40 @@ describe('ManualConversationDialog', () => {
       message: 'Olá',
       instanceId: 'connected-1',
     });
+  });
+
+  it('mostra mensagens de erro de validação quando campos obrigatórios estão vazios', async () => {
+    const onSubmit = vi.fn();
+
+    mockUseWhatsAppInstances.mockReturnValue({
+      instances: [{ id: 'connected-1', connected: true }],
+      loadInstances: vi.fn(),
+    });
+
+    render(
+      <ManualConversationDialog open onOpenChange={() => {}} onSubmit={onSubmit} onSuccess={vi.fn()} />
+    );
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /iniciar conversa/i }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getAllByText('Informe um telefone válido com DDD e país.').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('exibe o erro retornado pela mutação', () => {
+    render(
+      <ManualConversationDialog
+        open
+        onOpenChange={() => {}}
+        onSubmit={vi.fn()}
+        onSuccess={vi.fn()}
+        error={new Error('Falha ao iniciar a conversa')}
+      />
+    );
+
+    expect(screen.getByText('Falha ao iniciar a conversa')).toBeInTheDocument();
   });
 });

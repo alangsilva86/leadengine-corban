@@ -2,11 +2,62 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api.js';
 import { extractPhoneDigits, normalizePhoneE164, PHONE_MAX_DIGITS, PHONE_MIN_DIGITS } from '@ticketz/shared';
 
-const MIN_PHONE_DIGITS = PHONE_MIN_DIGITS;
+export const MANUAL_PAYLOAD_LIMITS = {
+  minPhoneDigits: PHONE_MIN_DIGITS,
+  maxPhoneDigits: PHONE_MAX_DIGITS,
+};
+
+export const MANUAL_PAYLOAD_ERRORS = {
+  phone: 'Informe um telefone válido com DDD e país.',
+  message: 'Digite a mensagem inicial.',
+  instance: 'Selecione uma instância conectada.',
+};
+
+export const validateManualPayload = ({ phone, message, instanceId }) => {
+  const normalizedPhone = normalizePhoneE164(phone, {
+    minDigits: MANUAL_PAYLOAD_LIMITS.minPhoneDigits,
+    maxDigits: MANUAL_PAYLOAD_LIMITS.maxPhoneDigits,
+  });
+
+  const digits = normalizedPhone ? extractPhoneDigits(normalizedPhone) : null;
+  const trimmedMessage = typeof message === 'string' ? message.trim() : '';
+  const normalizedInstanceId = typeof instanceId === 'string' ? instanceId.trim() : '';
+
+  const errors = {};
+
+  if (!digits || !normalizedPhone) {
+    errors.phone = MANUAL_PAYLOAD_ERRORS.phone;
+  }
+
+  if (!trimmedMessage) {
+    errors.message = MANUAL_PAYLOAD_ERRORS.message;
+  }
+
+  if (!normalizedInstanceId) {
+    errors.instanceId = MANUAL_PAYLOAD_ERRORS.instance;
+  }
+
+  const hasErrors = Object.keys(errors).length > 0;
+
+  return {
+    errors: hasErrors ? errors : null,
+    payload: hasErrors
+      ? null
+      : {
+          phone: normalizedPhone,
+          digits,
+          message: trimmedMessage,
+          instanceId: normalizedInstanceId,
+        },
+  };
+};
 const CONTACT_LOOKUP_LIMIT = 5;
 
 const normalizePhonePayload = (value) => {
-  const phoneE164 = normalizePhoneE164(value, { minDigits: MIN_PHONE_DIGITS, maxDigits: PHONE_MAX_DIGITS });
+  const phoneE164 = normalizePhoneE164(value, {
+    minDigits: MANUAL_PAYLOAD_LIMITS.minPhoneDigits,
+    maxDigits: MANUAL_PAYLOAD_LIMITS.maxPhoneDigits,
+  });
   if (!phoneE164) {
     return null;
   }
@@ -72,7 +123,12 @@ const findContactByPhone = async (digits) => {
 };
 
 const ensureContactForPhone = async ({ digits, phoneE164 }) => {
-  const fallbackE164 = phoneE164 ?? normalizePhoneE164(digits, { minDigits: MIN_PHONE_DIGITS, maxDigits: PHONE_MAX_DIGITS });
+  const fallbackE164 =
+    phoneE164 ??
+    normalizePhoneE164(digits, {
+      minDigits: MANUAL_PAYLOAD_LIMITS.minPhoneDigits,
+      maxDigits: MANUAL_PAYLOAD_LIMITS.maxPhoneDigits,
+    });
   if (!fallbackE164) {
     throw new Error('Informe um telefone válido com DDD e país.');
   }
@@ -113,25 +169,24 @@ export const useManualConversationLauncher = () => {
   const mutation = useMutation({
     mutationKey: ['lead-inbox', 'manual-conversation'],
     mutationFn: async ({ phone, message, instanceId }) => {
-      const normalizedPhone = normalizePhonePayload(phone);
-      const trimmedMessage = typeof message === 'string' ? message.trim() : '';
-      const normalizedInstance = typeof instanceId === 'string' ? instanceId.trim() : '';
+      const validation = validateManualPayload({ phone, message, instanceId });
 
-      if (!normalizedPhone) {
-        throw new Error('Informe um telefone válido com DDD e país.');
+      if (!validation.payload) {
+        const fallbackMessage =
+          validation.errors?.phone ?? validation.errors?.message ?? validation.errors?.instanceId ?? 'Dados inválidos.';
+        const error = new Error(fallbackMessage);
+        error.details = validation.errors;
+        throw error;
       }
 
-      const { digits, phoneE164 } = normalizedPhone;
+      const { digits, phone: validatedPhone, message: validatedMessage, instanceId: validatedInstance } = validation.payload;
+      const normalizedPhone = normalizePhonePayload(validatedPhone);
+      const phoneE164 = normalizedPhone?.phoneE164 ?? validatedPhone;
+      const digitsToUse = normalizedPhone?.digits ?? digits;
+      const trimmedMessage = validatedMessage;
+      const normalizedInstance = validatedInstance;
 
-      if (!trimmedMessage) {
-        throw new Error('Digite a mensagem inicial.');
-      }
-
-      if (!normalizedInstance) {
-        throw new Error('Selecione uma instância conectada.');
-      }
-
-      const { contact, phoneE164: resolvedPhone } = await ensureContactForPhone({ digits, phoneE164 });
+      const { contact, phoneE164: resolvedPhone } = await ensureContactForPhone({ digits: digitsToUse, phoneE164 });
       if (!contact?.id) {
         throw new Error('Não foi possível localizar o contato para o envio manual.');
       }
