@@ -98,7 +98,7 @@ describe('createSyncInstancesFromBroker', () => {
 });
 
 describe('WhatsAppBrokerClient normalization', () => {
-  it('does not fallback missing broker tenantId to the requested tenant', () => {
+  it('preserves missing broker tenantId for downstream validation', () => {
     const instance = (whatsappBrokerClient as any).normalizeBrokerInstance('tenant-input', {
       id: 'instance-4',
       status: 'connected',
