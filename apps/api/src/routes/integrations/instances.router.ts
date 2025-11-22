@@ -403,14 +403,14 @@ router.post(
   '/instances',
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = resolveRequestTenantId(req);
-    const actorId = resolveRequestActorId(req);
-
     const parsedBody = createWhatsAppInstanceSchema.safeParse(req.body ?? {});
     if (!parsedBody.success) {
       respondWithValidationError(res, parsedBody.error.issues);
       return;
     }
+
+    const tenantId = resolveRequestTenantId(req, parsedBody.data.tenantId);
+    const actorId = resolveRequestActorId(req);
 
     logger.info('whatsapp.instances.create.request', {
       tenantId,
