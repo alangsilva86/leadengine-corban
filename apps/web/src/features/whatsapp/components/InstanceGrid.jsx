@@ -15,6 +15,8 @@ const InstanceGrid = ({
   zeroInstances,
   onShowAll,
   onCreateInstance,
+  createInstanceDisabled = false,
+  createInstanceWarning = null,
   onSelectInstance,
   onViewQr,
   onRequestDelete,
@@ -99,9 +101,17 @@ const InstanceGrid = ({
           <p className="mt-2 text-sm text-muted-foreground">
             Configure um canal do WhatsApp para começar a operar com o Lead Engine.
           </p>
-          <Button size="sm" className="mt-4" onClick={onCreateInstance}>
+          <Button
+            size="sm"
+            className="mt-4"
+            onClick={onCreateInstance}
+            disabled={isBusy || createInstanceDisabled}
+          >
             Nova instância
           </Button>
+          {createInstanceWarning ? (
+            <p className="mt-2 text-xs text-amber-200">{createInstanceWarning}</p>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-6 text-center text-sm text-muted-foreground">

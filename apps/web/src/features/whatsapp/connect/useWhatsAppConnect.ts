@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { toast } from 'sonner';
 
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
@@ -429,6 +430,11 @@ const useWhatsAppConnect = ({
   });
 
   const localStatus = (selectedInstanceStatus || rawStatus || 'disconnected').toLowerCase();
+  const hasTenantScope = Boolean(selectedAgreement?.tenantId);
+  const createInstanceWarning = hasTenantScope
+    ? null
+    : 'Selecione um acordo com tenantId válido para criar um novo canal do WhatsApp.';
+  const canCreateInstance = hasTenantScope;
   const tenantFilterId = useMemo(
     () => resolveAgreementTenantId(selectedAgreement),
     [selectedAgreement]
@@ -779,12 +785,27 @@ const useWhatsAppConnect = ({
   }, [loadInstances]);
 
   const handleCreateInstance = useCallback(() => {
+    if (!canCreateInstance) {
+      if (createInstanceWarning) {
+        toast.warning(createInstanceWarning);
+        setErrorMessage(createInstanceWarning, { code: 'MISSING_TENANT' });
+      }
+      return;
+    }
     setErrorMessage(null);
     setCreateInstanceOpen(true);
-  }, [setCreateInstanceOpen, setErrorMessage]);
+  }, [canCreateInstance, createInstanceWarning, setCreateInstanceOpen, setErrorMessage]);
 
   const submitCreateInstance = useCallback(
     async ({ name, id }: { name: string; id?: string }) => {
+      if (!canCreateInstance) {
+        const warningMessage =
+          createInstanceWarning ??
+          'Selecione um acordo com tenantId válido para criar um novo canal do WhatsApp.';
+        toast.warning(warningMessage);
+        setErrorMessage(warningMessage, { code: 'MISSING_TENANT' });
+        throw new Error(warningMessage);
+      }
       const parsed = createInstanceSchema.safeParse({ name, id });
       if (!parsed.success) {
         const message = parsed.error.errors[0]?.message ?? 'Informe um nome válido para a nova instância.';
@@ -802,7 +823,13 @@ const useWhatsAppConnect = ({
         throw err instanceof Error ? err : new Error(message);
       }
     },
-    [createInstanceAction, setCreateInstanceOpen, setErrorMessage]
+    [
+      canCreateInstance,
+      createInstanceWarning,
+      createInstanceAction,
+      setCreateInstanceOpen,
+      setErrorMessage,
+    ]
   );
 
   const resolveInstanceId = useCallback((target: any): string | null => {
@@ -906,6 +933,8 @@ const useWhatsAppConnect = ({
     campaignAction,
     campaign,
     persistentWarning,
+    canCreateInstance,
+    createInstanceWarning,
     setShowAllInstances,
     renderInstances,
     setQrPanelOpen,

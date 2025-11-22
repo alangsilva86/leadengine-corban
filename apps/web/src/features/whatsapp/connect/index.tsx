@@ -129,6 +129,8 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
     stepLabel,
     onboardingDescription,
     canCreateCampaigns,
+    canCreateInstance,
+    createInstanceWarning,
   } = useWhatsAppConnect(props);
   const currentInstance = (selectedInstance as WhatsAppInstanceViewModel | null) ?? null;
 
@@ -424,12 +426,20 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                     </div>
                     {step.id === 1 ? (
                       <div className="flex flex-wrap gap-3">
-                        <Button size="sm" variant="secondary" onClick={handleCreateInstance}>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={handleCreateInstance}
+                          disabled={!canCreateInstance}
+                        >
                           <Plus className="mr-2 h-4 w-4" /> Nova instância
                         </Button>
                         <Button size="sm" variant="ghost" onClick={() => setShowInstanceManager(true)}>
                           Ver instâncias
                         </Button>
+                        {!canCreateInstance && createInstanceWarning ? (
+                          <p className="text-xs text-amber-200">{createInstanceWarning}</p>
+                        ) : null}
                       </div>
                     ) : null}
                     {step.id === 2 ? (
@@ -501,11 +511,13 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                     copy={copy}
                     localStatus={localStatus}
                     onMarkConnected={handleMarkConnected}
-                    onRefresh={handleRefreshInstances}
-                    onCreateInstance={handleCreateInstance}
-                    onShowAll={() => setShowAllInstances(true)}
-                    onRetry={handleRetry}
-                    onSelectInstance={handleInstanceSelect}
+                  onRefresh={handleRefreshInstances}
+                  onCreateInstance={handleCreateInstance}
+                  createInstanceDisabled={!canCreateInstance}
+                  createInstanceWarning={createInstanceWarning}
+                  onShowAll={() => setShowAllInstances(true)}
+                  onRetry={handleRetry}
+                  onSelectInstance={handleInstanceSelect}
                     onViewQr={handleViewQr}
                     onRequestDelete={setInstancePendingDelete}
                     deletingInstanceId={deletingInstanceId}
@@ -707,6 +719,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
           open={isCreateInstanceOpen}
           onOpenChange={setCreateInstanceOpen}
           defaultName={defaultInstanceName}
+          disabledReason={createInstanceWarning}
           onSubmit={submitCreateInstance}
         />
       </Suspense>

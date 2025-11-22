@@ -513,6 +513,13 @@ export default function useWhatsAppInstances(options = {}) {
         onError?.(message, { code: 'INVALID_NAME' });
         throw new Error(message);
       }
+      if (!selectedAgreement?.tenantId) {
+        const message =
+          'Selecione um acordo com tenantId válido para criar um novo canal do WhatsApp.';
+        onError?.(message, { code: 'MISSING_TENANT' });
+        toast.warning(message);
+        throw new Error(message);
+      }
       const payload = ensureTenantMeta(selectedAgreement, {
         name: name.trim(),
         id: id ?? undefined,
