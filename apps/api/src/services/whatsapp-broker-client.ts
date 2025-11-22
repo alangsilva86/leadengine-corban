@@ -1306,6 +1306,62 @@ class WhatsAppBrokerClient {
     };
   }
 
+  private ensureSnapshotsHaveTenantId(
+    snapshots: WhatsAppBrokerInstanceSnapshot[],
+    requestedTenantId: string
+  ): WhatsAppBrokerInstanceSnapshot[] {
+    const sanitized: WhatsAppBrokerInstanceSnapshot[] = [];
+    const rejected: Array<{ brokerId: string | null }> = [];
+
+    for (const snapshot of snapshots) {
+      const instanceId =
+        typeof snapshot.instance?.id === 'string' ? snapshot.instance.id.trim() : '';
+      const tenantId =
+        typeof snapshot.instance?.tenantId === 'string'
+          ? snapshot.instance.tenantId.trim()
+          : '';
+
+      if (tenantId) {
+        sanitized.push({
+          ...snapshot,
+          instance: {
+            ...snapshot.instance,
+            tenantId,
+          },
+        });
+        continue;
+      }
+
+      if (requestedTenantId) {
+        logger.warn('whatsapp.broker.instances.snapshotMissingTenantId', {
+          tenantId: requestedTenantId,
+          brokerId: instanceId || null,
+        });
+        sanitized.push({
+          ...snapshot,
+          instance: {
+            ...snapshot.instance,
+            tenantId: requestedTenantId,
+          },
+        });
+        continue;
+      }
+
+      rejected.push({ brokerId: instanceId || null });
+    }
+
+    if (rejected.length) {
+      logger.error('whatsapp.broker.instances.rejectMissingTenantId', {
+        requestedTenantId,
+        rejected: rejected.slice(0, 5),
+        rejectedCount: rejected.length,
+      });
+      throw new Error('WhatsApp broker response missing tenantId for instance snapshots');
+    }
+
+    return sanitized;
+  }
+
   private findSessionPayloads(value: unknown): Record<string, unknown>[] {
     const sessions: Record<string, unknown>[] = [];
     const visited = new Set<unknown>();
@@ -1382,7 +1438,9 @@ class WhatsAppBrokerClient {
       .map((session) => this.normalizeInstanceSnapshot(tenantId, session))
       .filter((snapshot): snapshot is WhatsAppBrokerInstanceSnapshot => Boolean(snapshot));
 
-    if (!normalized.length) {
+    const tenantAware = this.ensureSnapshotsHaveTenantId(normalized, normalizedTenantId);
+
+    if (!tenantAware.length) {
       logger.debug('WhatsApp broker instances could not be normalised', {
         tenantId,
         response,
@@ -1393,7 +1451,7 @@ class WhatsAppBrokerClient {
     const deduped = new Map<string, WhatsAppBrokerInstanceSnapshot>();
     const fallbacks: WhatsAppBrokerInstanceSnapshot[] = [];
 
-    for (const snapshot of normalized) {
+    for (const snapshot of tenantAware) {
       const normalizedId = snapshot.instance.id.trim();
 
       if (normalizedId.length > 0) {

@@ -180,6 +180,74 @@ describe('WhatsAppBrokerClient', () => {
     ]);
   });
 
+  it('fills tenantId when broker omits it and logs a warning', async () => {
+    const { Response } = await import('undici');
+    const { logger } = await import('../../config/logger');
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          instances: [
+            {
+              id: 'inst-2',
+              name: 'Operação Secundária',
+              status: { status: 'connected', connected: true },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }
+      )
+    );
+
+    const result = await whatsappBrokerClient.listInstances('tenant-1');
+
+    expect(result[0]?.instance.tenantId).toBe('tenant-1');
+    expect(warnSpy).toHaveBeenCalledWith(
+      'whatsapp.broker.instances.snapshotMissingTenantId',
+      expect.objectContaining({ tenantId: 'tenant-1', brokerId: 'inst-2' })
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it('rejects broker responses with missing tenantId when no tenant is provided', async () => {
+    const { Response } = await import('undici');
+    const { logger } = await import('../../config/logger');
+    const errorSpy = vi.spyOn(logger, 'error');
+    const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
+
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          instances: [
+            {
+              id: 'inst-3',
+              status: { status: 'connected', connected: true },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }
+      )
+    );
+
+    await expect(whatsappBrokerClient.listInstances(''))
+      .rejects.toThrowError(/tenantId/);
+    expect(errorSpy).toHaveBeenCalledWith(
+      'whatsapp.broker.instances.rejectMissingTenantId',
+      expect.objectContaining({ requestedTenantId: '' })
+    );
+
+    errorSpy.mockRestore();
+  });
+
   it('pairs instances via POST /instances/:id/pair', async () => {
     const { Response } = await import('undici');
     const { whatsappBrokerClient } = await import('../whatsapp-broker-client');
