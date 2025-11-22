@@ -1035,6 +1035,7 @@ export const syncInstancesFromBroker = createSyncInstancesFromBroker({
   pickString,
   mapBrokerStatusToDbStatus,
   mapBrokerInstanceStatusToDbStatus,
+  metrics: defaultInstanceMetrics,
 });
 
 export const defaultInstanceCollectionDependencies: InstanceCollectionDependencies = {

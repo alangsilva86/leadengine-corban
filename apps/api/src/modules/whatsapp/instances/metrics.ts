@@ -5,6 +5,7 @@ import {
   whatsappRefreshStepDurationSummary,
   whatsappRefreshStepFailureCounter,
   whatsappSnapshotCacheOutcomeCounter,
+  whatsappDiscardedSnapshotsCounter,
 } from '../../../lib/metrics';
 
 export type InstanceMetrics = {
@@ -22,6 +23,12 @@ export type InstanceMetrics = {
     backend: 'memory' | 'redis',
     outcome: 'hit' | 'miss' | 'error'
   ) => void;
+  recordDiscardedSnapshot: (
+    tenantId: string,
+    reason: 'missing-tenant' | 'mismatched-tenant',
+    reportedTenantId: string | null,
+    brokerId: string | null
+  ) => void;
   recordQrOutcome: (
     tenantId: string,
     instanceId: string | null,
@@ -38,6 +45,7 @@ export const createInstanceMetrics = (
     refreshStepDuration: whatsappRefreshStepDurationSummary,
     refreshStepFailure: whatsappRefreshStepFailureCounter,
     snapshotCache: whatsappSnapshotCacheOutcomeCounter,
+    discardedSnapshots: whatsappDiscardedSnapshotsCounter,
   }
 ): InstanceMetrics => {
   const incrementHttpCounter = (): void => {
@@ -97,6 +105,24 @@ export const createInstanceMetrics = (
     }
   };
 
+  const recordDiscardedSnapshot = (
+    tenantId: string,
+    reason: 'missing-tenant' | 'mismatched-tenant',
+    reportedTenantId: string | null,
+    brokerId: string | null
+  ): void => {
+    try {
+      counters.discardedSnapshots.inc({
+        tenantId,
+        reportedTenantId: reportedTenantId ?? undefined,
+        reason,
+        brokerId: brokerId ?? undefined,
+      });
+    } catch {
+      // metrics are best effort
+    }
+  };
+
   const recordQrOutcome = (
     tenantId: string,
     instanceId: string | null,
@@ -121,6 +147,7 @@ export const createInstanceMetrics = (
     recordRefreshStepDuration,
     recordRefreshStepFailure,
     recordSnapshotCacheOutcome,
+    recordDiscardedSnapshot,
     recordQrOutcome,
   } satisfies InstanceMetrics;
 };
