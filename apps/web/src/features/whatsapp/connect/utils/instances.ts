@@ -72,4 +72,37 @@ const buildInstanceViewModels = (
   });
 };
 
-export { buildInstanceViewModels, isInstanceConnected, resolveInstanceId };
+const resolveInstanceLabel = (instance: any): string => {
+  if (!instance) {
+    return '';
+  }
+
+  const candidates = [instance.name, instance.displayName, instance.id];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return 'Instância WhatsApp';
+};
+
+const sortInstancesByLabel = <T>(instances: T[]): T[] => {
+  if (!Array.isArray(instances)) {
+    return [];
+  }
+
+  return instances
+    .filter(Boolean)
+    .map((entry) => ({ entry, sortKey: resolveInstanceLabel(entry).toLowerCase() }))
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey, 'pt-BR'))
+    .map((item) => item.entry);
+};
+
+export {
+  buildInstanceViewModels,
+  isInstanceConnected,
+  resolveInstanceId,
+  resolveInstanceLabel,
+  sortInstancesByLabel,
+};

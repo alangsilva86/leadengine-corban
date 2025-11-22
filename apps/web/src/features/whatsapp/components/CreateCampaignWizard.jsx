@@ -47,7 +47,7 @@ import {
 } from '@/features/whatsapp/utils/campaign-options.js';
 import { cn } from '@/lib/utils.js';
 import { toast } from 'sonner';
-import { resolveTenantDisplayName } from '../lib/instances';
+import { resolveTenantDisplayName, selectPreferredInstance } from '../lib/instances';
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Ativar imediatamente' },
@@ -271,22 +271,9 @@ const CreateCampaignWizard = ({
     });
   }, [agreementErrorMessage]);
 
-  const sortedInstances = useMemo(() => {
-    return [...instances]
-      .filter(Boolean)
-      .map((entry) => ({
-        ...entry,
-        sortKey: formatInstanceLabel(entry).toLowerCase(),
-      }))
-      .sort((a, b) => a.sortKey.localeCompare(b.sortKey, 'pt-BR'));
-  }, [instances]);
+  const connectedInstances = instances.filter((instance) => Boolean(instance?.connected));
 
-  const connectedInstances = useMemo(
-    () => sortedInstances.filter((instance) => Boolean(instance?.connected)),
-    [sortedInstances],
-  );
-
-  const hasInstances = sortedInstances.length > 0;
+  const hasInstances = instances.length > 0;
   const hasConnectedInstances = connectedInstances.length > 0;
 
   const isModalSessionActiveRef = useRef(false);
@@ -297,20 +284,12 @@ const CreateCampaignWizard = ({
       return;
     }
 
-    const sorted = [...instances]
-      .filter(Boolean)
-      .map((entry) => ({
-        ...entry,
-        sortKey: formatInstanceLabel(entry).toLowerCase(),
-      }))
-      .sort((a, b) => a.sortKey.localeCompare(b.sortKey, 'pt-BR'));
-
-    const connected = sorted.filter((instance) => Boolean(instance?.connected));
+    const connectedList = instances.filter((instance) => Boolean(instance?.connected));
 
     const preferredInstance =
-      sorted.find((item) => item?.id === defaultInstanceId) ??
-      connected[0] ??
-      sorted[0] ??
+      selectPreferredInstance(instances, { preferredInstanceId: defaultInstanceId ?? null }) ??
+      connectedList[0] ??
+      instances[0] ??
       null;
 
     const preferredAgreementId = agreement?.id ?? '';
@@ -323,7 +302,7 @@ const CreateCampaignWizard = ({
       const nextState = {
         ...prev,
         instanceId:
-          prev.instanceId && sorted.some((item) => item?.id === prev.instanceId)
+          prev.instanceId && instances.some((item) => item?.id === prev.instanceId)
             ? prev.instanceId
             : preferredInstance?.id ?? '',
         agreementId:
@@ -354,10 +333,17 @@ const CreateCampaignWizard = ({
     setStepError(null);
     setSubmitError(null);
     setIsSubmitting(false);
-  }, [open, instances, agreement?.id, agreement?.name, agreement?.displayName, defaultInstanceId]);
+  }, [
+    open,
+    instances,
+    agreement?.id,
+    agreement?.name,
+    agreement?.displayName,
+    defaultInstanceId,
+  ]);
 
   const currentStep = STEP_SEQUENCE[stepIndex];
-  const selectedInstance = sortedInstances.find((item) => item?.id === formState.instanceId) ?? null;
+  const selectedInstance = instances.find((item) => item?.id === formState.instanceId) ?? null;
   const selectedAgreement = agreementsList.find((item) => item?.id === formState.agreementId) ?? null;
   const selectedProduct = findCampaignProduct(formState.product);
   const selectedStrategy = findCampaignStrategy(formState.strategy);
@@ -818,7 +804,7 @@ const CreateCampaignWizard = ({
                     <SelectValue placeholder="Selecione a instância" />
                   </SelectTrigger>
                   <SelectContent>
-                    {sortedInstances.map((instance) => (
+                    {instances.map((instance) => (
                       <SelectItem key={instance.id ?? formatInstanceLabel(instance)} value={instance.id}>
                         <div className="flex flex-col gap-1">
                           <span className="text-sm font-medium leading-5">{formatInstanceLabel(instance)}</span>

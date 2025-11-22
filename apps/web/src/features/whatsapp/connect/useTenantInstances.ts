@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 
 import useWhatsAppInstances from '../hooks/useWhatsAppInstances.jsx';
 import { shouldDisplayInstance } from '../lib/instances';
+import { sortInstancesByLabel } from './utils/instances';
 import type { WhatsAppConnectAction, WhatsAppConnectState } from './useWhatsAppConnect';
 import { persistShowAllPreference, readShowAllPreference } from './utils/preferences';
 import { resolveAgreementTenantId, resolveInstanceTenantId, resolveTenantDisplayName } from './utils/tenant';
@@ -115,7 +116,11 @@ const useTenantInstances = ({
   const totalInstanceCount = tenantScopedInstances.length;
   const visibleInstanceCount = visibleInstances.length;
   const hasHiddenInstances = totalInstanceCount > visibleInstanceCount;
-  const renderInstances = state.showAllInstances ? tenantScopedInstances : visibleInstances;
+  const filteredInstances = state.showAllInstances ? tenantScopedInstances : visibleInstances;
+  const renderInstances = useMemo(
+    () => sortInstancesByLabel(filteredInstances),
+    [filteredInstances],
+  );
   const tenantScopeNotice =
     tenantFilterId && tenantFilteredOutCount > 0
       ? `${tenantFilteredOutCount} instância(s) ocultadas por pertencerem a tenants diferentes de ${
