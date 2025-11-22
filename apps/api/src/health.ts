@@ -1,3 +1,5 @@
+import { getPollEncryptionConfig } from './config/poll-encryption';
+import { getOnboardingConfig } from './config/onboarding';
 import { getBrokerBaseUrl, getBrokerTimeoutMs, getBrokerWebhookUrl } from './config/whatsapp';
 import { getBrokerObservabilitySnapshot } from './services/broker-observability';
 import { getBrokerCircuitBreakerMetrics } from './services/whatsapp-broker-client-protected';
@@ -8,6 +10,9 @@ export type HealthPayload = {
   uptime: number;
   environment: string;
   storage: string;
+  alerts: {
+    insecureFallbacks: string[];
+  };
   whatsapp: {
     broker: {
       baseUrl: string | null;
@@ -52,12 +57,26 @@ export const buildHealthPayload = ({ environment }: { environment: string }): He
     timeoutMs: getBrokerTimeoutMs(),
   };
 
+  const onboardingConfig = getOnboardingConfig();
+  const pollEncryption = getPollEncryptionConfig();
+
+  const insecureFallbacks = [] as string[];
+  if (onboardingConfig.usingFallbackDefaults) {
+    insecureFallbacks.push('onboarding_invite_defaults');
+  }
+  if (pollEncryption.usingFallbackSource) {
+    insecureFallbacks.push('poll_runtime_encryption_fallback');
+  }
+
   return {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment,
     storage: deriveStorageBackend(),
+    alerts: {
+      insecureFallbacks,
+    },
     whatsapp: {
       broker: {
         baseUrl: brokerConfig.baseUrl,

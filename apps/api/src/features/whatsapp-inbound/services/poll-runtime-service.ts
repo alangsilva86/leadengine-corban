@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 
+import { getPollEncryptionConfig } from '../../../config/poll-encryption';
 import { logger } from '../../../config/logger';
 import {
   readPollMetadataStore,
@@ -84,21 +85,6 @@ type RuntimePollMetadata = Omit<StoredPollMetadata, 'votes' | 'hints'> & {
 
 const DEFAULT_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-const deriveEncryptionKey = (rawKey: string | null | undefined): Buffer | null => {
-  if (!rawKey || rawKey.trim().length === 0) {
-    return null;
-  }
-
-  try {
-    return crypto.createHash('sha256').update(rawKey.trim()).digest();
-  } catch (error) {
-    logger.warn('Poll runtime encryption key derivation failed', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
-  }
-};
-
 const encryptSecret = (secret: string, key: Buffer): EncryptedSecret => {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
@@ -149,7 +135,8 @@ const cloneMetadata = (input: RuntimePollMetadata): RuntimePollMetadata => ({
 
 export class PollRuntimeService {
   private readonly ttlMs: number;
-  private readonly encryptionKey: Buffer | null;
+  private readonly encryptionKey: Buffer;
+  private readonly encryptionKeySource: string;
   private readonly metadataByPollId = new Map<string, RuntimePollMetadata>();
   private readonly pollIdByCreationId = new Map<string, string>();
   private initialized = false;
@@ -159,12 +146,16 @@ export class PollRuntimeService {
 
   constructor(options?: { ttlMs?: number }) {
     this.ttlMs = Number.isFinite(options?.ttlMs) && (options?.ttlMs ?? 0) > 0 ? (options?.ttlMs as number) : DEFAULT_TTL_MS;
-    this.encryptionKey = deriveEncryptionKey(process.env.POLL_METADATA_ENCRYPTION_KEY ?? process.env.APP_ENCRYPTION_KEY);
+    const pollEncryption = getPollEncryptionConfig();
+    this.encryptionKey = pollEncryption.key;
+    this.encryptionKeySource = pollEncryption.source;
 
-    if (!this.encryptionKey) {
-      logger.warn(
-        'Poll runtime service running without encryption key; poll secrets may not survive restarts securely'
-      );
+    if (pollEncryption.usingFallbackSource) {
+      logger.warn('Poll runtime encryption key não definida via POLL_METADATA_ENCRYPTION_KEY; usando fallback.', {
+        source: this.encryptionKeySource,
+      });
+    } else {
+      logger.info('Poll runtime encryption key configurada', { source: this.encryptionKeySource });
     }
   }
 
@@ -332,11 +323,7 @@ export class PollRuntimeService {
     let messageSecretFingerprint: string | null = null;
     if (input.messageSecret && input.messageSecret.trim().length > 0) {
       messageSecretFingerprint = fingerprintSecret(input.messageSecret);
-      if (this.encryptionKey) {
-        messageSecretEnvelope = encryptSecret(input.messageSecret, this.encryptionKey);
-      } else {
-        logger.warn('Poll runtime storing message secret without encryption key', { pollId });
-      }
+      messageSecretEnvelope = encryptSecret(input.messageSecret, this.encryptionKey);
     }
 
     const existing = this.metadataByPollId.get(pollId);
@@ -565,11 +552,6 @@ export class PollRuntimeService {
     }
 
     if (!entry.messageSecretEnvelope) {
-      return null;
-    }
-
-    if (!this.encryptionKey) {
-      logger.warn('Poll runtime cannot decrypt secret without encryption key', { pollId });
       return null;
     }
 

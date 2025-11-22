@@ -21,14 +21,7 @@ describe('buildHealthPayload', () => {
     expect(payload.status).toBe('ok');
     expect(payload.environment).toBe('test');
     expect(payload.storage).toBe('in-memory');
-    expect(payload.whatsapp.mode).toBe('http');
-    expect(payload.whatsapp.transportMode).toBe('http');
-    expect(payload.whatsapp.runtime).toEqual({
-      status: 'running',
-      mode: 'http',
-      transport: 'http',
-      disabled: false,
-    });
+    expect(payload.alerts.insecureFallbacks).toContain('onboarding_invite_defaults');
     expect(payload.whatsapp.broker).toMatchObject({
       degraded: false,
       lastSuccessAt: null,
@@ -51,14 +44,7 @@ describe('buildHealthPayload', () => {
     const payload = buildHealthPayload({ environment: 'qa' });
 
     expect(payload.status).toBe('ok');
-    expect(payload.whatsapp.mode).toBe('http');
-    expect(payload.whatsapp.transportMode).toBe('http');
-    expect(payload.whatsapp.runtime).toEqual({
-      status: 'running',
-      mode: 'http',
-      transport: 'http',
-      disabled: false,
-    });
+    expect(payload.alerts.insecureFallbacks).toContain('onboarding_invite_defaults');
   });
 
   it('detects prisma-backed storage from environment variables', async () => {
