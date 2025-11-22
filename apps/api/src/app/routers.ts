@@ -36,6 +36,7 @@ import { tenantAdminRouterFactory } from '../modules/tenant-admin/tenants.routes
 import { errorHandler } from '../middleware/error-handler';
 import { getBrokerBaseUrl } from '../config/whatsapp';
 import { logAiConfiguration } from '../config/ai';
+import { getReadinessState } from './readiness';
 
 import {
   debugMessagesRouter as enabledDebugMessagesRouter,
@@ -65,7 +66,26 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
   });
 
   app.get(['/health', '/healthz'], (_req, res) => {
-    res.json(buildHealthPayload({ environment: nodeEnv }));
+    res.json({
+      ...buildHealthPayload({ environment: nodeEnv }),
+      readiness: getReadinessState(),
+    });
+  });
+
+  app.get(['/ready', '/readiness'], (_req, res) => {
+    const readiness = getReadinessState();
+    const statusCode = readiness.ready ? 200 : 503;
+
+    res.status(statusCode).json({
+      ok: readiness.ready,
+      status: readiness.status,
+      reason: readiness.reason,
+      since: readiness.since,
+      lastReadyAt: readiness.lastReadyAt,
+      lastNotReadyAt: readiness.lastNotReadyAt,
+      transitions: readiness.transitions,
+      metadata: readiness.metadata,
+    });
   });
 
   app.get('/_diag/echo', (req, res) => {
