@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button.jsx';
 import {
@@ -29,9 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select.jsx';
 import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
-import { extractPhoneDigits, normalizePhoneE164, PHONE_MAX_DIGITS, PHONE_MIN_DIGITS } from '@ticketz/shared';
-
-const PHONE_ERROR_MESSAGE = 'Informe um telefone válido com DDD e país.';
+import { validateManualPayload } from '../hooks/useManualConversationLauncher.js';
 
 const ManualConversationDialog = ({
   open,
@@ -39,8 +36,10 @@ const ManualConversationDialog = ({
   onSubmit,
   onSuccess,
   isSubmitting = false,
+  error,
 }) => {
   const phoneInputRef = useRef(null);
+  const [validationError, setValidationError] = useState(null);
   const { instances = [], loadInstances } = useWhatsAppInstances();
   const availableInstances = useMemo(
     () =>
@@ -85,6 +84,7 @@ const ManualConversationDialog = ({
       }
     } else {
       form.reset(defaultValues);
+      setValidationError(null);
     }
   }, [open, form, defaultValues]);
 
@@ -95,59 +95,46 @@ const ManualConversationDialog = ({
   }, [loadInstances, open]);
 
   const handleSubmit = form.handleSubmit(async (values) => {
-    const normalizedPhone = normalizePhoneE164(values.phone, {
-      minDigits: PHONE_MIN_DIGITS,
-      maxDigits: PHONE_MAX_DIGITS,
-    });
-    const digits = normalizedPhone ? extractPhoneDigits(normalizedPhone) : null;
-    const message = typeof values.message === 'string' ? values.message.trim() : '';
-    const instanceId = typeof values.instanceId === 'string' ? values.instanceId.trim() : '';
+    form.clearErrors();
+    setValidationError(null);
+    const validation = validateManualPayload(values);
 
-    let hasError = false;
-
-    if (!digits || !normalizedPhone) {
-      form.setError('phone', { type: 'manual', message: PHONE_ERROR_MESSAGE });
-      toast.error(PHONE_ERROR_MESSAGE);
-      hasError = true;
-    }
-
-    if (!message) {
-      const errorMessage = 'Digite a mensagem inicial.';
-      form.setError('message', { type: 'manual', message: errorMessage });
-      if (!hasError) {
-        toast.error(errorMessage);
+    if (!validation.payload && validation.errors) {
+      const messages = Object.values(validation.errors).filter(Boolean);
+      Object.entries(validation.errors).forEach(([field, message]) => {
+        form.setError(field, { type: 'manual', message });
+      });
+      if (messages.length > 0) {
+        form.setError('root', { type: 'manual', message: messages[0] });
+        setValidationError(messages[0]);
       }
-      hasError = true;
-    }
-
-    if (!instanceId) {
-      const errorMessage = 'Selecione uma instância conectada.';
-      form.setError('instanceId', { type: 'manual', message: errorMessage });
-      if (!hasError) {
-        toast.error(errorMessage);
-      }
-      hasError = true;
-    }
-
-    if (hasError) {
       return;
     }
 
-    const payload = { phone: normalizedPhone, message, instanceId };
+    const { phone, message, instanceId } = validation.payload;
+    const payload = { phone, message, instanceId };
 
     try {
       const result = await onSubmit?.(payload);
       await onSuccess?.(result, payload);
-    } catch (error) {
+    } catch (submissionError) {
       const fallbackMessage =
-        error instanceof Error
-          ? error.message
+        submissionError instanceof Error
+          ? submissionError.message
           : 'Não foi possível iniciar a conversa. Tente novamente em instantes.';
       form.setError('root', { type: 'manual', message: fallbackMessage });
+      setValidationError(fallbackMessage);
     }
   });
 
-  const rootError = form.formState.errors.root?.message;
+  const mutationErrorMessage =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : error?.message ?? null;
+
+  const rootError = validationError ?? form.formState.errors.root?.message ?? mutationErrorMessage;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

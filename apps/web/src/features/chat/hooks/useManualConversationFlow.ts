@@ -125,6 +125,7 @@ export const useManualConversationFlow = ({ controller }: UseManualConversationF
     onSubmit: handleSubmit,
     onSuccess: handleSuccess,
     isPending: launcher.isPending,
+    error: launcher.error,
     isAvailable: launcher.isAvailable,
     unavailableReason: launcher.unavailableReason,
   } as const;

@@ -1163,6 +1163,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     onSubmit: manualConversation.onSubmit,
     onSuccess: manualConversation.onSuccess,
     isPending: manualConversation.isPending,
+    error: manualConversation.error,
     unavailableReason: manualConversation.unavailableReason,
     openDialog: manualConversation.openDialog,
   };
