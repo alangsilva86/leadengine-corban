@@ -64,7 +64,7 @@ describe('useManualConversationLauncher', () => {
 
     await act(async () => {
       await result.current.launch({
-        phone: '(11) 98888-7766',
+        phone: '+55 (11) 98888-7766',
         message: '  Olá ',
         instanceId: 'instance-001',
       });
@@ -76,7 +76,7 @@ describe('useManualConversationLauncher', () => {
       expect.objectContaining({
         payload: { type: 'text', text: 'Olá' },
         instanceId: 'instance-001',
-        to: '+11988887766',
+        to: '+5511988887766',
         idempotencyKey: expect.any(String),
       }),
       expect.objectContaining({
@@ -138,6 +138,32 @@ describe('useManualConversationLauncher', () => {
     );
   });
 
+  it('normaliza JIDs do WhatsApp antes de enviar', async () => {
+    apiGetMock.mockResolvedValue({
+      data: { items: [{ id: 'contact-123', phone: '+5511999998888' }] },
+    });
+    apiPostMock.mockResolvedValue({ queued: true, ticketId: 'ticket-555' });
+
+    const { result } = renderHook(() => useManualConversationLauncher(), { wrapper: createWrapper() });
+
+    await act(async () => {
+      await result.current.launch({
+        phone: '5511999998888@s.whatsapp.net',
+        message: ' Olá ',
+        instanceId: 'instance-jid',
+      });
+    });
+
+    expect(apiGetMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/contacts?limit=5&search=5511999998888')
+    );
+    expect(apiPostMock).toHaveBeenCalledWith(
+      '/api/contacts/contact-123/messages',
+      expect.objectContaining({ to: '+5511999998888', instanceId: 'instance-jid' }),
+      expect.any(Object)
+    );
+  });
+
   it('falha ao enviar quando faltam dados obrigatórios', async () => {
     const { result } = renderHook(() => useManualConversationLauncher(), {
       wrapper: createWrapper(),
@@ -145,6 +171,10 @@ describe('useManualConversationLauncher', () => {
 
     await expect(
       result.current.launch({ phone: '', message: 'hi', instanceId: 'abc' })
+    ).rejects.toThrow('Informe um telefone válido com DDD e país.');
+
+    await expect(
+      result.current.launch({ phone: '12345', message: 'hi', instanceId: 'abc' })
     ).rejects.toThrow('Informe um telefone válido com DDD e país.');
 
     await expect(

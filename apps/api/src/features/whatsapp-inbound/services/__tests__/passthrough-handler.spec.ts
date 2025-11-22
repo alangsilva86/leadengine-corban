@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PassthroughMessage } from '@ticketz/storage';
+import { sanitizePhone } from '@ticketz/shared';
 
 import { createPassthroughHandler, type PassthroughHandlerHelpers } from '../passthrough-handler';
 import type { InboundWhatsAppEvent } from '../inbound-lead-service';
@@ -20,7 +21,7 @@ describe('createPassthroughHandler', () => {
 
   let helpers: PassthroughHandlerHelpers;
   let normalizeInboundMessageMock: (message: InboundWhatsAppEvent['message']) => NormalizedInboundMessage;
-  let sanitizePhoneMock: (value?: string | null) => string | undefined;
+  let sanitizePhoneMock: typeof sanitizePhone;
   let sanitizeDocumentMock: (value?: string | null, fallbacks?: Array<string | null | undefined>) => string;
   let resolveDeterministicContactIdentifierMock: PassthroughHandlerHelpers['resolveDeterministicContactIdentifier'];
   let pickPreferredNameMock: PassthroughHandlerHelpers['pickPreferredName'];
@@ -89,16 +90,7 @@ describe('createPassthroughHandler', () => {
       } satisfies NormalizedInboundMessage;
     };
 
-    sanitizePhoneMock = (value?: string | null) => {
-      if (typeof value !== 'string') {
-        return undefined;
-      }
-      const digits = value.replace(/\D/g, '');
-      if (digits.length < 4) {
-        return undefined;
-      }
-      return `+${digits}`;
-    };
+    sanitizePhoneMock = sanitizePhone;
 
     sanitizeDocumentMock = (value?: string | null, fallbacks: Array<string | null | undefined> = []) => {
       if (typeof value === 'string') {

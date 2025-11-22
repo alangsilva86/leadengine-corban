@@ -29,8 +29,9 @@ import {
   SelectValue,
 } from '@/components/ui/select.jsx';
 import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
+import { extractPhoneDigits, normalizePhoneE164, PHONE_MAX_DIGITS, PHONE_MIN_DIGITS } from '@ticketz/shared';
 
-const sanitizePhone = (value) => String(value ?? '').replace(/\D/g, '');
+const PHONE_ERROR_MESSAGE = 'Informe um telefone válido com DDD e país.';
 
 const ManualConversationDialog = ({
   open,
@@ -94,16 +95,19 @@ const ManualConversationDialog = ({
   }, [loadInstances, open]);
 
   const handleSubmit = form.handleSubmit(async (values) => {
-    const digits = sanitizePhone(values.phone);
+    const normalizedPhone = normalizePhoneE164(values.phone, {
+      minDigits: PHONE_MIN_DIGITS,
+      maxDigits: PHONE_MAX_DIGITS,
+    });
+    const digits = normalizedPhone ? extractPhoneDigits(normalizedPhone) : null;
     const message = typeof values.message === 'string' ? values.message.trim() : '';
     const instanceId = typeof values.instanceId === 'string' ? values.instanceId.trim() : '';
 
     let hasError = false;
 
-    if (!digits) {
-      const errorMessage = 'Informe um telefone válido.';
-      form.setError('phone', { type: 'manual', message: errorMessage });
-      toast.error(errorMessage);
+    if (!digits || !normalizedPhone) {
+      form.setError('phone', { type: 'manual', message: PHONE_ERROR_MESSAGE });
+      toast.error(PHONE_ERROR_MESSAGE);
       hasError = true;
     }
 
@@ -129,7 +133,7 @@ const ManualConversationDialog = ({
       return;
     }
 
-    const payload = { phone: digits, message, instanceId };
+    const payload = { phone: normalizedPhone, message, instanceId };
 
     try {
       const result = await onSubmit?.(payload);

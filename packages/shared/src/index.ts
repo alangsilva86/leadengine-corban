@@ -8,6 +8,9 @@ export * from './logger/index';
 // Config
 export * from './config/index';
 
+// Phone
+export * from './phone';
+
 // Utils
 export * from './utils/index';
 

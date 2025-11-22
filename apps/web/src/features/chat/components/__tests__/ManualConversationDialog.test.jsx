@@ -114,13 +114,13 @@ describe('ManualConversationDialog', () => {
     });
 
     expect(onSubmit).toHaveBeenCalledWith({
-      phone: '11999991234',
+      phone: '+11999991234',
       message: 'Olá',
       instanceId: 'connected-1',
     });
 
     expect(onSuccess).toHaveBeenCalledWith({}, {
-      phone: '11999991234',
+      phone: '+11999991234',
       message: 'Olá',
       instanceId: 'connected-1',
     });
