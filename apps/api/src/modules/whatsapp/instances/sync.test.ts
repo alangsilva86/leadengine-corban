@@ -35,6 +35,9 @@ const buildDeps = () => {
     pickString,
     mapBrokerStatusToDbStatus,
     mapBrokerInstanceStatusToDbStatus,
+    metrics: {
+      recordDiscardedSnapshot: vi.fn(),
+    },
   } as const;
 };
 

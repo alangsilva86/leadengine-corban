@@ -60,6 +60,11 @@ const WHATSAPP_SNAPSHOT_CACHE_HELP =
   '# HELP whatsapp_snapshot_cache_requests_total Taxa de acertos/erros de cache de snapshots de instâncias por backend';
 const WHATSAPP_SNAPSHOT_CACHE_TYPE = '# TYPE whatsapp_snapshot_cache_requests_total counter';
 
+const WHATSAPP_DISCARDED_SNAPSHOT_METRIC = 'whatsapp_discarded_snapshots_total';
+const WHATSAPP_DISCARDED_SNAPSHOT_HELP =
+  '# HELP whatsapp_discarded_snapshots_total Snapshots descartados por falta ou divergência de tenantId';
+const WHATSAPP_DISCARDED_SNAPSHOT_TYPE = '# TYPE whatsapp_discarded_snapshots_total counter';
+
 const WHATSAPP_QR_RESULT_METRIC = 'whatsapp_qr_requests_total';
 const WHATSAPP_QR_RESULT_HELP =
   '# HELP whatsapp_qr_requests_total Sucesso e falhas em operações de QR do WhatsApp por tenant/instância';
@@ -179,6 +184,7 @@ const DIMENSION_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknow
 const DIMENSION_VALUE_CONSTRAINT: LabelConstraint = { limit: 500, defaultValue: 'unknown' };
 const PROVIDER_CONSTRAINT: LabelConstraint = { limit: 50, defaultValue: 'unknown' };
 const RESULT_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
+const REASON_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' };
 
 const BASE_LABEL_CONSTRAINTS: MetricConstraints = {
   origin: ORIGIN_CONSTRAINT,
@@ -281,6 +287,11 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     operation: OPERATION_CONSTRAINT,
     errorCode: ERROR_CONSTRAINT,
   },
+  [WHATSAPP_DISCARDED_SNAPSHOT_METRIC]: {
+    tenantId: TENANT_CONSTRAINT,
+    reportedTenantId: TENANT_CONSTRAINT,
+    reason: REASON_CONSTRAINT,
+  },
   [WHATSAPP_QR_RESULT_METRIC]: {
     ...BASE_LABEL_CONSTRAINTS,
     outcome: OUTCOME_CONSTRAINT,
@@ -318,6 +329,7 @@ const whatsappRefreshOutcomeStore = new Map<string, number>();
 const whatsappRefreshStepDurationStore = new Map<string, { sum: number; count: number }>();
 const whatsappRefreshStepFailureStore = new Map<string, number>();
 const whatsappSnapshotCacheOutcomeStore = new Map<string, number>();
+const whatsappDiscardedSnapshotStore = new Map<string, number>();
 const whatsappQrOutcomeStore = new Map<string, number>();
 const inboundMessagesCounterStore = new Map<string, number>();
 const inboundMediaRetryAttemptsStore = new Map<string, number>();
@@ -524,6 +536,14 @@ export const whatsappStorageLatencySummary = {
       sum: current.sum + durationMs,
       count: current.count + 1,
     });
+  },
+};
+
+export const whatsappDiscardedSnapshotsCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(WHATSAPP_DISCARDED_SNAPSHOT_METRIC, labels);
+    const current = whatsappDiscardedSnapshotStore.get(key) ?? 0;
+    whatsappDiscardedSnapshotStore.set(key, current + value);
   },
 };
 
@@ -845,6 +865,16 @@ export const renderMetrics = async (): Promise<string> => {
     }
   }
 
+  lines.push(WHATSAPP_DISCARDED_SNAPSHOT_HELP, WHATSAPP_DISCARDED_SNAPSHOT_TYPE);
+  if (whatsappDiscardedSnapshotStore.size === 0) {
+    lines.push(`${WHATSAPP_DISCARDED_SNAPSHOT_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of whatsappDiscardedSnapshotStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_DISCARDED_SNAPSHOT_METRIC}${suffix} ${value}`);
+    }
+  }
+
   lines.push(WHATSAPP_SNAPSHOT_CACHE_HELP, WHATSAPP_SNAPSHOT_CACHE_TYPE);
   if (whatsappSnapshotCacheOutcomeStore.size === 0) {
     lines.push(`${WHATSAPP_SNAPSHOT_CACHE_METRIC} 0`);
@@ -1081,6 +1111,7 @@ export const resetMetrics = (): void => {
   whatsappStorageLatencyStore.clear();
   whatsappRefreshOutcomeStore.clear();
   whatsappSnapshotCacheOutcomeStore.clear();
+  whatsappDiscardedSnapshotStore.clear();
   whatsappQrOutcomeStore.clear();
   inboundMessagesCounterStore.clear();
   inboundMediaRetryAttemptsStore.clear();

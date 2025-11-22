@@ -21,6 +21,7 @@ import type {
   pickString as PickString,
   withInstanceLastError as WithInstanceLastError,
 } from './helpers';
+import type { InstanceMetrics } from './metrics';
 
 type PrismaClientInstance = PrismaClient;
 type LoggerInstance = Logger;
@@ -63,6 +64,7 @@ type SyncDependencies = {
   pickString: PickStringFn;
   mapBrokerStatusToDbStatus: MapBrokerStatusToDbStatus;
   mapBrokerInstanceStatusToDbStatus: (status: string | null | undefined) => WhatsAppInstanceStatus;
+  metrics: Pick<InstanceMetrics, 'recordDiscardedSnapshot'>;
 };
 
 type CollectSnapshotsResult = {
@@ -136,15 +138,26 @@ const collectSnapshots = async (
   const filteredSnapshots: WhatsAppBrokerInstanceSnapshot[] = [];
   let discardedMismatchedTenant = 0;
   let discardedMissingTenant = 0;
+  const missingTenantSamples: Array<{ brokerId: string | null }> = [];
+  const mismatchedTenantSamples: Array<{ brokerId: string | null; reportedTenantId: string }> = [];
 
   for (const snapshot of snapshots) {
     const snapshotTenantId = resolveSnapshotTenantId(snapshot);
+    const brokerId = typeof snapshot.instance?.id === 'string' ? snapshot.instance.id : null;
     if (!snapshotTenantId) {
       discardedMissingTenant += 1;
+      if (missingTenantSamples.length < 5) {
+        missingTenantSamples.push({ brokerId });
+      }
+      deps.metrics.recordDiscardedSnapshot(tenantId, 'missing-tenant', null, brokerId);
       continue;
     }
     if (snapshotTenantId !== tenantId) {
       discardedMismatchedTenant += 1;
+      if (mismatchedTenantSamples.length < 5) {
+        mismatchedTenantSamples.push({ brokerId, reportedTenantId: snapshotTenantId });
+      }
+      deps.metrics.recordDiscardedSnapshot(tenantId, 'mismatched-tenant', snapshotTenantId, brokerId);
       continue;
     }
 
@@ -158,6 +171,10 @@ const collectSnapshots = async (
         total: discardedMismatchedTenant + discardedMissingTenant,
         mismatchedTenant: discardedMismatchedTenant,
         missingTenant: discardedMissingTenant,
+      },
+      samples: {
+        missingTenant: missingTenantSamples,
+        mismatchedTenant: mismatchedTenantSamples,
       },
     });
   }
