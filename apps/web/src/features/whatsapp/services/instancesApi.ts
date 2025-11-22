@@ -122,15 +122,20 @@ export const createInstancesApiService = ({
   const warn = logger?.warn ?? (() => {});
   const errorLog = logger?.error ?? (() => {});
 
-  const performLoad = async ({
+  const runLoadRequest = async ({
     requestId,
     options = {},
     emitOnly = false,
   }: {
-    requestId: number;
-    options: InstancesLoadOptions;
+    requestId?: number;
+    options?: InstancesLoadOptions;
     emitOnly?: boolean;
   }) => {
+    const resolvedRequestId =
+      typeof requestId === 'number'
+        ? requestId
+        : store.getState().requestLoad(options, { silent: true });
+
     const state = store.getState();
     const now = Date.now();
 
@@ -170,7 +175,7 @@ export const createInstancesApiService = ({
       store
         .getState()
         .applyLoadResult(parsed, {
-          requestId,
+          requestId: resolvedRequestId,
           preferredInstanceId: options.preferredInstanceId ?? null,
           campaignInstanceId: options.campaignInstanceId ?? null,
           forced: shouldForce,
@@ -195,7 +200,7 @@ export const createInstancesApiService = ({
 
       if (status === 401 || status === 403) {
         store.getState().handleAuthFallback({ reset: true, error: err });
-        store.getState().failLoad({ requestId });
+        store.getState().failLoad({ requestId: resolvedRequestId });
         return { success: false, error: err, skipped: true };
       }
 
@@ -205,7 +210,7 @@ export const createInstancesApiService = ({
       }
 
       store.getState().failLoad(
-        { requestId },
+        { requestId: resolvedRequestId },
         {
           message: readErrorMessage(err),
           code: status ? String(status) : null,
@@ -216,19 +221,20 @@ export const createInstancesApiService = ({
         error: err,
         skipped: status === 401 || status === 403,
       };
+    } finally {
+      if (!emitOnly) {
+        store.getState().setLoadingInstances(false);
+        store.getState().setInstancesReady(true);
+      }
     }
   };
 
-  const loadInstances = async (options: InstancesLoadOptions = {}) => {
-    const requestId = store.getState().requestLoad(options, { silent: true });
-    const result = await performLoad({ requestId, options });
-    store.getState().setLoadingInstances(false);
-    store.getState().setInstancesReady(true);
-    return result;
+  const loadInstances = (options: InstancesLoadOptions = {}) => {
+    return runLoadRequest({ options });
   };
 
   const handleLoad = (payload: { requestId: number; options: InstancesLoadOptions }) => {
-    void performLoad({ ...payload, emitOnly: true });
+    void runLoadRequest({ ...payload, emitOnly: true });
   };
 
   const handleCreate = async (payload: CreateInstancePayload) => {
