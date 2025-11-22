@@ -9,6 +9,13 @@ import { logger } from './config/logger';
 import { buildRateLimitConfigFromEnv } from './middleware/rate-limit';
 import { requestLogger } from './middleware/request-logger';
 import { getBrokerCircuitBreakerMetrics, initializeBrokerCircuitBreaker } from './services/whatsapp-broker-client-protected';
+import {
+  getReadinessState,
+  logRuntimeLifecycle,
+  markApplicationNotReady,
+  markApplicationReady,
+  registerGracefulShutdown,
+} from './app/readiness';
 
 if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
@@ -27,6 +34,11 @@ const rateLimitConfig = buildRateLimitConfigFromEnv();
 
 const shouldRegisterWhatsappDebugRoutes = isWhatsappDebugFeatureEnabled();
 const debugMessagesRouter = buildDebugMessagesRouter(shouldRegisterWhatsappDebugRoutes);
+
+markApplicationNotReady('booting API process', {
+  nodeEnv: NODE_ENV,
+  port: PORT,
+});
 
 const { app, server, io, corsOptions } = createHttpServer();
 
@@ -77,22 +89,16 @@ server.listen(PORT, () => {
   logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
   logger.info(`🧭 Prometheus metrics available at http://localhost:${PORT}/metrics`);
   logger.info(`📡 WebSocket server ready for real-time connections`);
-});
-
-process.on('SIGTERM', () => {
-  logger.info('SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    logger.info('Process terminated');
-    process.exit(0);
+  markApplicationReady('http server bound to port', {
+    port: PORT,
+    nodeEnv: NODE_ENV,
+    pid: process.pid,
   });
 });
 
-process.on('SIGINT', () => {
-  logger.info('SIGINT received, shutting down gracefully');
-  server.close(() => {
-    logger.info('Process terminated');
-    process.exit(0);
-  });
-});
+registerGracefulShutdown({ logger, server });
+logRuntimeLifecycle(logger);
+
+logger.info('Readiness probe initialized', getReadinessState());
 
 export { app, io };

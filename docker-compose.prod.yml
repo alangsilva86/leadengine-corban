@@ -104,17 +104,23 @@ services:
     networks:
       - ticketz-network
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
-      interval: 30s
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/ready', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 15s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 6
+      start_period: 75s
     deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+        window: 1m
       resources:
         limits:
           memory: 1G
         reservations:
           memory: 512M
+    stop_grace_period: 45s
 
   # ============================================================================
   # Frontend Web
