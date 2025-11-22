@@ -22,4 +22,10 @@ export const isWebhookSignatureRequired = (): boolean => getWhatsAppConfig().web
 
 export const getWebhookTrustedIps = (): string[] => getWhatsAppConfig().webhook.trustedIps;
 
-export const refreshWhatsAppEnv = () => refreshWhatsAppConfig();
+export const refreshWhatsAppEnv = () => {
+  if (process.env.WHATSAPP_MODE) {
+    throw new Error('WHATSAPP_MODE has been removed. Remove the environment variable; HTTP transport is always active.');
+  }
+
+  return refreshWhatsAppConfig();
+};

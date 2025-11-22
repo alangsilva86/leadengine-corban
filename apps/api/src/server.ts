@@ -5,6 +5,7 @@ import { createHttpServer } from './app/http-server';
 import { buildDebugMessagesRouter, registerRouters } from './app/routers';
 import { registerSocketServer } from './app/sockets';
 import { isWhatsappDebugFeatureEnabled } from './config/feature-flags';
+import { getPollEncryptionConfig } from './config/poll-encryption';
 import { logger } from './config/logger';
 import { buildRateLimitConfigFromEnv } from './middleware/rate-limit';
 import { requestLogger } from './middleware/request-logger';
@@ -23,12 +24,17 @@ if (!resolvedPort) {
 }
 
 const PORT = Number(resolvedPort);
+const pollEncryptionConfig = getPollEncryptionConfig();
 const rateLimitConfig = buildRateLimitConfigFromEnv();
 
 const shouldRegisterWhatsappDebugRoutes = isWhatsappDebugFeatureEnabled();
 const debugMessagesRouter = buildDebugMessagesRouter(shouldRegisterWhatsappDebugRoutes);
 
 const { app, server, io, corsOptions } = createHttpServer();
+
+logger.info('Poll runtime encryption key carregada', {
+  source: pollEncryptionConfig.source,
+});
 
 configureSecurityMiddleware(app, {
   corsOptions,
