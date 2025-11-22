@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
-import { getStatusInfo, resolveInstancePhone } from '../lib/instances';
 import useWhatsAppInstances from '../hooks/useWhatsAppInstances.jsx';
 import {
   getStatusInfo,
@@ -178,18 +177,6 @@ export interface UseWhatsAppConnectParams {
   onBack?: () => void;
   onContinue?: () => void;
 }
-
-const readShowAllPreference = () => {
-  try {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-    return window.localStorage.getItem('wa_show_all_instances') === '1';
-  } catch {
-    return false;
-  }
-};
-
 const persistShowAllPreference = (value: boolean) => {
   try {
     if (typeof window === 'undefined') {
