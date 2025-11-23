@@ -13,6 +13,9 @@ export type BuildWebhookAuthHeadersOptions = {
   enforceSignature?: boolean;
   includeApiKeyHeader?: boolean;
   includeAuthorizationHeader?: boolean;
+  includeTenantHeader?: boolean;
+  tenantId?: string | null | undefined;
+  bearerToken?: string | null | undefined;
 };
 
 const toBuffer = (rawBody: string | Buffer | Uint8Array | null | undefined): Buffer => {
@@ -47,14 +50,28 @@ export const buildWebhookAuthHeaders = (
       ? resolvedApiKey.trim()
       : null;
 
+  const normalizedTenantId =
+    typeof options.tenantId === 'string' && options.tenantId.trim().length > 0
+      ? options.tenantId.trim()
+      : null;
+
+  const normalizedBearerToken =
+    typeof options.bearerToken === 'string' && options.bearerToken.trim().length > 0
+      ? options.bearerToken.trim()
+      : normalizedApiKey;
+
+  if (normalizedTenantId && options.includeTenantHeader !== false) {
+    headers['x-tenant-id'] = normalizedTenantId;
+  }
+
   if (normalizedApiKey) {
     if (options.includeApiKeyHeader !== false) {
       headers['x-api-key'] = normalizedApiKey;
     }
+  }
 
-    if (options.includeAuthorizationHeader !== false) {
-      headers['Authorization'] = `Bearer ${normalizedApiKey}`;
-    }
+  if (normalizedBearerToken && options.includeAuthorizationHeader !== false) {
+    headers['Authorization'] = `Bearer ${normalizedBearerToken}`;
   }
 
   const signatureRequired = options.enforceSignature ?? isWebhookSignatureRequired();
@@ -67,6 +84,9 @@ export const buildWebhookAuthHeaders = (
 
     const digest = createHmac('sha256', secret).update(toBuffer(rawBody)).digest('hex');
     headers['x-webhook-signature-sha256'] = digest;
+    headers['x-webhook-signature'] = digest;
+    headers['x-signature-sha256'] = digest;
+    headers['x-signature'] = digest;
   }
 
   return headers;
