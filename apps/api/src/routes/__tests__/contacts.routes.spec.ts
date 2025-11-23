@@ -1,6 +1,7 @@
 import express, { type RequestHandler } from 'express';
 import request from 'supertest';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ConflictError } from '@ticketz/core';
 
 const listContactsMock = vi.fn();
 const createContactMock = vi.fn();
@@ -16,7 +17,7 @@ const createContactTaskMock = vi.fn();
 const updateContactTaskMock = vi.fn();
 const mergeContactsMock = vi.fn();
 
-const sendToContactMock = vi.fn();
+const sendWhatsappBulkActionMock = vi.fn();
 const setPrismaClientMock = vi.fn();
 
 let isStoragePrismaLinked = true;
@@ -68,8 +69,8 @@ vi.mock('@ticketz/storage', () => ({
   mergeContacts: withStorageGuard(mergeContactsMock),
 }));
 
-vi.mock('../../services/ticket-service', () => ({
-  sendToContact: sendToContactMock,
+vi.mock('../../services/contacts/whatsapp-bulk', () => ({
+  sendWhatsappBulkAction: (...args: unknown[]) => sendWhatsappBulkActionMock(...args),
 }));
 
 let contactsRouter: express.Router;
@@ -155,7 +156,7 @@ describe('Contacts routes', () => {
     createContactTaskMock.mockResolvedValue({ id: 'task-1' });
     updateContactTaskMock.mockResolvedValue({ id: 'task-1', status: 'PENDING' });
     mergeContactsMock.mockResolvedValue({ id: 'contact-1' });
-    sendToContactMock.mockResolvedValue({ status: 'ENQUEUED' });
+    sendWhatsappBulkActionMock.mockResolvedValue([]);
   });
 
   it('lists contacts with tenant filters applied', async () => {
@@ -212,8 +213,8 @@ describe('Contacts routes', () => {
   it('sends whatsapp action for each contact', async () => {
     const app = buildContactsApp();
 
-    findContactsByIdsMock.mockResolvedValueOnce([
-      { id: '22222222-2222-2222-2222-222222222222', phone: '+5511999999999', tenantId: 'tenant-1', name: 'Ana' },
+    sendWhatsappBulkActionMock.mockResolvedValueOnce([
+      { contactId: '22222222-2222-2222-2222-222222222222', status: 'ENQUEUED' },
     ]);
 
     const response = await request(app)
@@ -224,20 +225,20 @@ describe('Contacts routes', () => {
       });
 
     expect(response.status).toBe(202);
-    expect(sendToContactMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        contactId: '22222222-2222-2222-2222-222222222222',
-        operatorId: 'user-1',
-        tenantId: 'tenant-1',
-      })
-    );
+    expect(sendWhatsappBulkActionMock).toHaveBeenCalledWith({
+      operatorId: 'user-1',
+      payload: { contactIds: ['22222222-2222-2222-2222-222222222222'], message: { type: 'text', text: 'Hello' } },
+      tenantId: 'tenant-1',
+    });
+    expect(response.body).toEqual({
+      success: true,
+      data: { results: [{ contactId: '22222222-2222-2222-2222-222222222222', status: 'ENQUEUED' }] },
+    });
   });
 
   it('returns validation error when whatsapp payload missing message', async () => {
     const app = buildContactsApp();
-    findContactsByIdsMock.mockResolvedValueOnce([
-      { id: '22222222-2222-2222-2222-222222222222', tenantId: 'tenant-1' },
-    ]);
+    sendWhatsappBulkActionMock.mockRejectedValueOnce(new ConflictError('Whatsapp action requires a message payload.'));
 
     const response = await request(app)
       .post('/actions/whatsapp')

@@ -10,11 +10,9 @@ import {
   WhatsappActionPayloadSchema,
 } from '@ticketz/core';
 import type { ContactFilters } from '@ticketz/core';
-import type { NormalizedMessagePayload } from '@ticketz/contracts';
 import {
   applyBulkContactsAction,
   createContact,
-  findContactsByIds,
   getContactById,
   listContactInteractions,
   listContactTags,
@@ -27,7 +25,6 @@ import {
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { respondWithValidationError } from '../utils/http-validation';
-import { sendToContact } from '../services/ticket-service';
 import { ConflictError, NotFoundError } from '@ticketz/core';
 import {
   ContactIdParamSchema,
@@ -35,17 +32,7 @@ import {
   PaginationQuerySchema,
   parseOrRespond,
 } from './contacts/schemas';
-
-type NormalizePayloadFn = (payload: { type: string; [key: string]: unknown }) => NormalizedMessagePayload;
-
-let normalizePayloadCached: NormalizePayloadFn | null = null;
-const loadNormalizePayload = async (): Promise<NormalizePayloadFn> => {
-  if (!normalizePayloadCached) {
-    const mod = await import('@ticketz/contracts');
-    normalizePayloadCached = mod.normalizePayload as NormalizePayloadFn;
-  }
-  return normalizePayloadCached;
-};
+import { sendWhatsappBulkAction } from '../services/contacts/whatsapp-bulk';
 
 const router: Router = Router();
 
@@ -263,38 +250,9 @@ router.post(
     const tenantId = req.user!.tenantId;
     const operatorId = req.user!.id;
 
-    const contacts = await findContactsByIds(tenantId, payload.contactIds);
+    const results = await sendWhatsappBulkAction({ tenantId, operatorId, payload });
 
-    if (!contacts.length) {
-      throw new NotFoundError('Contact', payload.contactIds.join(','));
-    }
-
-    const normalizePayload = await loadNormalizePayload();
-    const responses = [] as Array<{ contactId: string; status: string }>;
-
-    for (const contact of contacts) {
-      const resolvedText = payload.message?.text ?? payload.template?.name ?? undefined;
-
-      if (!resolvedText) {
-        throw new ConflictError('Whatsapp action requires a message payload.');
-      }
-
-      const normalizedPayload = normalizePayload({
-        type: 'text',
-        text: resolvedText,
-      });
-
-      const response = await sendToContact({
-        tenantId,
-        operatorId,
-        contactId: contact.id,
-        payload: normalizedPayload,
-      });
-
-      responses.push({ contactId: contact.id, status: response.status });
-    }
-
-    res.status(202).json({ success: true, data: { results: responses } });
+    res.status(202).json({ success: true, data: { results } });
   })
 );
 
