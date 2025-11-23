@@ -2,6 +2,11 @@ import { z } from 'zod';
 import { collectInstancesForTenant } from '.';
 import type { NormalizedInstance } from './types';
 import { normalizeQueryValue } from '../../../utils/request-parsers';
+import { whatsappBrokerClient, WhatsAppBrokerError, WhatsAppBrokerNotConfiguredError } from '../../../services/whatsapp-broker-client';
+import { defaultInstanceMetrics } from './metrics';
+import { logger } from '../../../config/logger';
+import { describeErrorForLog } from './errors';
+import { readBrokerErrorStatus } from './http';
 
 const modeSchema = z.enum(['db', 'snapshot', 'sync']).optional();
 const fieldsSchema = z.enum(['basic', 'metrics', 'full']).optional();
@@ -77,6 +82,33 @@ const pickMetrics = (instance: NormalizedInstance) => ({
   rate: instance.rate ?? null,
 });
 
+const ensureBrokerHealthy = async (tenantId: string): Promise<void> => {
+  try {
+    await whatsappBrokerClient.checkHealth();
+  } catch (error) {
+    if (error instanceof WhatsAppBrokerNotConfiguredError) {
+      throw error;
+    }
+
+    const brokerError = error instanceof WhatsAppBrokerError ? error : null;
+    defaultInstanceMetrics.recordBrokerHealthFailure(tenantId, brokerError?.code ?? null);
+
+    logger.warn('whatsapp.instances.health.failed', {
+      tenantId,
+      status: readBrokerErrorStatus(brokerError ?? error),
+      code: brokerError?.code ?? null,
+      requestId: brokerError?.requestId ?? null,
+      error: describeErrorForLog(error),
+    });
+
+    throw new WhatsAppBrokerError('WhatsApp broker indisponível no momento.', {
+      code: 'BROKER_UNAVAILABLE',
+      status: readBrokerErrorStatus(brokerError ?? error) ?? 503,
+      requestId: brokerError?.requestId,
+    });
+  }
+};
+
 type ListInstancesUseCaseInput = {
   tenantId: string;
   query: ListInstancesQuery;
@@ -113,6 +145,8 @@ export const listInstancesUseCase = async ({
 }> => {
   const startedAt = Date.now();
   const collectionOptions = buildCollectionOptions(query);
+
+  await ensureBrokerHealthy(tenantId);
 
   const result = await collectInstancesForTenant(tenantId, collectionOptions);
   const instancesSource = result.instances;

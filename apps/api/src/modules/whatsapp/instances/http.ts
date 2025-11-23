@@ -196,7 +196,9 @@ export const instanceIdParamValidator = () =>
     .withMessage(INVALID_INSTANCE_ID_MESSAGE);
 
 export const respondWhatsAppBrokerFailure = (res: ResponseLike, error: WhatsAppBrokerError): void => {
-  res.status(502).json({
+  const status = readBrokerErrorStatus(error) ?? 502;
+
+  res.status(status).json({
     success: false,
     error: {
       code: error.code || 'BROKER_ERROR',
