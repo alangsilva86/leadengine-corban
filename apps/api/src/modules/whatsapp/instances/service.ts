@@ -1057,6 +1057,34 @@ const toJsonObject = (value: unknown): Record<string, unknown> => {
   }
 };
 
+const describeRefreshFailure = (
+  error: unknown,
+): { cause: string; status: number | null; code: string | null } => {
+  const status = readBrokerErrorStatus(error);
+  const code = readBrokerErrorCode(error);
+  const message = readBrokerErrorMessage(error)?.toLowerCase() ?? '';
+
+  if (status === 503 || status === 502 || code === '503') {
+    return { cause: 'service_unavailable', status, code };
+  }
+
+  if (
+    status === 504 ||
+    status === 408 ||
+    (code ? code.toLowerCase().includes('timeout') : false) ||
+    message.includes('timeout') ||
+    message.includes('timed out')
+  ) {
+    return { cause: 'timeout', status, code };
+  }
+
+  if (message.includes('dns') || message.includes('enotfound') || message.includes('getaddrinfo')) {
+    return { cause: 'dns', status, code };
+  }
+
+  return { cause: 'unknown', status, code };
+};
+
 export const createWhatsAppInstance = async ({
   tenantId,
   actorId,
@@ -1212,6 +1240,7 @@ type InstanceCollectionResult = {
   synced?: boolean;
   storageFallback?: boolean;
   warnings?: string[];
+  refreshFailure?: { cause: string; status: number | null; code: string | null } | null;
 };
 
 const toPublicInstance = (
@@ -1350,6 +1379,8 @@ export const collectInstancesForTenant = async (
   const refreshFlag = options.refresh;
   const fetchSnapshots = options.fetchSnapshots ?? false;
   const warnings: string[] = [];
+
+  let refreshFailure: InstanceCollectionResult['refreshFailure'] = null;
 
   let storageDegraded = false;
   let cacheHit: boolean | undefined;
@@ -1540,15 +1571,26 @@ export const collectInstancesForTenant = async (
             (error as { name?: string }).name ??
             (error instanceof Error ? error.name : null);
           metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
+          const failure = describeRefreshFailure(error);
+          refreshFailure = failure;
+          warnings.push('Refresh falhou; exibindo dados atuais de storage/cache.');
+
+          logger.warn('whatsapp.instances.collect.refreshFailure', {
+            tenantId,
+            attempt,
+            cause: failure.cause,
+            status: failure.status,
+            code: failure.code,
+            error: describeErrorForLog(error),
+          });
+
           if (error instanceof WhatsAppBrokerNotConfiguredError) {
-            if (options.refresh) {
-              throw error;
-            }
             logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
-            snapshots = [];
+            snapshots = snapshots ?? [];
             return;
           }
-          throw error;
+
+          return;
         }
       }
     });
@@ -1594,6 +1636,15 @@ export const collectInstancesForTenant = async (
           }
         }
       } catch (error) {
+        const failure = describeRefreshFailure(error);
+        logger.warn('whatsapp.instances.collect.snapshotFailure', {
+          tenantId,
+          cause: failure.cause,
+          status: failure.status,
+          code: failure.code,
+          error: describeErrorForLog(error),
+        });
+
         if (error instanceof WhatsAppBrokerNotConfiguredError) {
           snapshots = [];
         } else {
@@ -1640,6 +1691,7 @@ export const collectInstancesForTenant = async (
       synced,
       storageFallback: true,
       warnings,
+      refreshFailure,
     } satisfies InstanceCollectionResult;
   }
 
@@ -1681,6 +1733,7 @@ export const collectInstancesForTenant = async (
     synced,
     storageFallback: storageDegraded,
     warnings,
+    refreshFailure,
   };
 
   return result;
