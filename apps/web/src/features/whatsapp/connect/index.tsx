@@ -1,10 +1,11 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Card } from '@/components/ui/card.jsx';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible.jsx';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +20,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Check,
+  ChevronDown,
   Clock,
   Loader2,
   QrCode,
@@ -208,6 +210,54 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
 
   const hasInstanceReady = Boolean(selectedInstance || instanceViewModels.length > 0);
 
+  const getStepState = useCallback(
+    (stepId: number) => {
+      if (stepId === 1) {
+        return hasInstanceReady ? 'done' : 'active';
+      }
+      if (stepId === 2) {
+        return wizardState.qrConfirmed ? 'done' : hasInstanceReady ? 'active' : 'blocked';
+      }
+      if (stepId === 3) {
+        return wizardState.validationDone ? 'done' : wizardState.qrConfirmed ? 'active' : 'blocked';
+      }
+      return 'active';
+    },
+    [hasInstanceReady, wizardState.qrConfirmed, wizardState.validationDone],
+  );
+
+  const [openSteps, setOpenSteps] = useState<Record<number, boolean>>(() =>
+    wizardSteps.reduce<Record<number, boolean>>((acc, step) => {
+      const state = getStepState(step.id);
+      acc[step.id] = state === 'active' || state === 'done';
+      return acc;
+    }, {}),
+  );
+
+  useEffect(() => {
+    setOpenSteps((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      wizardSteps.forEach((step) => {
+        const state = getStepState(step.id);
+
+        if (state === 'active' && !prev[step.id]) {
+          next[step.id] = true;
+          changed = true;
+          return;
+        }
+
+        if (prev[step.id] === undefined) {
+          next[step.id] = state !== 'blocked';
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
+  }, [getStepState]);
+
   const checklistItems = useMemo(() => {
     const qrReady = wizardState.qrConfirmed;
     const validationReady = wizardState.validationDone || localStatus === 'connected';
@@ -382,18 +432,7 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
             </div>
             <div className="grid gap-4">
               {wizardSteps.map((step) => {
-                const stepState = (() => {
-                  if (step.id === 1) {
-                    return hasInstanceReady ? 'done' : 'active';
-                  }
-                  if (step.id === 2) {
-                    return wizardState.qrConfirmed ? 'done' : hasInstanceReady ? 'active' : 'blocked';
-                  }
-                  if (step.id === 3) {
-                    return wizardState.validationDone ? 'done' : wizardState.qrConfirmed ? 'active' : 'blocked';
-                  }
-                  return 'active';
-                })();
+                const stepState = getStepState(step.id);
 
                 const isBlocked =
                   (step.id === 2 && !hasInstanceReady) || (step.id === 3 && !wizardState.qrConfirmed);
@@ -404,14 +443,18 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                       ? 'border-primary/40'
                       : 'border-border/60';
 
+                const isOpen = openSteps[step.id] ?? true;
+
                 return (
-                  <div
+                  <Collapsible
                     key={step.id}
-                    className={`flex flex-col gap-4 rounded-[calc(var(--radius)_-_2px)] border px-4 py-4 ${stateClasses} ${
+                    open={isOpen}
+                    onOpenChange={(open) => setOpenSteps((prev) => ({ ...prev, [step.id]: open }))}
+                    className={`rounded-[calc(var(--radius)_-_2px)] border px-4 py-4 transition ${stateClasses} ${
                       isBlocked ? 'opacity-60' : ''
                     }`}
                   >
-                    <div className="flex items-start gap-3">
+                    <CollapsibleTrigger className="flex w-full items-start gap-3 text-left">
                       <div className="rounded-full border border-border/60 bg-surface-overlay-quiet px-3 py-1 text-xs font-semibold">
                         {step.id}
                       </div>
@@ -422,61 +465,68 @@ const WhatsAppConnect = (props: Parameters<typeof useWhatsAppConnect>[0]) => {
                         </div>
                         <p className="text-sm text-muted-foreground">{step.description}</p>
                       </div>
-                      {stepState === 'done' ? <Check className="h-4 w-4 text-emerald-400" /> : null}
-                    </div>
-                    {step.id === 1 ? (
-                      <div className="flex flex-wrap gap-3">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={handleCreateInstance}
-                          disabled={!canCreateInstance}
-                        >
-                          <Plus className="mr-2 h-4 w-4" /> Nova instância
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setShowInstanceManager(true)}>
-                          Ver instâncias
-                        </Button>
-                        {!canCreateInstance && createInstanceWarning ? (
-                          <p className="text-xs text-amber-200">{createInstanceWarning}</p>
-                        ) : null}
+                      <div className="flex items-center gap-2">
+                        {stepState === 'done' ? <Check className="h-4 w-4 text-emerald-400" /> : null}
+                        <ChevronDown
+                          className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                        />
                       </div>
-                    ) : null}
-                    {step.id === 2 ? (
-                      <div className="space-y-3">
-                        <div className="rounded-xl border border-dashed border-border/70 bg-surface-overlay-quiet p-4 text-center text-sm text-muted-foreground">
-                          {qrImageSrc ? (
-                            <img src={qrImageSrc} alt="QR Code" className="mx-auto h-40 w-40 rounded" />
-                          ) : (
-                            'Sem QR Code ativo · Gere um novo código após instalar o agente.'
-                          )}
-                        </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pt-3">
+                      {step.id === 1 ? (
                         <div className="flex flex-wrap gap-3">
-                          <Button size="sm" onClick={handleGenerateQr} disabled={isGeneratingQrImage || isBusy}>
-                            {isGeneratingQrImage ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : (
-                              <QrCode className="mr-2 h-4 w-4" />
-                            )}
-                            {isGeneratingQrImage ? 'Gerando…' : 'Gerar novo QR'}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={handleCreateInstance}
+                            disabled={!canCreateInstance}
+                          >
+                            <Plus className="mr-2 h-4 w-4" /> Nova instância
                           </Button>
-                          <Button size="sm" variant="secondary" onClick={() => updateWizardState({ qrConfirmed: true })}>
-                            Marcar como lido
+                          <Button size="sm" variant="ghost" onClick={() => setShowInstanceManager(true)}>
+                            Ver instâncias
+                          </Button>
+                          {!canCreateInstance && createInstanceWarning ? (
+                            <p className="text-xs text-amber-200">{createInstanceWarning}</p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {step.id === 2 ? (
+                        <div className="space-y-3">
+                          <div className="rounded-xl border border-dashed border-border/70 bg-surface-overlay-quiet p-4 text-center text-sm text-muted-foreground">
+                            {qrImageSrc ? (
+                              <img src={qrImageSrc} alt="QR Code" className="mx-auto h-40 w-40 rounded" />
+                            ) : (
+                              'Sem QR Code ativo · Gere um novo código após instalar o agente.'
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-3">
+                            <Button size="sm" onClick={handleGenerateQr} disabled={isGeneratingQrImage || isBusy}>
+                              {isGeneratingQrImage ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <QrCode className="mr-2 h-4 w-4" />
+                              )}
+                              {isGeneratingQrImage ? 'Gerando…' : 'Gerar novo QR'}
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => updateWizardState({ qrConfirmed: true })}>
+                              Marcar como lido
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {step.id === 3 ? (
+                        <div className="flex flex-wrap gap-3">
+                          <Button size="sm" onClick={() => updateWizardState({ validationDone: true })}>
+                            <MessageSquare className="mr-2 h-4 w-4" /> Enviar mensagem de teste
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleMarkConnected()}>
+                            Confirmar manualmente
                           </Button>
                         </div>
-                      </div>
-                    ) : null}
-                    {step.id === 3 ? (
-                      <div className="flex flex-wrap gap-3">
-                        <Button size="sm" onClick={() => updateWizardState({ validationDone: true })}>
-                          <MessageSquare className="mr-2 h-4 w-4" /> Enviar mensagem de teste
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => handleMarkConnected()}>
-                          Confirmar manualmente
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
+                      ) : null}
+                    </CollapsibleContent>
+                  </Collapsible>
                 );
               })}
             </div>
