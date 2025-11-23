@@ -57,8 +57,42 @@ const readErrorMessage = (error: unknown): string => {
     if (typeof payloadMessage === 'string' && payloadMessage.trim()) {
       return payloadMessage.trim();
     }
+    const detailMessage = (error as { payload?: { error?: { details?: { message?: string } } } }).payload?.error?.details
+      ?.message;
+    if (typeof detailMessage === 'string' && detailMessage.trim()) {
+      return detailMessage.trim();
+    }
   }
   return 'Falha inesperada ao comunicar com o servidor.';
+};
+
+const readErrorPayload = (
+  error: unknown,
+):
+  | {
+      code?: string;
+      message?: string;
+      details?: { responseTimeMs?: number } | null;
+    }
+  | null => {
+  const payloadError = (error as { payload?: { error?: Record<string, unknown> } })?.payload?.error;
+  if (payloadError) {
+    return payloadError as { code?: string; message?: string; details?: { responseTimeMs?: number } | null };
+  }
+
+  const responsePayload = (error as { response?: { data?: { error?: Record<string, unknown> } } })?.response?.data?.error;
+  return (responsePayload as { code?: string; message?: string; details?: { responseTimeMs?: number } | null }) ?? null;
+};
+
+const isRetryableCreateError = (error: unknown): boolean => {
+  const status = readStatusCode(error);
+  if (status && [408, 425, 429, 500, 502, 503, 504].includes(status)) {
+    return true;
+  }
+
+  const payload = readErrorPayload(error);
+  const code = payload?.code?.toUpperCase() ?? null;
+  return code ? ['RATE_LIMITED', 'BROKER_TIMEOUT', 'BROKER_ERROR'].includes(code) : false;
 };
 
 const BASE_PATH = '/api/integrations/whatsapp/instances';
@@ -70,6 +104,9 @@ const normalizeCreateBody = (payload: CreateInstancePayload) => {
   }
   if (payload.tenantId) {
     body.tenantId = payload.tenantId;
+  }
+  if (payload.idempotencyKey) {
+    body.idempotencyKey = payload.idempotencyKey;
   }
   return body;
 };
@@ -328,9 +365,22 @@ export const createInstancesApiService = ({
       return parsed.instance ?? null;
     } catch (err) {
       errorLog('Falha ao criar instância WhatsApp', err);
+      const errorPayload = readErrorPayload(err);
+      const responseTimeMs = errorPayload?.details?.responseTimeMs ?? null;
+      const retryable = isRetryableCreateError(err);
+      const extraMessage = [
+        retryable
+          ? 'A criação é idempotente e pode ser reexecutada com o mesmo identificador se o canal não aparecer.'
+          : null,
+        typeof responseTimeMs === 'number' ? `Tempo de resposta do broker: ${Math.round(responseTimeMs)}ms.` : null,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const message = `${readErrorMessage(err)}${extraMessage ? ` ${extraMessage}` : ''}`;
+
       store.getState().setLoadingInstances(false);
       store.getState().setError({
-        message: readErrorMessage(err),
+        message,
         code: readStatusCode(err)?.toString() ?? null,
       });
       throw err;

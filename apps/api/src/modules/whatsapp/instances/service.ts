@@ -732,11 +732,18 @@ export const createWhatsAppInstanceSchema = z
       .refine((value) => value.length > 0, INVALID_INSTANCE_ID_MESSAGE)
       .optional(),
     tenantId: z.string().optional().transform((value) => (typeof value === 'string' ? value.trim() : value)),
+    idempotencyKey: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length > 0, 'Chave de idempotência inválida.')
+      .optional(),
   })
   .transform((data) => ({
     ...data,
     id: data.id && data.id.length > 0 ? data.id : undefined,
     tenantId: data.tenantId && data.tenantId.length > 0 ? data.tenantId : undefined,
+    idempotencyKey:
+      data.idempotencyKey && data.idempotencyKey.length > 0 ? data.idempotencyKey : undefined,
   }));
 
 export const executeSideEffects = async (
@@ -1097,6 +1104,33 @@ export const createWhatsAppInstance = async ({
   const name = input.name.trim();
   const explicitId = input.id?.trim() ?? '';
   const instanceId = explicitId || name || resolveDefaultInstanceId();
+  const idempotencyKey = input.idempotencyKey?.trim() ?? null;
+
+  if (idempotencyKey) {
+    const existingByIdempotencyKey = await prisma.whatsAppInstance.findFirst({
+      where: {
+        tenantId,
+        metadata: {
+          path: ['idempotencyKey'],
+          equals: idempotencyKey,
+        },
+      },
+    });
+
+    if (existingByIdempotencyKey) {
+      const serialized = serializeStoredInstance(existingByIdempotencyKey, null);
+      return {
+        serialized,
+        sideEffects: [],
+        context: {
+          tenantId: existingByIdempotencyKey.tenantId,
+          actorId,
+          instanceId: serialized.id,
+          brokerId: existingByIdempotencyKey.brokerId,
+        },
+      };
+    }
+  }
 
   const existing = await prisma.whatsAppInstance.findFirst({
     where: {
@@ -1112,10 +1146,18 @@ export const createWhatsAppInstance = async ({
   }
 
   safeIncrementHttpCounter();
+  const brokerStartedAt = Date.now();
   const brokerInstance = await whatsappBrokerClient.createInstance({
     tenantId,
     name,
     instanceId,
+    idempotencyKey: idempotencyKey ?? undefined,
+  }).catch((error) => {
+    const responseTimeMs = Date.now() - brokerStartedAt;
+    if (error instanceof WhatsAppBrokerError) {
+      (error as WhatsAppBrokerError & { responseTimeMs?: number }).responseTimeMs = responseTimeMs;
+    }
+    throw error;
   });
 
   const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
@@ -1147,6 +1189,7 @@ export const createWhatsAppInstance = async ({
     displayName,
     label: displayName,
     origin: 'api-create',
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   };
   const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry);
   const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
