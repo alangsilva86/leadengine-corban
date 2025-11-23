@@ -10,11 +10,9 @@ import {
   WhatsappActionPayloadSchema,
 } from '@ticketz/core';
 import type { ContactFilters } from '@ticketz/core';
-import type { NormalizedMessagePayload } from '@ticketz/contracts';
 import {
   applyBulkContactsAction,
   createContact,
-  findContactsByIds,
   getContactById,
   listContactInteractions,
   listContactTags,
@@ -27,7 +25,6 @@ import {
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { respondWithValidationError } from '../utils/http-validation';
-import { sendToContact } from '../services/ticket-service';
 import { ConflictError, NotFoundError } from '@ticketz/core';
 import {
   ContactIdParamSchema,
@@ -35,6 +32,8 @@ import {
   PaginationQuerySchema,
   parseOrRespond,
 } from './contacts/schemas';
+import { sendWhatsappBulkAction } from '../services/contacts/whatsapp-bulk';
+import { normalizePaginationQuery } from '../utils/pagination';
 
 type NormalizePayloadFn = (payload: { type: string; [key: string]: unknown }) => NormalizedMessagePayload;
 
@@ -74,19 +73,7 @@ router.get(
       hasWhatsapp,
     } = query;
 
-    const pagination: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {};
-    if (typeof page === 'number' && Number.isFinite(page)) {
-      pagination.page = page;
-    }
-    if (typeof limit === 'number' && Number.isFinite(limit)) {
-      pagination.limit = limit;
-    }
-    if (typeof sortBy === 'string' && sortBy.trim()) {
-      pagination.sortBy = sortBy.trim();
-    }
-    if (sortOrder) {
-      pagination.sortOrder = sortOrder;
-    }
+    const pagination = normalizePaginationQuery({ page, limit, sortBy, sortOrder });
 
     const statusFilter = Array.isArray(status) && status.length > 0 ? status : undefined;
 
@@ -263,38 +250,9 @@ router.post(
     const tenantId = req.user!.tenantId;
     const operatorId = req.user!.id;
 
-    const contacts = await findContactsByIds(tenantId, payload.contactIds);
+    const results = await sendWhatsappBulkAction({ tenantId, operatorId, payload });
 
-    if (!contacts.length) {
-      throw new NotFoundError('Contact', payload.contactIds.join(','));
-    }
-
-    const normalizePayload = await loadNormalizePayload();
-    const responses = [] as Array<{ contactId: string; status: string }>;
-
-    for (const contact of contacts) {
-      const resolvedText = payload.message?.text ?? payload.template?.name ?? undefined;
-
-      if (!resolvedText) {
-        throw new ConflictError('Whatsapp action requires a message payload.');
-      }
-
-      const normalizedPayload = normalizePayload({
-        type: 'text',
-        text: resolvedText,
-      });
-
-      const response = await sendToContact({
-        tenantId,
-        operatorId,
-        contactId: contact.id,
-        payload: normalizedPayload,
-      });
-
-      responses.push({ contactId: contact.id, status: response.status });
-    }
-
-    res.status(202).json({ success: true, data: { results: responses } });
+    res.status(202).json({ success: true, data: { results } });
   })
 );
 
@@ -313,30 +271,11 @@ router.get(
     }
 
     const tenantId = req.user!.tenantId;
-    const pagination: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {};
-    if (typeof query.page === 'number' && Number.isFinite(query.page)) {
-      pagination.page = query.page;
-    }
-    if (typeof query.limit === 'number' && Number.isFinite(query.limit)) {
-      pagination.limit = query.limit;
-    }
-    if (typeof query.sortBy === 'string' && query.sortBy.trim()) {
-      pagination.sortBy = query.sortBy.trim();
-    }
-    if (query.sortOrder) {
-      pagination.sortOrder = query.sortOrder;
-    }
-
-    const pageValue = pagination.page ?? 1;
-    const limitValue = pagination.limit ?? 20;
-    const sortOrderValue = pagination.sortOrder ?? 'desc';
+    const pagination = normalizePaginationQuery(query);
     const result = await listContactInteractions({
       tenantId,
       contactId: params.contactId,
-      page: pageValue,
-      limit: limitValue,
-      sortOrder: sortOrderValue,
-      ...(pagination.sortBy ? { sortBy: pagination.sortBy } : {}),
+      ...pagination,
     });
     res.json({ success: true, data: result });
   })

@@ -1554,25 +1554,6 @@ export const collectInstancesForTenant = async (
   };
 
   try {
-    const refreshFlag = options.refresh;
-    const fetchSnapshots = options.fetchSnapshots ?? false;
-    const warnings: string[] = [];
-
-    let storageDegraded = false;
-    let cacheHit: boolean | undefined;
-    let cacheBackend: SnapshotCacheBackendType | undefined;
-
-    const recordCacheOutcome = (result: SnapshotCacheReadResult | null): void => {
-      if (!result) return;
-      cacheHit = result.hit;
-      cacheBackend = result.backend;
-      const outcome = result.error ? 'error' : result.hit ? 'hit' : 'miss';
-      metrics.recordSnapshotCacheOutcome(tenantId, result.backend, outcome);
-      if (result.error) {
-        warnings.push('Cache de snapshots indisponível; executando fallback.');
-      }
-    };
-
     // Load stored instances first (DB)
     let storedInstances: StoredInstance[];
     if (options.existing) {
@@ -1859,35 +1840,6 @@ export const collectInstancesForTenant = async (
         const normalizedId = typeof rawId === 'string' ? rawId.trim() : '';
         if (normalizedId && !snapshotMap.has(normalizedId)) {
           snapshotMap.set(normalizedId, snapshot);
-            logger.debug('whatsapp.instances.cache.write.success', {
-              tenantId,
-              operation: cacheWrite.name,
-              durationMs: cacheWrite.durationMs,
-              timeoutMs: CACHE_WRITE_TIMEOUT_MS,
-            });
-          } catch (error) {
-            logger.warn('whatsapp.instances.cache.write.failure', {
-              tenantId,
-              operation: 'setCachedSnapshots',
-              error: describeErrorForLog(error),
-              timeoutMs: CACHE_WRITE_TIMEOUT_MS,
-            });
-          }
-        }
-      } catch (error) {
-        const failure = describeRefreshFailure(error);
-        logger.warn('whatsapp.instances.collect.snapshotFailure', {
-          tenantId,
-          cause: failure.cause,
-          status: failure.status,
-          code: failure.code,
-          error: describeErrorForLog(error),
-        });
-
-        if (error instanceof WhatsAppBrokerNotConfiguredError) {
-          snapshots = [];
-        } else {
-          throw error;
         }
       }
     }
@@ -1909,6 +1861,7 @@ export const collectInstancesForTenant = async (
         synced,
         storageFallback: true,
         warnings,
+        refreshFailure,
       } satisfies InstanceCollectionResult;
     }
 
@@ -1950,25 +1903,8 @@ export const collectInstancesForTenant = async (
       synced,
       storageFallback: storageDegraded,
       warnings,
-    };
       refreshFailure,
     } satisfies InstanceCollectionResult;
-  }
-
-  for (const stored of storedInstances) {
-    const snapshot = snapshotMap.get(stored.id) ??
-      (stored.brokerId ? snapshotMap.get(stored.brokerId) : undefined);
-    const brokerStatus = snapshot?.status ?? null;
-    const serialized = serializeStoredInstance(stored, brokerStatus);
-
-    // Keep E.164 normalized phone in DB when we discover a better one
-    if (serialized.phoneNumber && serialized.phoneNumber !== stored.phoneNumber) {
-      await repository.updatePhoneNumber(tenantId, stored.id, serialized.phoneNumber);
-      stored.phoneNumber = serialized.phoneNumber;
-    }
-
-    entries.push({ stored, serialized, status: brokerStatus });
-  }
 
     return result;
   } catch (error) {
@@ -1979,26 +1915,6 @@ export const collectInstancesForTenant = async (
     metrics.recordOperationOutcome('collect', tenantId, mode, operationResult);
     metrics.recordOperationDuration('collect', tenantId, mode, operationResult, durationMs);
   }
-
-  const instances = entries.map(({ serialized }) => toPublicInstance(serialized));
-
-  const result: InstanceCollectionResult = {
-    entries,
-    instances,
-    rawInstances: entries.map(({ serialized }) => serialized),
-    map,
-    snapshots: snapshots ?? [],
-    cacheHit,
-    cacheBackend,
-    shouldRefresh,
-    fetchSnapshots,
-    synced,
-    storageFallback: storageDegraded,
-    warnings,
-    refreshFailure,
-  };
-
-  return result;
 };
 
 export type InstanceOperationContext = {

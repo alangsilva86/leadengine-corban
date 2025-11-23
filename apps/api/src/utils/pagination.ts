@@ -16,6 +16,13 @@ export interface ParsedPagination {
   skip: number;
 }
 
+export interface PaginationQueryParams {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
 export interface PaginatedResponseInput<T> {
   items: T[];
   total: number;
@@ -82,6 +89,39 @@ export const parsePaginationParams = (
     limit: safeLimit,
     skip: (page - 1) * safeLimit,
   };
+};
+
+interface NormalizePaginationOptions {
+  defaultPage?: number;
+  defaultLimit?: number;
+  defaultSortOrder?: 'asc' | 'desc';
+  maxLimit?: number;
+}
+
+export interface NormalizedPagination {
+  page: number;
+  limit: number;
+  sortOrder: 'asc' | 'desc';
+  sortBy?: string;
+}
+
+export const normalizePaginationQuery = (
+  query: PaginationQueryParams,
+  options: NormalizePaginationOptions = {}
+): NormalizedPagination => {
+  const {
+    defaultPage = DEFAULT_PAGE,
+    defaultLimit = DEFAULT_LIMIT,
+    defaultSortOrder = 'desc',
+    maxLimit = MAX_LIMIT,
+  } = options;
+
+  const page = Math.max(parseNumericQuery(query.page) ?? defaultPage, 1);
+  const limit = Math.min(Math.max(parseNumericQuery(query.limit) ?? defaultLimit, 1), maxLimit);
+  const sortOrder = query.sortOrder ?? defaultSortOrder;
+  const sortBy = typeof query.sortBy === 'string' && query.sortBy.trim() ? query.sortBy.trim() : undefined;
+
+  return { page, limit, sortOrder, ...(sortBy ? { sortBy } : {}) };
 };
 
 export const buildPaginatedResponse = <T>(
