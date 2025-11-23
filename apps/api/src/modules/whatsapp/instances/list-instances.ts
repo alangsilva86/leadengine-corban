@@ -156,8 +156,6 @@ export const listInstancesUseCase = async ({
     requestId,
   });
   await ensureBrokerHealthy(tenantId);
-
-  const result = await collectInstancesForTenant(tenantId, collectionOptions);
   const instancesSource = result.instances;
 
   const instances =
