@@ -14,6 +14,7 @@ import {
   TaskIdParamSchema,
   parseOrRespond,
 } from './contacts/schemas';
+import { normalizePaginationQuery } from '../utils/pagination';
 
 const contactTasksRouter: Router = Router();
 
@@ -32,33 +33,14 @@ contactTasksRouter.get(
     }
 
     const tenantId = req.user!.tenantId;
-    const pagination: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' } = {};
-    if (typeof query.page === 'number' && Number.isFinite(query.page)) {
-      pagination.page = query.page;
-    }
-    if (typeof query.limit === 'number' && Number.isFinite(query.limit)) {
-      pagination.limit = query.limit;
-    }
-    if (typeof query.sortBy === 'string' && query.sortBy.trim()) {
-      pagination.sortBy = query.sortBy.trim();
-    }
-    if (query.sortOrder) {
-      pagination.sortOrder = query.sortOrder;
-    }
-
-    const pageValue = pagination.page ?? 1;
-    const limitValue = pagination.limit ?? 20;
-    const sortOrderValue = pagination.sortOrder ?? 'desc';
+    const pagination = normalizePaginationQuery(query);
     const statusFilterTasks =
       Array.isArray(query.status) && query.status.length > 0 ? query.status : undefined;
 
     const result = await listContactTasks({
       tenantId,
       contactId: params.contactId,
-      page: pageValue,
-      limit: limitValue,
-      sortOrder: sortOrderValue,
-      ...(pagination.sortBy ? { sortBy: pagination.sortBy } : {}),
+      ...pagination,
       ...(statusFilterTasks ? { status: statusFilterTasks } : {}),
     });
     res.json({ success: true, data: result });
