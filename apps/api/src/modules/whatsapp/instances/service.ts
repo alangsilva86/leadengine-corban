@@ -1746,7 +1746,7 @@ export const collectInstancesForTenant = async (
 
     // Keep E.164 normalized phone in DB when we discover a better one
     if (serialized.phoneNumber && serialized.phoneNumber !== stored.phoneNumber) {
-      await repository.updatePhoneNumber(stored.id, serialized.phoneNumber);
+      await repository.updatePhoneNumber(tenantId, stored.id, serialized.phoneNumber);
       stored.phoneNumber = serialized.phoneNumber;
     }
 

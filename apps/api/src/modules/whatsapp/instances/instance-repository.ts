@@ -1,10 +1,15 @@
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import type { StoredInstance } from './types';
 
 export type InstanceRepository = {
   findByTenant: (tenantId: string) => Promise<StoredInstance[]>;
-  updatePhoneNumber: (instanceId: string, phoneNumber: string) => Promise<void>;
+  updatePhoneNumber: (
+    tenantId: string,
+    instanceId: string,
+    phoneNumber: string
+  ) => Promise<void>;
 };
 
 export const createPrismaInstanceRepository = (client: typeof prisma = prisma): InstanceRepository => ({
@@ -27,11 +32,29 @@ export const createPrismaInstanceRepository = (client: typeof prisma = prisma): 
 
     return filtered;
   },
-  updatePhoneNumber: async (instanceId: string, phoneNumber: string) => {
-    await client.whatsAppInstance.update({
-      where: { id: instanceId },
-      data: { phoneNumber },
-    });
+  updatePhoneNumber: async (tenantId: string, instanceId: string, phoneNumber: string) => {
+    try {
+      await client.whatsAppInstance.update({
+        where: { id: instanceId, tenantId },
+        data: { phoneNumber },
+      });
+    } catch (error) {
+      const isKnownRequestError =
+        typeof Prisma.PrismaClientKnownRequestError === 'function' &&
+        error instanceof Prisma.PrismaClientKnownRequestError;
+      const isNotFoundError =
+        (isKnownRequestError && (error as Prisma.PrismaClientKnownRequestError).code === 'P2025') ||
+        (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'P2025');
+
+      if (isNotFoundError) {
+        logger.warn('whatsapp.instances.repository.updatePhoneNumber.notFound', {
+          tenantId,
+          instanceId,
+        });
+      }
+
+      throw error;
+    }
   },
 });
 
