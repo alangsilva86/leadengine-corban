@@ -103,6 +103,27 @@ describe('createSyncInstancesFromBroker', () => {
     expect(upsertArgs.create.tenantId).toBe('tenant-xyz');
     expect(upsertArgs.update.tenantId).toBe('tenant-xyz');
   });
+
+  it('accepts snapshots bound by resolved tenant id even without metadata flags', async () => {
+    const deps = buildDeps();
+    const syncInstances = createSyncInstancesFromBroker(deps as any);
+    const snapshots: WhatsAppBrokerInstanceSnapshot[] = [
+      {
+        instance: {
+          id: 'instance-4',
+          tenantId: 'tenant-binding',
+          status: 'connected',
+          connected: true,
+          metadata: { flags: { tenantBound: false } },
+        },
+        status: { status: 'connected', connected: true },
+      },
+    ];
+
+    await syncInstances('tenant-binding', [], snapshots);
+
+    expect(deps.prisma.whatsAppInstance.upsert).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('buildFallbackInstancesFromSnapshots', () => {
