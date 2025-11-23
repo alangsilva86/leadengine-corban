@@ -4,6 +4,7 @@ import readline from 'node:readline';
 import process from 'node:process';
 import {
   getBrokerWebhookUrl,
+  getDefaultTenantId,
   getWebhookApiKey,
   refreshWhatsAppEnv,
 } from '../apps/api/src/config/whatsapp';
@@ -23,10 +24,14 @@ const extraArgs = args.slice(1);
 
 refreshWhatsAppEnv();
 
-const options: { url: string; apiKey: string | null } = {
-  url: process.env.WHATSAPP_WEBHOOK_REPLAY_URL || getBrokerWebhookUrl() ||
+const options: { url: string; apiKey: string | null; tenantId: string | null; bearerToken: string | null } = {
+  url:
+    process.env.WHATSAPP_WEBHOOK_REPLAY_URL ||
+    getBrokerWebhookUrl() ||
     'http://localhost:3000/api/integrations/whatsapp/webhook',
   apiKey: getWebhookApiKey(),
+  tenantId: process.env.TENANT_ID ?? getDefaultTenantId(),
+  bearerToken: process.env.AUTH_TOKEN ?? process.env.WHATSAPP_WEBHOOK_AUTH_TOKEN ?? null,
 };
 
 for (const arg of extraArgs) {
@@ -34,6 +39,10 @@ for (const arg of extraArgs) {
     options.url = arg.slice('--url='.length);
   } else if (arg.startsWith('--api-key=')) {
     options.apiKey = arg.slice('--api-key='.length);
+  } else if (arg.startsWith('--tenant-id=')) {
+    options.tenantId = arg.slice('--tenant-id='.length);
+  } else if (arg.startsWith('--token=')) {
+    options.bearerToken = arg.slice('--token='.length);
   }
 }
 
@@ -74,7 +83,11 @@ const postEvent = async (payload) => {
   const rawBody = JSON.stringify(body);
   const headers = {
     'content-type': 'application/json',
-    ...buildWebhookAuthHeaders(rawBody, { apiKey: options.apiKey }),
+    ...buildWebhookAuthHeaders(rawBody, {
+      apiKey: options.apiKey,
+      tenantId: options.tenantId,
+      bearerToken: options.bearerToken,
+    }),
   } as Record<string, string>;
 
   const response = await fetch(options.url, {

@@ -207,7 +207,11 @@ const sendInboundWebhook = async ({ messageId, requestId }) => {
   const headers = {
     'Content-Type': 'application/json',
     'x-request-id': requestId,
-    ...buildWebhookAuthHeaders(body, { apiKey: WEBHOOK_KEY }),
+    ...buildWebhookAuthHeaders(body, {
+      apiKey: WEBHOOK_KEY,
+      tenantId: TENANT_ID,
+      bearerToken: ACCESS_TOKEN,
+    }),
   } as Record<string, string>;
 
   const response = await fetch(`${API_URL}/api/integrations/whatsapp/webhook`, {
