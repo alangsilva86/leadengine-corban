@@ -6,10 +6,12 @@ import {
   whatsappRefreshStepFailureCounter,
   whatsappSnapshotCacheOutcomeCounter,
   whatsappDiscardedSnapshotsCounter,
+  whatsappBrokerHealthFailureCounter,
 } from '../../../lib/metrics';
 
 export type InstanceMetrics = {
   incrementHttpCounter: () => void;
+  recordBrokerHealthFailure: (tenantId: string, errorCode?: string | null) => void;
   recordRefreshOutcome: (tenantId: string, outcome: 'success' | 'failure', errorCode?: string | null) => void;
   recordRefreshStepDuration: (
     tenantId: string,
@@ -40,6 +42,7 @@ export type InstanceMetrics = {
 export const createInstanceMetrics = (
   counters = {
     http: whatsappHttpRequestsCounter,
+    brokerHealthFailure: whatsappBrokerHealthFailureCounter,
     qr: whatsappQrRequestCounter,
     refreshOutcome: whatsappRefreshOutcomeCounter,
     refreshStepDuration: whatsappRefreshStepDurationSummary,
@@ -54,6 +57,17 @@ export const createInstanceMetrics = (
       counters.http.inc();
     } catch {
       // ignore metric failures
+    }
+  };
+
+  const recordBrokerHealthFailure = (tenantId: string, errorCode?: string | null): void => {
+    try {
+      counters.brokerHealthFailure.inc({
+        tenantId,
+        errorCode: errorCode ?? undefined,
+      });
+    } catch {
+      // metrics are best effort
     }
   };
 
@@ -143,6 +157,7 @@ export const createInstanceMetrics = (
 
   return {
     incrementHttpCounter,
+    recordBrokerHealthFailure,
     recordRefreshOutcome,
     recordRefreshStepDuration,
     recordRefreshStepFailure,

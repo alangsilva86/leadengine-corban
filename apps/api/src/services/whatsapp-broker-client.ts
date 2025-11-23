@@ -629,6 +629,10 @@ class WhatsAppBrokerClient {
     return performWhatsAppBrokerRequest<T>(path, init, options);
   }
 
+  async checkHealth(): Promise<void> {
+    await this.request('/health', { method: 'GET' });
+  }
+
   private resolveInstanceIdentifiers(
     fallbackId: string,
     override?: string | null

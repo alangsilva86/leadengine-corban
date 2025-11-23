@@ -26,6 +26,11 @@ const HTTP_REQUEST_METRIC = 'whatsapp_http_requests_total';
 const HTTP_REQUEST_HELP = '# HELP whatsapp_http_requests_total Contador de requisições HTTP para APIs de WhatsApp';
 const HTTP_REQUEST_TYPE = '# TYPE whatsapp_http_requests_total counter';
 
+const WHATSAPP_BROKER_HEALTH_FAILURE_METRIC = 'whatsapp_broker_health_failures_total';
+const WHATSAPP_BROKER_HEALTH_FAILURE_HELP =
+  '# HELP whatsapp_broker_health_failures_total Falhas no health check do broker de WhatsApp por tenant';
+const WHATSAPP_BROKER_HEALTH_FAILURE_TYPE = '# TYPE whatsapp_broker_health_failures_total counter';
+
 const WS_EMIT_METRIC = 'ws_emit_total';
 const WS_EMIT_HELP = '# HELP ws_emit_total Contador de eventos emitidos via WebSocket/Socket.IO';
 const WS_EMIT_TYPE = '# TYPE ws_emit_total counter';
@@ -267,6 +272,10 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     operation: OPERATION_CONSTRAINT,
     errorCode: ERROR_CONSTRAINT,
   },
+  [WHATSAPP_BROKER_HEALTH_FAILURE_METRIC]: {
+    tenantId: TENANT_CONSTRAINT,
+    errorCode: ERROR_CONSTRAINT,
+  },
   [WHATSAPP_STORAGE_LATENCY_METRIC]: {
     ...BASE_LABEL_CONSTRAINTS,
     operation: OPERATION_CONSTRAINT,
@@ -322,6 +331,7 @@ const inboundLatencyStore = new Map<string, { sum: number; count: number }>();
 const outboundDeliverySuccessStore = new Map<string, number>();
 const socketReconnectCounterStore = new Map<string, number>();
 const httpRequestCounterStore = new Map<string, number>();
+const whatsappBrokerHealthFailureStore = new Map<string, number>();
 const wsEmitCounterStore = new Map<string, number>();
 const whatsappStorageUnavailableCounterStore = new Map<string, number>();
 const whatsappStorageLatencyStore = new Map<string, { sum: number; count: number }>();
@@ -505,6 +515,14 @@ export const whatsappHttpRequestsCounter = {
     const key = buildLabelKey(HTTP_REQUEST_METRIC, labels);
     const current = httpRequestCounterStore.get(key) ?? 0;
     httpRequestCounterStore.set(key, current + value);
+  },
+};
+
+export const whatsappBrokerHealthFailureCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(WHATSAPP_BROKER_HEALTH_FAILURE_METRIC, labels);
+    const current = whatsappBrokerHealthFailureStore.get(key) ?? 0;
+    whatsappBrokerHealthFailureStore.set(key, current + value);
   },
 };
 
@@ -798,6 +816,16 @@ export const renderMetrics = async (): Promise<string> => {
     for (const [labelString, value] of httpRequestCounterStore.entries()) {
       const suffix = labelString ? `{${labelString}}` : '';
       lines.push(`${HTTP_REQUEST_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(WHATSAPP_BROKER_HEALTH_FAILURE_HELP, WHATSAPP_BROKER_HEALTH_FAILURE_TYPE);
+  if (whatsappBrokerHealthFailureStore.size === 0) {
+    lines.push(`${WHATSAPP_BROKER_HEALTH_FAILURE_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of whatsappBrokerHealthFailureStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_BROKER_HEALTH_FAILURE_METRIC}${suffix} ${value}`);
     }
   }
 
@@ -1106,6 +1134,7 @@ export const resetMetrics = (): void => {
   outboundDeliverySuccessStore.clear();
   socketReconnectCounterStore.clear();
   httpRequestCounterStore.clear();
+  whatsappBrokerHealthFailureStore.clear();
   wsEmitCounterStore.clear();
   whatsappStorageUnavailableCounterStore.clear();
   whatsappStorageLatencyStore.clear();
