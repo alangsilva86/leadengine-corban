@@ -732,11 +732,18 @@ export const createWhatsAppInstanceSchema = z
       .refine((value) => value.length > 0, INVALID_INSTANCE_ID_MESSAGE)
       .optional(),
     tenantId: z.string().optional().transform((value) => (typeof value === 'string' ? value.trim() : value)),
+    idempotencyKey: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length > 0, 'Chave de idempotência inválida.')
+      .optional(),
   })
   .transform((data) => ({
     ...data,
     id: data.id && data.id.length > 0 ? data.id : undefined,
     tenantId: data.tenantId && data.tenantId.length > 0 ? data.tenantId : undefined,
+    idempotencyKey:
+      data.idempotencyKey && data.idempotencyKey.length > 0 ? data.idempotencyKey : undefined,
   }));
 
 export const executeSideEffects = async (
@@ -1057,6 +1064,34 @@ const toJsonObject = (value: unknown): Record<string, unknown> => {
   }
 };
 
+const describeRefreshFailure = (
+  error: unknown,
+): { cause: string; status: number | null; code: string | null } => {
+  const status = readBrokerErrorStatus(error);
+  const code = readBrokerErrorCode(error);
+  const message = readBrokerErrorMessage(error)?.toLowerCase() ?? '';
+
+  if (status === 503 || status === 502 || code === '503') {
+    return { cause: 'service_unavailable', status, code };
+  }
+
+  if (
+    status === 504 ||
+    status === 408 ||
+    (code ? code.toLowerCase().includes('timeout') : false) ||
+    message.includes('timeout') ||
+    message.includes('timed out')
+  ) {
+    return { cause: 'timeout', status, code };
+  }
+
+  if (message.includes('dns') || message.includes('enotfound') || message.includes('getaddrinfo')) {
+    return { cause: 'dns', status, code };
+  }
+
+  return { cause: 'unknown', status, code };
+};
+
 export const createWhatsAppInstance = async ({
   tenantId,
   actorId,
@@ -1069,6 +1104,33 @@ export const createWhatsAppInstance = async ({
   const name = input.name.trim();
   const explicitId = input.id?.trim() ?? '';
   const instanceId = explicitId || name || resolveDefaultInstanceId();
+  const idempotencyKey = input.idempotencyKey?.trim() ?? null;
+
+  if (idempotencyKey) {
+    const existingByIdempotencyKey = await prisma.whatsAppInstance.findFirst({
+      where: {
+        tenantId,
+        metadata: {
+          path: ['idempotencyKey'],
+          equals: idempotencyKey,
+        },
+      },
+    });
+
+    if (existingByIdempotencyKey) {
+      const serialized = serializeStoredInstance(existingByIdempotencyKey, null);
+      return {
+        serialized,
+        sideEffects: [],
+        context: {
+          tenantId: existingByIdempotencyKey.tenantId,
+          actorId,
+          instanceId: serialized.id,
+          brokerId: existingByIdempotencyKey.brokerId,
+        },
+      };
+    }
+  }
 
   const existing = await prisma.whatsAppInstance.findFirst({
     where: {
@@ -1084,10 +1146,18 @@ export const createWhatsAppInstance = async ({
   }
 
   safeIncrementHttpCounter();
+  const brokerStartedAt = Date.now();
   const brokerInstance = await whatsappBrokerClient.createInstance({
     tenantId,
     name,
     instanceId,
+    idempotencyKey: idempotencyKey ?? undefined,
+  }).catch((error) => {
+    const responseTimeMs = Date.now() - brokerStartedAt;
+    if (error instanceof WhatsAppBrokerError) {
+      (error as WhatsAppBrokerError & { responseTimeMs?: number }).responseTimeMs = responseTimeMs;
+    }
+    throw error;
   });
 
   const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
@@ -1119,6 +1189,7 @@ export const createWhatsAppInstance = async ({
     displayName,
     label: displayName,
     origin: 'api-create',
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   };
   const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry);
   const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
@@ -1212,6 +1283,7 @@ type InstanceCollectionResult = {
   synced?: boolean;
   storageFallback?: boolean;
   warnings?: string[];
+  refreshFailure?: { cause: string; status: number | null; code: string | null } | null;
 };
 
 const toPublicInstance = (
@@ -1350,6 +1422,8 @@ export const collectInstancesForTenant = async (
   const refreshFlag = options.refresh;
   const fetchSnapshots = options.fetchSnapshots ?? false;
   const warnings: string[] = [];
+
+  let refreshFailure: InstanceCollectionResult['refreshFailure'] = null;
 
   let storageDegraded = false;
   let cacheHit: boolean | undefined;
@@ -1540,15 +1614,26 @@ export const collectInstancesForTenant = async (
             (error as { name?: string }).name ??
             (error instanceof Error ? error.name : null);
           metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
+          const failure = describeRefreshFailure(error);
+          refreshFailure = failure;
+          warnings.push('Refresh falhou; exibindo dados atuais de storage/cache.');
+
+          logger.warn('whatsapp.instances.collect.refreshFailure', {
+            tenantId,
+            attempt,
+            cause: failure.cause,
+            status: failure.status,
+            code: failure.code,
+            error: describeErrorForLog(error),
+          });
+
           if (error instanceof WhatsAppBrokerNotConfiguredError) {
-            if (options.refresh) {
-              throw error;
-            }
             logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
-            snapshots = [];
+            snapshots = snapshots ?? [];
             return;
           }
-          throw error;
+
+          return;
         }
       }
     });
@@ -1594,6 +1679,15 @@ export const collectInstancesForTenant = async (
           }
         }
       } catch (error) {
+        const failure = describeRefreshFailure(error);
+        logger.warn('whatsapp.instances.collect.snapshotFailure', {
+          tenantId,
+          cause: failure.cause,
+          status: failure.status,
+          code: failure.code,
+          error: describeErrorForLog(error),
+        });
+
         if (error instanceof WhatsAppBrokerNotConfiguredError) {
           snapshots = [];
         } else {
@@ -1640,6 +1734,7 @@ export const collectInstancesForTenant = async (
       synced,
       storageFallback: true,
       warnings,
+      refreshFailure,
     } satisfies InstanceCollectionResult;
   }
 
@@ -1681,6 +1776,7 @@ export const collectInstancesForTenant = async (
     synced,
     storageFallback: storageDegraded,
     warnings,
+    refreshFailure,
   };
 
   return result;

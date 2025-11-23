@@ -197,6 +197,8 @@ export const instanceIdParamValidator = () =>
 
 export const respondWhatsAppBrokerFailure = (res: ResponseLike, error: WhatsAppBrokerError): void => {
   const status = readBrokerErrorStatus(error) ?? 502;
+  const status = readBrokerErrorStatus(error) ?? error.status ?? 502;
+  const responseTimeMs = (error as WhatsAppBrokerError & { responseTimeMs?: number }).responseTimeMs;
 
   res.status(status).json({
     success: false,
@@ -204,8 +206,10 @@ export const respondWhatsAppBrokerFailure = (res: ResponseLike, error: WhatsAppB
       code: error.code || 'BROKER_ERROR',
       message: error.message || 'WhatsApp broker request failed',
       details: compactRecord({
-        status: readBrokerErrorStatus(error),
+        status,
         requestId: error.requestId ?? undefined,
+        brokerCode: error.brokerCode ?? undefined,
+        responseTimeMs,
       }),
     },
   });

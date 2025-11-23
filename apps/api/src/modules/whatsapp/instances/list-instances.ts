@@ -119,6 +119,7 @@ type ListInstancesMeta = {
   mode: ListInstancesQuery['mode'];
   refreshRequested: boolean;
   shouldRefresh: boolean;
+  refreshFailed: boolean;
   fetchSnapshots: boolean;
   synced: boolean;
   instancesCount: number;
@@ -127,6 +128,7 @@ type ListInstancesMeta = {
   warnings: string[];
   cacheHit?: boolean;
   cacheBackend?: 'memory' | 'redis';
+  refreshFailure?: { cause: string; status: number | null; code: string | null } | null;
 };
 
 type ListInstancesPayload = {
@@ -160,11 +162,13 @@ export const listInstancesUseCase = async ({
 
   const durationMs = Date.now() - startedAt;
   const refreshRequested = query.refreshOverride === true;
+  const refreshFailed = Boolean(result.refreshFailure);
   const meta: ListInstancesMeta = {
     tenantId,
     mode: query.mode,
     refreshRequested,
     shouldRefresh: result.shouldRefresh ?? false,
+    refreshFailed,
     fetchSnapshots: result.fetchSnapshots ?? false,
     synced: result.synced ?? false,
     instancesCount: instances.length,
@@ -173,6 +177,7 @@ export const listInstancesUseCase = async ({
     warnings: result.warnings ?? [],
     cacheHit: result.cacheHit,
     cacheBackend: result.cacheBackend,
+    refreshFailure: result.refreshFailure ?? null,
   };
 
   return {
@@ -192,6 +197,7 @@ export const listInstancesUseCase = async ({
       mode: query.mode,
       refreshRequested,
       shouldRefresh: meta.shouldRefresh,
+      refreshFailed: meta.refreshFailed,
       fetchSnapshots: meta.fetchSnapshots,
       synced: meta.synced,
       cacheHit: meta.cacheHit,
