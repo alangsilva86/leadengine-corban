@@ -149,13 +149,15 @@ export const listInstancesUseCase = async ({
 }> => {
   const startedAt = Date.now();
   const collectionOptions = buildCollectionOptions(query);
-
-  const result = await collectInstancesForTenant(tenantId, {
+  const collectionParams = {
     ...collectionOptions,
     mode: query.mode,
     requestId,
-  });
+  };
+
   await ensureBrokerHealthy(tenantId);
+
+  const result = await collectInstancesForTenant(tenantId, collectionParams);
   const instancesSource = result.instances;
 
   const instances =
