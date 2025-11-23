@@ -1061,128 +1061,146 @@ export const createWhatsAppInstance = async ({
   tenantId,
   actorId,
   input,
+  mode = 'api',
+  requestId,
 }: {
   tenantId: string;
   actorId: string;
   input: z.infer<typeof createWhatsAppInstanceSchema>;
+  mode?: string;
+  requestId?: string | null;
 }) => {
-  const name = input.name.trim();
-  const explicitId = input.id?.trim() ?? '';
-  const instanceId = explicitId || name || resolveDefaultInstanceId();
+  const startedAt = Date.now();
+  let operationResult: InstanceOperationResult = 'success';
+  const resolvedMode = mode || 'api';
 
-  const existing = await prisma.whatsAppInstance.findFirst({
-    where: {
-      tenantId,
-      id: instanceId,
-    },
-    select: { id: true },
-  });
-
-  if (existing) {
-    const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
-    throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
-  }
-
-  safeIncrementHttpCounter();
-  const brokerInstance = await whatsappBrokerClient.createInstance({
-    tenantId,
-    name,
-    instanceId,
-  });
-
-  const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
-  const brokerId = brokerIdCandidate.length > 0 ? brokerIdCandidate : instanceId;
-  const brokerNameCandidate = typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
-  const displayName = brokerNameCandidate.length > 0 ? brokerNameCandidate : name;
-  const mappedStatus = mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
-  const connected = Boolean(brokerInstance.connected ?? mappedStatus === 'connected');
-  const phoneNumber =
-    typeof brokerInstance.phoneNumber === 'string' && brokerInstance.phoneNumber.trim().length > 0
-      ? brokerInstance.phoneNumber.trim()
-      : null;
-
-  const historyEntry = buildHistoryEntry(
-    'created',
-    actorId,
-    compactRecord({
-      status: mappedStatus,
-      connected,
-      name: displayName,
-      phoneNumber: phoneNumber ?? undefined,
-    }),
-  );
-
-  const baseMetadata: Record<string, unknown> = {
-    displayId: instanceId,
-    slug: instanceId,
-    brokerId,
-    displayName,
-    label: displayName,
-    origin: 'api-create',
-  };
-  const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry);
-  const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
-
-  let stored: StoredInstance;
   try {
-    stored = await prisma.whatsAppInstance.create({
-      data: {
-        id: instanceId,
+    const name = input.name.trim();
+    const explicitId = input.id?.trim() ?? '';
+    const instanceId = explicitId || name || resolveDefaultInstanceId();
+
+    const existing = await prisma.whatsAppInstance.findFirst({
+      where: {
         tenantId,
-        name: displayName,
-        brokerId,
-        status: mappedStatus,
-        connected,
-        ...(phoneNumber ? { phoneNumber } : {}),
-        metadata: metadataWithoutError,
+        id: instanceId,
       },
+      select: { id: true },
     });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+
+    if (existing) {
       const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
       throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
     }
-    if (error instanceof Prisma.PrismaClientValidationError) {
-      throw new WhatsAppInstanceInvalidPayloadError();
-    }
-    throw error;
-  }
 
-  const serialized = serializeStoredInstance(stored, null);
-  const sideEffects: Array<() => Promise<void> | void> = [
-    async () => {
-      await clearInstanceArchive(tenantId, stored.id, brokerId);
-    },
-    async () => {
-      await removeCachedSnapshot(tenantId, instanceId, brokerId);
-    },
-    () => {
-      emitToTenant(tenantId, 'whatsapp.instances.created', {
-        instance: toJsonObject(serialized),
+    safeIncrementHttpCounter();
+    const brokerInstance = await whatsappBrokerClient.createInstance({
+      tenantId,
+      name,
+      instanceId,
+    });
+
+    const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
+    const brokerId = brokerIdCandidate.length > 0 ? brokerIdCandidate : instanceId;
+    const brokerNameCandidate = typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
+    const displayName = brokerNameCandidate.length > 0 ? brokerNameCandidate : name;
+    const mappedStatus = mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
+    const connected = Boolean(brokerInstance.connected ?? mappedStatus === 'connected');
+    const phoneNumber =
+      typeof brokerInstance.phoneNumber === 'string' && brokerInstance.phoneNumber.trim().length > 0
+        ? brokerInstance.phoneNumber.trim()
+        : null;
+
+    const historyEntry = buildHistoryEntry(
+      'created',
+      actorId,
+      compactRecord({
+        status: mappedStatus,
+        connected,
+        name: displayName,
+        phoneNumber: phoneNumber ?? undefined,
+      }),
+    );
+
+    const baseMetadata: Record<string, unknown> = {
+      displayId: instanceId,
+      slug: instanceId,
+      brokerId,
+      displayName,
+      label: displayName,
+      origin: 'api-create',
+    };
+    const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry);
+    const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
+
+    let stored: StoredInstance;
+    try {
+      stored = await prisma.whatsAppInstance.create({
+        data: {
+          id: instanceId,
+          tenantId,
+          name: displayName,
+          brokerId,
+          status: mappedStatus,
+          connected,
+          ...(phoneNumber ? { phoneNumber } : {}),
+          metadata: metadataWithoutError,
+        },
       });
-    },
-    () => {
-      logger.info('whatsapp.instances.create.success', {
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
+        throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
+      }
+      if (error instanceof Prisma.PrismaClientValidationError) {
+        throw new WhatsAppInstanceInvalidPayloadError();
+      }
+      throw error;
+    }
+
+    const serialized = serializeStoredInstance(stored, null);
+    const sideEffects: Array<() => Promise<void> | void> = [
+      async () => {
+        await clearInstanceArchive(tenantId, stored.id, brokerId);
+      },
+      async () => {
+        await removeCachedSnapshot(tenantId, instanceId, brokerId);
+      },
+      () => {
+        emitToTenant(tenantId, 'whatsapp.instances.created', {
+          instance: toJsonObject(serialized),
+        });
+      },
+      () => {
+        logger.info('whatsapp.instances.create.success', {
+          tenantId,
+          actorId,
+          instanceId: serialized.id,
+          brokerId,
+          status: serialized.status,
+          connected: serialized.connected,
+          ...(requestId ? { requestId } : {}),
+        });
+      },
+    ];
+
+    return {
+      serialized,
+      sideEffects,
+      context: {
         tenantId,
         actorId,
         instanceId: serialized.id,
         brokerId,
-        status: serialized.status,
-        connected: serialized.connected,
-      });
-    },
-  ];
-
-  return {
-    serialized,
-    sideEffects,
-    context: {
-      tenantId,
-      actorId,
-      instanceId: serialized.id,
-      brokerId,
-    },
-  };
+      },
+    };
+  } catch (error) {
+    operationResult = resolveOperationResult(error);
+    throw error;
+  } finally {
+    const durationMs = Date.now() - startedAt;
+    defaultInstanceMetrics.recordOperationOutcome('create', tenantId, resolvedMode, operationResult);
+    defaultInstanceMetrics.recordOperationDuration('create', tenantId, resolvedMode, operationResult, durationMs);
+  }
 };
 
 type InstanceCollectionOptions = {
@@ -1190,12 +1208,45 @@ type InstanceCollectionOptions = {
   existing?: StoredInstance[];
   snapshots?: WhatsAppBrokerInstanceSnapshot[] | null;
   fetchSnapshots?: boolean;
+  mode?: string;
+  requestId?: string | null;
 };
 
 type InstanceCollectionEntry = {
   stored: StoredInstance;
   serialized: ReturnType<typeof serializeStoredInstance>;
   status: WhatsAppStatus | null;
+};
+
+type InstanceOperationResult = 'success' | 'failure' | 'timeout';
+
+const resolveCollectionMode = (options: InstanceCollectionOptions): string => {
+  if (options.mode) {
+    return options.mode;
+  }
+
+  if (options.refresh) {
+    return options.fetchSnapshots ? 'sync' : 'db';
+  }
+
+  if (options.fetchSnapshots) {
+    return 'snapshot';
+  }
+
+  return 'db';
+};
+
+const resolveOperationResult = (error: unknown): InstanceOperationResult => {
+  const code =
+    (error as { code?: string | null | undefined })?.code ??
+    (error as { name?: string | null | undefined })?.name ??
+    '';
+
+  if (typeof code === 'string' && code.toLowerCase().includes('timeout')) {
+    return 'timeout';
+  }
+
+  return 'failure';
 };
 
 type InstanceCollectionResult = {
@@ -1347,343 +1398,365 @@ export const collectInstancesForTenant = async (
   };
   const { cache, metrics, repository, syncInstances, brokerClient } = deps;
 
-  const refreshFlag = options.refresh;
-  const fetchSnapshots = options.fetchSnapshots ?? false;
-  const warnings: string[] = [];
+  const startedAt = Date.now();
+  const mode = resolveCollectionMode(options);
+  const requestId = options.requestId ?? null;
+  let operationResult: InstanceOperationResult = 'success';
 
-  let storageDegraded = false;
-  let cacheHit: boolean | undefined;
-  let cacheBackend: SnapshotCacheBackendType | undefined;
+  try {
+    const refreshFlag = options.refresh;
+    const fetchSnapshots = options.fetchSnapshots ?? false;
+    const warnings: string[] = [];
 
-  const recordCacheOutcome = (result: SnapshotCacheReadResult | null): void => {
-    if (!result) return;
-    cacheHit = result.hit;
-    cacheBackend = result.backend;
-    const outcome = result.error ? 'error' : result.hit ? 'hit' : 'miss';
-    metrics.recordSnapshotCacheOutcome(tenantId, result.backend, outcome);
-    if (result.error) {
-      warnings.push('Cache de snapshots indisponível; executando fallback.');
-    }
-  };
+    let storageDegraded = false;
+    let cacheHit: boolean | undefined;
+    let cacheBackend: SnapshotCacheBackendType | undefined;
 
-  // Load stored instances first (DB)
-  let storedInstances: StoredInstance[];
-  if (options.existing) {
-    storedInstances = options.existing;
-  } else {
-    try {
-      storedInstances = await repository.findByTenant(tenantId);
-    } catch (error) {
-      const { isStorageError } = resolveWhatsAppStorageError(error);
-      if (!isStorageError) {
-        throw error;
+    const recordCacheOutcome = (result: SnapshotCacheReadResult | null): void => {
+      if (!result) return;
+      cacheHit = result.hit;
+      cacheBackend = result.backend;
+      const outcome = result.error ? 'error' : result.hit ? 'hit' : 'miss';
+      metrics.recordSnapshotCacheOutcome(tenantId, result.backend, outcome);
+      if (result.error) {
+        warnings.push('Cache de snapshots indisponível; executando fallback.');
       }
+    };
 
-      storageDegraded = true;
-      warnings.push('Storage indisponível; exibindo dados cacheados sem refresh obrigatório.');
-      logWhatsAppStorageError('collectInstancesForTenant.findInstances', error, { tenantId });
-      storedInstances = [];
-    }
-  }
-
-  // Prefer snapshots provided by caller
-  let snapshots = options.snapshots ?? null;
-
-  // Decide if we should actually refresh (sync DB with broker)
-  let shouldRefresh = false;
-  if (refreshFlag === true) {
-    shouldRefresh = true; // explicit force
-  } else if (refreshFlag === false) {
-    shouldRefresh = false;
-  } else {
-    // default: do NOT sync unless we have nothing stored and caller allows snapshots
-    shouldRefresh = Boolean(fetchSnapshots) && storedInstances.length === 0;
-  }
-
-  if (storageDegraded) {
-    const refreshBlocked = isWhatsappRefreshDisabledOnStorageDegraded() || refreshFlag !== true;
-    if (refreshBlocked) {
-      shouldRefresh = false;
-      warnings.push('Refresh automático adiado devido à indisponibilidade do storage.');
-    }
-  }
-
-  // TTL: only applies when refresh wasn't explicitly forced
-  if (shouldRefresh && refreshFlag !== true) {
-    const last = await cache.getLastSyncAt(tenantId);
-    if (last && Date.now() - last.getTime() < SYNC_TTL_MS) {
-      shouldRefresh = false;
-    }
-  }
-
-  const runCacheWrite = async (
-    name: 'setLastSyncAt' | 'setCachedSnapshots',
-    run: () => Promise<void>
-  ): Promise<{ name: 'setLastSyncAt' | 'setCachedSnapshots'; durationMs: number }> => {
-    const startedAt = Date.now();
-
-    try {
-      await withTimeout(
-        run(),
-        CACHE_WRITE_TIMEOUT_MS,
-        () =>
-          Object.assign(
-            new Error(`cache write ${name} timed out after ${CACHE_WRITE_TIMEOUT_MS}ms`),
-            { code: 'timeout' }
-          )
-      );
-      const durationMs = Date.now() - startedAt;
-      metrics.recordRefreshStepDuration(tenantId, name, durationMs, 'success');
-      return { name, durationMs };
-    } catch (error) {
-      const durationMs = Date.now() - startedAt;
-      metrics.recordRefreshStepDuration(tenantId, name, durationMs, 'failure');
-      const errorCode =
-        (error as { code?: string }).code ??
-        (error as { name?: string }).name ??
-        (error instanceof Error ? error.name : 'unknown');
-      metrics.recordRefreshStepFailure(tenantId, name, errorCode);
-      throw { name, error, durationMs };
-    }
-  };
-
-  let synced = false;
-
-  if (shouldRefresh) {
-    await enqueueTenantRefresh(tenantId, async () => {
-      for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt += 1) {
-        await cache.invalidateCachedSnapshots(tenantId);
-        try {
-          metrics.incrementHttpCounter();
-          const syncResult = await syncInstances(
-            tenantId,
-            storedInstances,
-            snapshots ?? undefined
-          );
-          storedInstances = syncResult.instances;
-          snapshots = syncResult.snapshots;
-          if (!storageDegraded) {
-            const cacheWrites = [
-              {
-                name: 'setLastSyncAt' as const,
-                run: async () => {
-                  await cache.setLastSyncAt(tenantId, new Date());
-                },
-              },
-              ...(snapshots && snapshots.length > 0
-                ? [
-                    {
-                      name: 'setCachedSnapshots' as const,
-                      run: async () => {
-                        const cacheWrite = await cache.setCachedSnapshots(
-                          tenantId,
-                          snapshots as WhatsAppBrokerInstanceSnapshot[],
-                          30
-                        );
-                        cacheBackend ??= cacheWrite.backend;
-                        cacheHit = cacheHit ?? false;
-                        if (cacheWrite.error) {
-                          warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
-                        }
-                      },
-                    },
-                  ]
-                : []),
-            ];
-
-            const cacheWriteResults = await Promise.allSettled(
-              cacheWrites.map(async ({ name, run }) => runCacheWrite(name, run))
-            );
-
-            for (const result of cacheWriteResults) {
-              if (result.status === 'fulfilled') {
-                logger.debug('whatsapp.instances.cache.write.success', {
-                  tenantId,
-                  operation: result.value.name,
-                  durationMs: result.value.durationMs,
-                  timeoutMs: CACHE_WRITE_TIMEOUT_MS,
-                });
-              } else {
-                logger.warn('whatsapp.instances.cache.write.failure', {
-                  tenantId,
-                  operation: result.reason.name,
-                  durationMs: result.reason.durationMs,
-                  timeoutMs: CACHE_WRITE_TIMEOUT_MS,
-                  error: describeErrorForLog(result.reason.error),
-                });
-              }
-            }
-          }
-          metrics.recordRefreshOutcome(tenantId, 'success');
-          synced = true;
-          return;
-        } catch (error) {
-          const shouldRetryAfterUniqueConstraint =
-            error instanceof Prisma.PrismaClientKnownRequestError &&
-            error.code === 'P2002' &&
-            attempt < MAX_SYNC_ATTEMPTS - 1;
-
-          if (shouldRetryAfterUniqueConstraint) {
-            logger.warn('whatsapp.instances.sync.retryAfterP2002', {
-              tenantId,
-              attempt,
-              error: describeErrorForLog(error),
-            });
-            await cache.invalidateCachedSnapshots(tenantId);
-            snapshots = await brokerClient.listInstances(tenantId);
-            storedInstances = await repository.findByTenant(tenantId);
-            continue;
-          }
-
-          const errorCode =
-            (error as { code?: string }).code ??
-            (error as { name?: string }).name ??
-            (error instanceof Error ? error.name : null);
-          metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
-          if (error instanceof WhatsAppBrokerNotConfiguredError) {
-            if (options.refresh) {
-              throw error;
-            }
-            logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
-            snapshots = [];
-            return;
-          }
+    // Load stored instances first (DB)
+    let storedInstances: StoredInstance[];
+    if (options.existing) {
+      storedInstances = options.existing;
+    } else {
+      try {
+        storedInstances = await repository.findByTenant(tenantId);
+      } catch (error) {
+        const { isStorageError } = resolveWhatsAppStorageError(error);
+        if (!isStorageError) {
           throw error;
         }
+
+        storageDegraded = true;
+        warnings.push('Storage indisponível; exibindo dados cacheados sem refresh obrigatório.');
+        logWhatsAppStorageError('collectInstancesForTenant.findInstances', error, { tenantId, requestId });
+        storedInstances = [];
       }
-    });
-  } else if (fetchSnapshots) {
-    // Snapshot mode (read-only): use cache first, then broker, and cache the result
-    if (!snapshots) {
+    }
+
+    // Prefer snapshots provided by caller
+    let snapshots = options.snapshots ?? null;
+
+    // Decide if we should actually refresh (sync DB with broker)
+    let shouldRefresh = false;
+    if (refreshFlag === true) {
+      shouldRefresh = true; // explicit force
+    } else if (refreshFlag === false) {
+      shouldRefresh = false;
+    } else {
+      // default: do NOT sync unless we have nothing stored and caller allows snapshots
+      shouldRefresh = Boolean(fetchSnapshots) && storedInstances.length === 0;
+    }
+
+    if (storageDegraded) {
+      const refreshBlocked = isWhatsappRefreshDisabledOnStorageDegraded() || refreshFlag !== true;
+      if (refreshBlocked) {
+        shouldRefresh = false;
+        warnings.push('Refresh automático adiado devido à indisponibilidade do storage.');
+      }
+    }
+
+    // TTL: only applies when refresh wasn't explicitly forced
+    if (shouldRefresh && refreshFlag !== true) {
+      const last = await cache.getLastSyncAt(tenantId);
+      if (last && Date.now() - last.getTime() < SYNC_TTL_MS) {
+        shouldRefresh = false;
+      }
+    }
+
+    const runCacheWrite = async (
+      name: 'setLastSyncAt' | 'setCachedSnapshots',
+      run: () => Promise<void>
+    ): Promise<{ name: 'setLastSyncAt' | 'setCachedSnapshots'; durationMs: number }> => {
+      const startedAt = Date.now();
+
+      try {
+        await withTimeout(
+          run(),
+          CACHE_WRITE_TIMEOUT_MS,
+          () =>
+            Object.assign(
+              new Error(`cache write ${name} timed out after ${CACHE_WRITE_TIMEOUT_MS}ms`),
+              { code: 'timeout' }
+            )
+        );
+        const durationMs = Date.now() - startedAt;
+        metrics.recordRefreshStepDuration(tenantId, name, durationMs, 'success');
+        return { name, durationMs };
+      } catch (error) {
+        const durationMs = Date.now() - startedAt;
+        metrics.recordRefreshStepDuration(tenantId, name, durationMs, 'failure');
+        const errorCode =
+          (error as { code?: string }).code ??
+          (error as { name?: string }).name ??
+          (error instanceof Error ? error.name : 'unknown');
+        metrics.recordRefreshStepFailure(tenantId, name, errorCode);
+        throw { name, error, durationMs };
+      }
+    };
+
+    let synced = false;
+
+    if (shouldRefresh) {
+      await enqueueTenantRefresh(tenantId, async () => {
+        for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt += 1) {
+          await cache.invalidateCachedSnapshots(tenantId);
+          try {
+            metrics.incrementHttpCounter();
+            const syncResult = await syncInstances(
+              tenantId,
+              storedInstances,
+              snapshots ?? undefined
+            );
+            storedInstances = syncResult.instances;
+            snapshots = syncResult.snapshots;
+            if (!storageDegraded) {
+              const cacheWrites = [
+                {
+                  name: 'setLastSyncAt' as const,
+                  run: async () => {
+                    await cache.setLastSyncAt(tenantId, new Date());
+                  },
+                },
+                ...(snapshots && snapshots.length > 0
+                  ? [
+                      {
+                        name: 'setCachedSnapshots' as const,
+                        run: async () => {
+                          const cacheWrite = await cache.setCachedSnapshots(
+                            tenantId,
+                            snapshots as WhatsAppBrokerInstanceSnapshot[],
+                            30
+                          );
+                          cacheBackend ??= cacheWrite.backend;
+                          cacheHit = cacheHit ?? false;
+                          if (cacheWrite.error) {
+                            warnings.push('Cache de snapshots não pôde ser preenchido após refresh.');
+                          }
+                        },
+                      },
+                    ]
+                  : []),
+              ];
+
+              const cacheWriteResults = await Promise.allSettled(
+                cacheWrites.map(async ({ name, run }) => runCacheWrite(name, run))
+              );
+
+              for (const result of cacheWriteResults) {
+                if (result.status === 'fulfilled') {
+                  logger.debug('whatsapp.instances.cache.write.success', {
+                    tenantId,
+                    operation: result.value.name,
+                    durationMs: result.value.durationMs,
+                    timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+                    ...(requestId ? { requestId } : {}),
+                  });
+                } else {
+                  logger.warn('whatsapp.instances.cache.write.failure', {
+                    tenantId,
+                    operation: result.reason.name,
+                    durationMs: result.reason.durationMs,
+                    timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+                    error: describeErrorForLog(result.reason.error),
+                    ...(requestId ? { requestId } : {}),
+                  });
+                }
+              }
+            }
+            metrics.recordRefreshOutcome(tenantId, 'success');
+            synced = true;
+            return;
+          } catch (error) {
+            const shouldRetryAfterUniqueConstraint =
+              error instanceof Prisma.PrismaClientKnownRequestError &&
+              error.code === 'P2002' &&
+              attempt < MAX_SYNC_ATTEMPTS - 1;
+
+            if (shouldRetryAfterUniqueConstraint) {
+              logger.warn('whatsapp.instances.sync.retryAfterP2002', {
+                tenantId,
+                attempt,
+                error: describeErrorForLog(error),
+                ...(requestId ? { requestId } : {}),
+              });
+              await cache.invalidateCachedSnapshots(tenantId);
+              snapshots = await brokerClient.listInstances(tenantId);
+              storedInstances = await repository.findByTenant(tenantId);
+              continue;
+            }
+
+            const errorCode =
+              (error as { code?: string }).code ??
+              (error as { name?: string }).name ??
+              (error instanceof Error ? error.name : null);
+            metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
+            if (error instanceof WhatsAppBrokerNotConfiguredError) {
+              if (options.refresh) {
+                throw error;
+              }
+              logger.info('whatsapp.instances.sync.brokerNotConfigured', {
+                tenantId,
+                ...(requestId ? { requestId } : {}),
+              });
+              snapshots = [];
+              return;
+            }
+            throw error;
+          }
+        }
+      });
+    } else if (fetchSnapshots) {
+      // Snapshot mode (read-only): use cache first, then broker, and cache the result
+      if (!snapshots) {
+        const cached = await cache.getCachedSnapshots(tenantId);
+        recordCacheOutcome(cached);
+        snapshots = cached.snapshots;
+      }
+      if (!snapshots) {
+        try {
+          metrics.incrementHttpCounter();
+          snapshots = await brokerClient.listInstances(tenantId);
+          if (snapshots && snapshots.length > 0) {
+            try {
+              const cacheWrite = await runCacheWrite('setCachedSnapshots', async () => {
+                const result = await cache.setCachedSnapshots(
+                  tenantId,
+                  snapshots as WhatsAppBrokerInstanceSnapshot[],
+                  30,
+                );
+                cacheBackend ??= result.backend;
+                cacheHit = cacheHit ?? false;
+                if (result.error) {
+                  warnings.push('Cache de snapshots não pôde ser preenchido após leitura direta do broker.');
+                }
+              });
+
+              logger.debug('whatsapp.instances.cache.write.success', {
+                tenantId,
+                operation: cacheWrite.name,
+                durationMs: cacheWrite.durationMs,
+                timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+                ...(requestId ? { requestId } : {}),
+              });
+            } catch (error) {
+              logger.warn('whatsapp.instances.cache.write.failure', {
+                tenantId,
+                operation: 'setCachedSnapshots',
+                error: describeErrorForLog(error),
+                timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+                ...(requestId ? { requestId } : {}),
+              });
+            }
+          }
+        } catch (error) {
+          if (error instanceof WhatsAppBrokerNotConfiguredError) {
+            snapshots = [];
+          } else {
+            throw error;
+          }
+        }
+      }
+    } else if (!snapshots) {
+      snapshots = [];
+    }
+
+    if (storageDegraded && !snapshots) {
       const cached = await cache.getCachedSnapshots(tenantId);
       recordCacheOutcome(cached);
       snapshots = cached.snapshots;
     }
-    if (!snapshots) {
-      try {
-        metrics.incrementHttpCounter();
-        snapshots = await brokerClient.listInstances(tenantId);
-        if (snapshots && snapshots.length > 0) {
-          try {
-            const cacheWrite = await runCacheWrite('setCachedSnapshots', async () => {
-              const result = await cache.setCachedSnapshots(
-                tenantId,
-                snapshots as WhatsAppBrokerInstanceSnapshot[],
-                30,
-              );
-              cacheBackend ??= result.backend;
-              cacheHit = cacheHit ?? false;
-              if (result.error) {
-                warnings.push('Cache de snapshots não pôde ser preenchido após leitura direta do broker.');
-              }
-            });
 
-            logger.debug('whatsapp.instances.cache.write.success', {
-              tenantId,
-              operation: cacheWrite.name,
-              durationMs: cacheWrite.durationMs,
-              timeoutMs: CACHE_WRITE_TIMEOUT_MS,
-            });
-          } catch (error) {
-            logger.warn('whatsapp.instances.cache.write.failure', {
-              tenantId,
-              operation: 'setCachedSnapshots',
-              error: describeErrorForLog(error),
-              timeoutMs: CACHE_WRITE_TIMEOUT_MS,
-            });
-          }
-        }
-      } catch (error) {
-        if (error instanceof WhatsAppBrokerNotConfiguredError) {
-          snapshots = [];
-        } else {
-          throw error;
+    // Index snapshots by id for quick lookups
+    const snapshotMap = new Map<string, WhatsAppBrokerInstanceSnapshot>();
+    if (snapshots) {
+      for (const snapshot of snapshots) {
+        const rawId = snapshot.instance?.id;
+        const normalizedId = typeof rawId === 'string' ? rawId.trim() : '';
+        if (normalizedId && !snapshotMap.has(normalizedId)) {
+          snapshotMap.set(normalizedId, snapshot);
         }
       }
     }
-  } else if (!snapshots) {
-    snapshots = [];
-  }
 
-  if (storageDegraded && !snapshots) {
-    const cached = await cache.getCachedSnapshots(tenantId);
-    recordCacheOutcome(cached);
-    snapshots = cached.snapshots;
-  }
+    const entries: InstanceCollectionEntry[] = [];
 
-  // Index snapshots by id for quick lookups
-  const snapshotMap = new Map<string, WhatsAppBrokerInstanceSnapshot>();
-  if (snapshots) {
-    for (const snapshot of snapshots) {
-      const rawId = snapshot.instance?.id;
-      const normalizedId = typeof rawId === 'string' ? rawId.trim() : '';
-      if (normalizedId && !snapshotMap.has(normalizedId)) {
-        snapshotMap.set(normalizedId, snapshot);
+    if (!storedInstances.length && snapshots?.length) {
+      const fallbackInstances = buildFallbackInstancesFromSnapshots(tenantId, snapshots);
+      return {
+        entries,
+        instances: fallbackInstances,
+        rawInstances: [],
+        map: new Map(),
+        snapshots: snapshots ?? [],
+        cacheHit,
+        cacheBackend,
+        shouldRefresh,
+        fetchSnapshots,
+        synced,
+        storageFallback: true,
+        warnings,
+      } satisfies InstanceCollectionResult;
+    }
+
+    for (const stored of storedInstances) {
+      const snapshot = snapshotMap.get(stored.id) ??
+        (stored.brokerId ? snapshotMap.get(stored.brokerId) : undefined);
+      const brokerStatus = snapshot?.status ?? null;
+      const serialized = serializeStoredInstance(stored, brokerStatus);
+
+      // Keep E.164 normalized phone in DB when we discover a better one
+      if (serialized.phoneNumber && serialized.phoneNumber !== stored.phoneNumber) {
+        await repository.updatePhoneNumber(stored.id, serialized.phoneNumber);
+        stored.phoneNumber = serialized.phoneNumber;
+      }
+
+      entries.push({ stored, serialized, status: brokerStatus });
+    }
+
+    const map = new Map<string, InstanceCollectionEntry>();
+    for (const entry of entries) {
+      map.set(entry.stored.id, entry);
+      if (entry.stored.brokerId && entry.stored.brokerId !== entry.stored.id) {
+        map.set(entry.stored.brokerId, entry);
       }
     }
-  }
 
-  const entries: InstanceCollectionEntry[] = [];
+    const instances = entries.map(({ serialized }) => toPublicInstance(serialized));
 
-  if (!storedInstances.length && snapshots?.length) {
-    const fallbackInstances = buildFallbackInstancesFromSnapshots(tenantId, snapshots);
-    return {
+    const result: InstanceCollectionResult = {
       entries,
-      instances: fallbackInstances,
-      rawInstances: [],
-      map: new Map(),
+      instances,
+      rawInstances: entries.map(({ serialized }) => serialized),
+      map,
       snapshots: snapshots ?? [],
       cacheHit,
       cacheBackend,
       shouldRefresh,
       fetchSnapshots,
       synced,
-      storageFallback: true,
+      storageFallback: storageDegraded,
       warnings,
-    } satisfies InstanceCollectionResult;
+    };
+
+    return result;
+  } catch (error) {
+    operationResult = resolveOperationResult(error);
+    throw error;
+  } finally {
+    const durationMs = Date.now() - startedAt;
+    metrics.recordOperationOutcome('collect', tenantId, mode, operationResult);
+    metrics.recordOperationDuration('collect', tenantId, mode, operationResult, durationMs);
   }
-
-  for (const stored of storedInstances) {
-    const snapshot = snapshotMap.get(stored.id) ??
-      (stored.brokerId ? snapshotMap.get(stored.brokerId) : undefined);
-    const brokerStatus = snapshot?.status ?? null;
-    const serialized = serializeStoredInstance(stored, brokerStatus);
-
-    // Keep E.164 normalized phone in DB when we discover a better one
-    if (serialized.phoneNumber && serialized.phoneNumber !== stored.phoneNumber) {
-      await repository.updatePhoneNumber(stored.id, serialized.phoneNumber);
-      stored.phoneNumber = serialized.phoneNumber;
-    }
-
-    entries.push({ stored, serialized, status: brokerStatus });
-  }
-
-  const map = new Map<string, InstanceCollectionEntry>();
-  for (const entry of entries) {
-    map.set(entry.stored.id, entry);
-    if (entry.stored.brokerId && entry.stored.brokerId !== entry.stored.id) {
-      map.set(entry.stored.brokerId, entry);
-    }
-  }
-
-  const instances = entries.map(({ serialized }) => toPublicInstance(serialized));
-
-  const result: InstanceCollectionResult = {
-    entries,
-    instances,
-    rawInstances: entries.map(({ serialized }) => serialized),
-    map,
-    snapshots: snapshots ?? [],
-    cacheHit,
-    cacheBackend,
-    shouldRefresh,
-    fetchSnapshots,
-    synced,
-    storageFallback: storageDegraded,
-    warnings,
-  };
-
-  return result;
 };
 
 export type InstanceOperationContext = {
