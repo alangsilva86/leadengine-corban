@@ -106,7 +106,7 @@ const buildInstanceLookups = (existing: StoredInstance[]): InstanceLookups => {
   return lookups;
 };
 
-const resolveSnapshotTenantId = (snapshot: WhatsAppBrokerInstanceSnapshot): string => {
+export const resolveSnapshotTenantId = (snapshot: WhatsAppBrokerInstanceSnapshot): string => {
   const instanceRecord = snapshot.instance as Record<string, unknown>;
   const directTenant = typeof instanceRecord?.tenantId === 'string' ? instanceRecord.tenantId.trim() : '';
   if (directTenant) {
