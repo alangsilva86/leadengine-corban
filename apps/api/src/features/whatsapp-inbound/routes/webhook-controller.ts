@@ -164,7 +164,21 @@ const createVerifyWhatsAppWebhookRequest = (config: WhatsAppWebhookControllerCon
       }
     }
 
-    const tenantId = resolveTenantId(bearerToken, req);
+    let tenantId = resolveTenantId(bearerToken, req);
+
+    if (!tenantId) {
+      const events = asArray(req.body);
+      const firstEntry = events[0];
+      const unwrapped = unwrapWebhookEvent(firstEntry ?? req.body);
+
+      const resolvedContext = await resolveWebhookContext({
+        eventRecord: (unwrapped?.event ?? firstEntry ?? req.body) as RawBaileysUpsertEvent,
+        envelopeRecord: (unwrapped?.envelope ?? firstEntry ?? req.body) as Record<string, unknown>,
+        defaultInstanceId: getDefaultInstanceId(),
+      });
+
+      tenantId = resolvedContext.tenantId ?? null;
+    }
     if (!tenantId) {
       config.logWebhookEvent('error', '🛑 WhatsApp webhook rejected: tenantId missing', context);
       config.trackWebhookRejection('missing_tenant');
