@@ -13,9 +13,26 @@ const resolveSocketUrl = () => {
 
 const registerHandler = (socket, event, handler) => {
   if (!socket || typeof handler !== 'function') {
-    return;
+    return () => {};
   }
-  socket.on(event, handler);
+
+  const events = Array.isArray(event) ? event : [event];
+  const uniqueEvents = [...new Set(events)];
+
+  uniqueEvents.forEach((eventName) => {
+    if (typeof socket.off === 'function') {
+      socket.off(eventName, handler);
+    }
+    socket.on(eventName, handler);
+  });
+
+  return () => {
+    uniqueEvents.forEach((eventName) => {
+      if (typeof socket.off === 'function') {
+        socket.off(eventName, handler);
+      }
+    });
+  };
 };
 
 export const useRealtimeTickets = ({
@@ -33,6 +50,7 @@ export const useRealtimeTickets = ({
 } = {}) => {
   const socketRef = useRef(null);
   const ticketRoomRef = useRef(null);
+  const messageUpdateCacheRef = useRef(new Map());
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
 
@@ -154,7 +172,21 @@ export const useRealtimeTickets = ({
         };
 
         registerHandler(socket, 'messages.new', handleMessageCreated);
+        const messageUpdatedEvents = ['messages.updated', 'message:updated'];
         const handleMessageUpdated = (payload) => {
+          const messageId = payload?.message?.id ?? payload?.id ?? null;
+          const updatedAt =
+            payload?.message?.updatedAt ?? payload?.updatedAt ?? payload?.message?.statusUpdatedAt ?? null;
+          const cacheKeyBase = messageId ?? 'anonymous-message';
+          const cacheKey = updatedAt ? `${cacheKeyBase}:${updatedAt}` : cacheKeyBase;
+          const previousKey = messageUpdateCacheRef.current.get(cacheKeyBase);
+
+          if (previousKey === cacheKey) {
+            return;
+          }
+
+          messageUpdateCacheRef.current.set(cacheKeyBase, cacheKey);
+
           console.info('🎯 LeadEngine • Chat :: 🔄 Mensagem atualizada', {
             tenantId,
             ticketId: ticketRoomRef.current,
@@ -166,8 +198,7 @@ export const useRealtimeTickets = ({
           }
         };
 
-        registerHandler(socket, 'messages.updated', handleMessageUpdated);
-        registerHandler(socket, 'message:updated', handleMessageUpdated);
+        registerHandler(socket, messageUpdatedEvents, handleMessageUpdated);
         registerHandler(socket, 'message.status.changed', (payload) => {
           console.info('🎯 LeadEngine • Chat :: 📬 Status de mensagem atualizado', {
             tenantId,
