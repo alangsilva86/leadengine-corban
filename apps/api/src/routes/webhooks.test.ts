@@ -422,6 +422,31 @@ describe('WhatsApp webhook (integration)', () => {
       });
     });
 
+    it('resolves tenant from instance lookup when tenant headers are missing', async () => {
+      stubInboundSuccessMocks();
+
+      const app = createApp();
+
+      const response = await request(app)
+        .post('/api/integrations/whatsapp/webhook')
+        .set('authorization', 'Bearer test-key')
+        .send({
+          event: 'WHATSAPP_MESSAGES_UPSERT',
+          instanceId: 'inst-1',
+          payload: {
+            instanceId: 'inst-1',
+            messages: [
+              {
+                key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.instance' },
+              },
+            ],
+          },
+        });
+
+      expect(response.status).toBe(204);
+      expect(response.body).toEqual({});
+    });
+
     it('accepts webhook when API key and tenant are provided via headers', async () => {
       const app = createApp();
 
