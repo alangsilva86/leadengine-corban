@@ -126,6 +126,52 @@ export const resolveSnapshotTenantId = (snapshot: WhatsAppBrokerInstanceSnapshot
   return metadataAltTenant ?? '';
 };
 
+const snapshotHasTenantBinding = (
+  snapshot: WhatsAppBrokerInstanceSnapshot,
+  tenantId: string
+): boolean => {
+  const resolvedTenantId = resolveSnapshotTenantId(snapshot);
+  if (resolvedTenantId && resolvedTenantId === tenantId) {
+    return true;
+  }
+
+  const instanceRecord = snapshot.instance as Record<string, unknown>;
+  const metadata =
+    instanceRecord?.metadata && typeof instanceRecord.metadata === 'object'
+      ? (instanceRecord.metadata as Record<string, unknown>)
+      : null;
+  const metadataTenantId =
+    typeof metadata?.tenantId === 'string'
+      ? metadata.tenantId.trim()
+      : typeof metadata?.tenant_id === 'string'
+        ? metadata.tenant_id.trim()
+        : '';
+  if (metadataTenantId && metadataTenantId === tenantId) {
+    return true;
+  }
+
+  const flags =
+    metadata?.flags && typeof metadata.flags === 'object'
+      ? (metadata.flags as Record<string, unknown>)
+      : null;
+  const flaggedTenantId =
+    typeof flags?.tenantId === 'string'
+      ? flags.tenantId.trim()
+      : typeof flags?.tenant_id === 'string'
+        ? flags.tenant_id.trim()
+        : typeof flags?.tenant === 'string'
+          ? flags.tenant.trim()
+          : '';
+  if (flaggedTenantId && flaggedTenantId === tenantId) {
+    return true;
+  }
+
+  const flagBound =
+    flags?.tenantBound === true || flags?.tenant_bound === true || flags?.['tenant-bound'] === true;
+
+  return Boolean(flagBound);
+};
+
 const collectSnapshots = async (
   deps: SyncDependencies,
   tenantId: string,
@@ -471,6 +517,7 @@ const processSnapshot = async (
   }
 
   const snapshotTenantId = resolveSnapshotTenantId(snapshot) || tenantId;
+  const hasTenantBinding = snapshotHasTenantBinding(snapshot, snapshotTenantId);
 
   const action = resolveSnapshotState(existingInstance, archivedInstances, derived.instanceId);
 
@@ -479,6 +526,15 @@ const processSnapshot = async (
       tenantId: snapshotTenantId,
       instanceId: derived.instanceId,
       deletedAt: archivedInstances.get(derived.instanceId)?.deletedAt ?? null,
+    });
+    return {};
+  }
+
+  if (action === 'create' && !hasTenantBinding) {
+    deps.logger.info('whatsapp.instances.sync.skipMissingBinding', {
+      tenantId: snapshotTenantId,
+      instanceId: derived.instanceId,
+      brokerId: typeof snapshot.instance?.id === 'string' ? snapshot.instance.id : null,
     });
     return {};
   }
