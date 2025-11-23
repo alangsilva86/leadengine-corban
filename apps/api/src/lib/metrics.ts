@@ -75,6 +75,16 @@ const WHATSAPP_QR_RESULT_HELP =
   '# HELP whatsapp_qr_requests_total Sucesso e falhas em operações de QR do WhatsApp por tenant/instância';
 const WHATSAPP_QR_RESULT_TYPE = '# TYPE whatsapp_qr_requests_total counter';
 
+const WHATSAPP_INSTANCE_OPERATION_METRIC = 'whatsapp_instance_operation_total';
+const WHATSAPP_INSTANCE_OPERATION_HELP =
+  '# HELP whatsapp_instance_operation_total Contador de operações de instâncias (coleta/criação) por tenant/mode/resultado';
+const WHATSAPP_INSTANCE_OPERATION_TYPE = '# TYPE whatsapp_instance_operation_total counter';
+
+const WHATSAPP_INSTANCE_OPERATION_DURATION_METRIC = 'whatsapp_instance_operation_duration_ms';
+const WHATSAPP_INSTANCE_OPERATION_DURATION_HELP =
+  '# HELP whatsapp_instance_operation_duration_ms Latência de operações de instâncias (coleta/criação) por tenant/mode/resultado';
+const WHATSAPP_INSTANCE_OPERATION_DURATION_TYPE = '# TYPE whatsapp_instance_operation_duration_ms summary';
+
 const INBOUND_MESSAGES_METRIC = 'inbound_messages_processed_total';
 const INBOUND_MESSAGES_HELP =
   '# HELP inbound_messages_processed_total Contador de mensagens inbound processadas por tenant';
@@ -177,6 +187,7 @@ const TENANT_CONSTRAINT: LabelConstraint = { limit: 100, defaultValue: 'unknown'
 const INSTANCE_CONSTRAINT: LabelConstraint = { limit: 200, defaultValue: 'unknown' };
 const TRANSPORT_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
 const OPERATION_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' };
+const MODE_CONSTRAINT: LabelConstraint = { limit: 20, defaultValue: 'unknown' };
 const OUTCOME_CONSTRAINT: LabelConstraint = { limit: 10, defaultValue: 'unknown' };
 const ERROR_CONSTRAINT: LabelConstraint = { limit: 50, defaultValue: 'unknown' };
 const STAGE_CONSTRAINT: LabelConstraint = { limit: 50, defaultValue: 'desconhecido' };
@@ -306,6 +317,18 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     outcome: OUTCOME_CONSTRAINT,
     errorCode: ERROR_CONSTRAINT,
   },
+  [WHATSAPP_INSTANCE_OPERATION_METRIC]: {
+    tenantId: TENANT_CONSTRAINT,
+    mode: MODE_CONSTRAINT,
+    operation: OPERATION_CONSTRAINT,
+    result: RESULT_CONSTRAINT,
+  },
+  [WHATSAPP_INSTANCE_OPERATION_DURATION_METRIC]: {
+    tenantId: TENANT_CONSTRAINT,
+    mode: MODE_CONSTRAINT,
+    operation: OPERATION_CONSTRAINT,
+    result: RESULT_CONSTRAINT,
+  },
   [AGREEMENTS_SYNC_REQUEST_METRIC]: {
     providerId: PROVIDER_CONSTRAINT,
     result: RESULT_CONSTRAINT,
@@ -341,6 +364,8 @@ const whatsappRefreshStepFailureStore = new Map<string, number>();
 const whatsappSnapshotCacheOutcomeStore = new Map<string, number>();
 const whatsappDiscardedSnapshotStore = new Map<string, number>();
 const whatsappQrOutcomeStore = new Map<string, number>();
+const whatsappInstanceOperationStore = new Map<string, number>();
+const whatsappInstanceOperationDurationStore = new Map<string, { sum: number; count: number }>();
 const inboundMessagesCounterStore = new Map<string, number>();
 const inboundMediaRetryAttemptsStore = new Map<string, number>();
 const inboundMediaRetrySuccessStore = new Map<string, number>();
@@ -606,6 +631,26 @@ export const whatsappQrRequestCounter = {
     const key = buildLabelKey(WHATSAPP_QR_RESULT_METRIC, labels);
     const current = whatsappQrOutcomeStore.get(key) ?? 0;
     whatsappQrOutcomeStore.set(key, current + value);
+  },
+};
+
+export const whatsappInstanceOperationCounter = {
+  inc(labels: CounterLabels = {}, value = 1): void {
+    const key = buildLabelKey(WHATSAPP_INSTANCE_OPERATION_METRIC, labels);
+    const current = whatsappInstanceOperationStore.get(key) ?? 0;
+    whatsappInstanceOperationStore.set(key, current + value);
+  },
+};
+
+export const whatsappInstanceOperationDurationSummary = {
+  observe(labels: CounterLabels = {}, durationMs: number): void {
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      return;
+    }
+
+    const key = buildLabelKey(WHATSAPP_INSTANCE_OPERATION_DURATION_METRIC, labels);
+    const current = whatsappInstanceOperationDurationStore.get(key) ?? { sum: 0, count: 0 };
+    whatsappInstanceOperationDurationStore.set(key, { sum: current.sum + durationMs, count: current.count + 1 });
   },
 };
 
@@ -923,6 +968,28 @@ export const renderMetrics = async (): Promise<string> => {
     }
   }
 
+  lines.push(WHATSAPP_INSTANCE_OPERATION_HELP, WHATSAPP_INSTANCE_OPERATION_TYPE);
+  if (whatsappInstanceOperationStore.size === 0) {
+    lines.push(`${WHATSAPP_INSTANCE_OPERATION_METRIC} 0`);
+  } else {
+    for (const [labelString, value] of whatsappInstanceOperationStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_INSTANCE_OPERATION_METRIC}${suffix} ${value}`);
+    }
+  }
+
+  lines.push(WHATSAPP_INSTANCE_OPERATION_DURATION_HELP, WHATSAPP_INSTANCE_OPERATION_DURATION_TYPE);
+  if (whatsappInstanceOperationDurationStore.size === 0) {
+    lines.push(`${WHATSAPP_INSTANCE_OPERATION_DURATION_METRIC}_sum 0`);
+    lines.push(`${WHATSAPP_INSTANCE_OPERATION_DURATION_METRIC}_count 0`);
+  } else {
+    for (const [labelString, stats] of whatsappInstanceOperationDurationStore.entries()) {
+      const suffix = labelString ? `{${labelString}}` : '';
+      lines.push(`${WHATSAPP_INSTANCE_OPERATION_DURATION_METRIC}_sum${suffix} ${stats.sum}`);
+      lines.push(`${WHATSAPP_INSTANCE_OPERATION_DURATION_METRIC}_count${suffix} ${stats.count}`);
+    }
+  }
+
   lines.push(SALES_OPERATIONS_HELP, SALES_OPERATIONS_TYPE);
   if (salesOperationsCounterStore.size === 0) {
     lines.push(`${SALES_OPERATIONS_METRIC} 0`);
@@ -1142,6 +1209,8 @@ export const resetMetrics = (): void => {
   whatsappSnapshotCacheOutcomeStore.clear();
   whatsappDiscardedSnapshotStore.clear();
   whatsappQrOutcomeStore.clear();
+  whatsappInstanceOperationStore.clear();
+  whatsappInstanceOperationDurationStore.clear();
   inboundMessagesCounterStore.clear();
   inboundMediaRetryAttemptsStore.clear();
   inboundMediaRetrySuccessStore.clear();

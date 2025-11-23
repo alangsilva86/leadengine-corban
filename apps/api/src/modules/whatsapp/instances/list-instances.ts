@@ -112,6 +112,7 @@ const ensureBrokerHealthy = async (tenantId: string): Promise<void> => {
 type ListInstancesUseCaseInput = {
   tenantId: string;
   query: ListInstancesQuery;
+  requestId?: string | null;
 };
 
 type ListInstancesMeta = {
@@ -140,6 +141,7 @@ type ListInstancesPayload = {
 export const listInstancesUseCase = async ({
   tenantId,
   query,
+  requestId,
 }: ListInstancesUseCaseInput): Promise<{
   payload: ListInstancesPayload;
   requestLog: { tenantId: string; mode: ListInstancesQuery['mode']; refreshOverride: boolean | null; options: { refresh: boolean; fetchSnapshots: boolean } };
@@ -148,6 +150,11 @@ export const listInstancesUseCase = async ({
   const startedAt = Date.now();
   const collectionOptions = buildCollectionOptions(query);
 
+  const result = await collectInstancesForTenant(tenantId, {
+    ...collectionOptions,
+    mode: query.mode,
+    requestId,
+  });
   await ensureBrokerHealthy(tenantId);
 
   const result = await collectInstancesForTenant(tenantId, collectionOptions);
@@ -191,6 +198,7 @@ export const listInstancesUseCase = async ({
       mode: query.mode,
       refreshOverride: query.refreshOverride,
       options: collectionOptions,
+      requestId: requestId ?? null,
     },
     responseLog: {
       tenantId,
@@ -204,6 +212,7 @@ export const listInstancesUseCase = async ({
       cacheBackend: meta.cacheBackend,
       instancesCount: meta.instancesCount,
       durationMs,
+      requestId: requestId ?? null,
     },
   };
 };

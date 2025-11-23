@@ -65,7 +65,7 @@ import {
 import { parseListInstancesQuery, listInstancesUseCase } from '../../modules/whatsapp/instances/list-instances';
 import type { InstanceOperationContext, StoredInstance } from '../../modules/whatsapp/instances';
 import { resolveRequestTenantId, resolveRequestActorId } from '../../services/tenant-service';
-import { normalizeQueryValue } from '../../utils/request-parsers';
+import { normalizeQueryValue, resolveRequestId } from '../../utils/request-parsers';
 
 
 export class WhatsAppInstancesService {
@@ -411,12 +411,14 @@ router.post(
 
     const tenantId = resolveRequestTenantId(req, parsedBody.data.tenantId);
     const actorId = resolveRequestActorId(req);
+    const requestId = resolveRequestId(req);
 
     logger.info('whatsapp.instances.create.request', {
       tenantId,
       actorId,
       name: parsedBody.data.name,
       instanceId: parsedBody.data.id ?? parsedBody.data.name ?? null,
+      requestId,
     });
 
     try {
@@ -424,6 +426,7 @@ router.post(
         tenantId,
         actorId,
         input: parsedBody.data,
+        requestId,
       });
 
       await executeInstanceSideEffects(result.sideEffects, {
@@ -537,11 +540,13 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = resolveRequestTenantId(req);
     const query = parseListInstancesQueryHandler(req.query);
+    const requestId = resolveRequestId(req);
 
     try {
       const { payload, requestLog, responseLog } = await listInstancesUseCaseHandler({
         tenantId,
         query,
+        requestId,
       });
 
       logger.info('whatsapp.instances.list.request', requestLog);
@@ -560,6 +565,7 @@ router.get(
 
       logger.error('whatsapp.instances.list.unexpected', {
         tenantId,
+        requestId,
         error: describeErrorForLog(error),
       });
 

@@ -6,6 +6,8 @@ import {
   whatsappRefreshStepFailureCounter,
   whatsappSnapshotCacheOutcomeCounter,
   whatsappDiscardedSnapshotsCounter,
+  whatsappInstanceOperationCounter,
+  whatsappInstanceOperationDurationSummary,
   whatsappBrokerHealthFailureCounter,
 } from '../../../lib/metrics';
 
@@ -37,6 +39,19 @@ export type InstanceMetrics = {
     outcome: 'success' | 'failure',
     errorCode?: string | null
   ) => void;
+  recordOperationOutcome: (
+    operation: 'collect' | 'create',
+    tenantId: string,
+    mode: string,
+    result: 'success' | 'failure' | 'timeout'
+  ) => void;
+  recordOperationDuration: (
+    operation: 'collect' | 'create',
+    tenantId: string,
+    mode: string,
+    result: 'success' | 'failure' | 'timeout',
+    durationMs: number
+  ) => void;
 };
 
 export const createInstanceMetrics = (
@@ -49,6 +64,8 @@ export const createInstanceMetrics = (
     refreshStepFailure: whatsappRefreshStepFailureCounter,
     snapshotCache: whatsappSnapshotCacheOutcomeCounter,
     discardedSnapshots: whatsappDiscardedSnapshotsCounter,
+    instanceOperation: whatsappInstanceOperationCounter,
+    instanceOperationDuration: whatsappInstanceOperationDurationSummary,
   }
 ): InstanceMetrics => {
   const incrementHttpCounter = (): void => {
@@ -155,6 +172,46 @@ export const createInstanceMetrics = (
     }
   };
 
+  const recordOperationOutcome = (
+    operation: 'collect' | 'create',
+    tenantId: string,
+    mode: string,
+    result: 'success' | 'failure' | 'timeout'
+  ): void => {
+    try {
+      counters.instanceOperation.inc({
+        operation,
+        tenantId,
+        mode: mode || 'unknown',
+        result,
+      });
+    } catch {
+      // metrics are best effort
+    }
+  };
+
+  const recordOperationDuration = (
+    operation: 'collect' | 'create',
+    tenantId: string,
+    mode: string,
+    result: 'success' | 'failure' | 'timeout',
+    durationMs: number
+  ): void => {
+    try {
+      counters.instanceOperationDuration.observe(
+        {
+          operation,
+          tenantId,
+          mode: mode || 'unknown',
+          result,
+        },
+        Math.max(0, Number.isFinite(durationMs) ? durationMs : 0)
+      );
+    } catch {
+      // metrics are best effort
+    }
+  };
+
   return {
     incrementHttpCounter,
     recordBrokerHealthFailure,
@@ -164,6 +221,8 @@ export const createInstanceMetrics = (
     recordSnapshotCacheOutcome,
     recordDiscardedSnapshot,
     recordQrOutcome,
+    recordOperationOutcome,
+    recordOperationDuration,
   } satisfies InstanceMetrics;
 };
 
