@@ -49,7 +49,7 @@ interface UseWhatsappSessionStateParams {
   requestingPairingCode: boolean;
   instance: any;
   realtimeConnected: boolean;
-  selectInstance: (inst: any, options?: { skipAutoQr?: boolean }) => Promise<void>;
+  selectInstance: (inst: any, options?: { skipAutoQr?: boolean }) => Promise<void> | void;
   generateQr: (id: string) => Promise<void>;
   markConnected: () => Promise<boolean>;
   setQrPanelOpen: (value: boolean) => void;

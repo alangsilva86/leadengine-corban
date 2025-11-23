@@ -19,7 +19,7 @@ interface UseSessionUiStateParams {
   loadingQr: boolean;
   instance: any;
   realtimeConnected: boolean;
-  selectInstance: (inst: any, options?: { skipAutoQr?: boolean }) => Promise<void>;
+  selectInstance: (inst: any, options?: { skipAutoQr?: boolean }) => Promise<void> | void;
   generateQr: (id: string) => Promise<void>;
   markConnected: () => Promise<boolean>;
   connectInstance: (instanceId: string, options?: any) => Promise<any>;

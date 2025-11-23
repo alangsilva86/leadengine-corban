@@ -3,15 +3,7 @@ import { toast } from 'sonner';
 
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
 import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
-import useWhatsAppInstances from '../hooks/useWhatsAppInstances.jsx';
-import {
-  getStatusInfo,
-  resolveInstancePhone,
-  resolveInstanceStatus,
-  resolveTenantDisplayName,
-  resolveTenantId,
-  shouldDisplayInstance,
-} from '../lib/instances';
+import { getStatusInfo, resolveInstancePhone } from '../lib/instances';
 import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
 import { getInstanceMetrics } from '../lib/metrics';
 import { resolveWhatsAppErrorCopy } from '../utils/whatsapp-error-codes.js';
@@ -210,8 +202,6 @@ const initialState = (status: string | undefined, activeCampaign: any | undefine
   persistentWarning: null,
 });
 
-type SessionStateParams = Parameters<typeof useWhatsappSessionState>[0];
-
 const useWhatsAppConnect = ({
   selectedAgreement,
   status = 'disconnected',
@@ -243,81 +233,9 @@ const useWhatsAppConnect = ({
     },
     []
   );
-  const {
-    instances,
-    instancesReady,
-    currentInstance: instance,
-    status: rawStatus,
-    qrData,
-    secondsLeft,
-    loadingInstances,
-    loadingQr,
-    isAuthenticated: hookIsAuthenticated,
-    deletingInstanceId,
-    liveEvents,
-    loadInstances,
-    selectInstance,
-    generateQr,
-    connectInstance,
-    createInstance: createInstanceAction,
-    deleteInstance: deleteInstanceAction,
-    markConnected,
-    handleAuthFallback,
-    setSecondsLeft,
-    setGeneratingQrState,
-    setStatus: setInstanceStatus,
-    realtimeConnected,
-    selectedInstanceStatus,
-  } = useWhatsAppInstances({
-    selectedAgreement,
-    status,
-    onStatusChange,
-    onError: setErrorMessage,
-    logger: { log, warn, error: logError },
-    campaignInstanceId: activeCampaign?.instanceId ?? null,
-  });
-
-  const localStatus = (selectedInstanceStatus || rawStatus || 'disconnected').toLowerCase();
-  const hasTenantScope = Boolean(resolveTenantId(selectedAgreement));
-  const createInstanceWarning = hasTenantScope
-    ? null
-    : 'Selecione um acordo com tenantId válido para criar um novo canal do WhatsApp.';
-  const canCreateInstance = hasTenantScope;
-  const tenantFilterId = useMemo(() => resolveTenantId(selectedAgreement), [selectedAgreement]);
-  const tenantFilterLabel = useMemo(
-    () => resolveTenantDisplayName(selectedAgreement),
-    [selectedAgreement]
-  );
-  const tenantScopedInstances = useMemo(() => {
-    if (!tenantFilterId) {
-      return instances;
-    }
-    return instances.filter((entry) => resolveTenantId(entry) === tenantFilterId);
-  }, [instances, tenantFilterId]);
-  const tenantFilteredOutCount = tenantFilterId
-    ? instances.length - tenantScopedInstances.length
-    : 0;
-  const selectedInstanceBelongsToTenant = useMemo(() => {
-    if (!tenantFilterId || !instance) {
-      return true;
-    }
-    return resolveTenantId(instance) === tenantFilterId;
-  }, [instance, tenantFilterId]);
-
   useEffect(() => {
     persistShowAllPreference(state.showAllInstances);
   }, [state.showAllInstances]);
-
-  useEffect(() => {
-    if (!tenantFilterId || !instance || selectedInstanceBelongsToTenant) {
-      return;
-    }
-    selectInstance(null, { skipAutoQr: true });
-  }, [instance, selectInstance, selectedInstanceBelongsToTenant, tenantFilterId]);
-
-  const setShowAllInstances = useCallback((value: boolean) => {
-    dispatch({ type: 'set-show-all-instances', value });
-  }, []);
 
   const setQrPanelOpen = useCallback((value: boolean) => {
     dispatch({ type: 'set-qr-panel-open', value });
@@ -481,6 +399,13 @@ const useWhatsAppConnect = ({
     canCreateInstance,
     nextInstanceOrdinal,
   } = tenantState;
+
+  useEffect(() => {
+    if (!tenantFilterId || !instance || selectedInstanceBelongsToTenant) {
+      return;
+    }
+    void selectInstance(null, { skipAutoQr: true });
+  }, [instance, selectInstance, selectedInstanceBelongsToTenant, tenantFilterId]);
 
   const { stepLabel, nextStage } = useOnboardingStepLabel({
     stages: onboarding?.stages,
