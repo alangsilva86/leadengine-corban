@@ -134,6 +134,7 @@ const buildSnapshotAllowlist = (tenantId: string, existing: StoredInstance[]): S
 };
 
 const resolveSnapshotTenantId = (snapshot: WhatsAppBrokerInstanceSnapshot): string => {
+export const resolveSnapshotTenantId = (snapshot: WhatsAppBrokerInstanceSnapshot): string => {
   const instanceRecord = snapshot.instance as Record<string, unknown>;
   const directTenant = typeof instanceRecord?.tenantId === 'string' ? instanceRecord.tenantId.trim() : '';
   if (directTenant) {

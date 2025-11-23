@@ -41,7 +41,7 @@ import {
   readInstanceArchives,
   clearInstanceArchive,
 } from './archive';
-import { createSyncInstancesFromBroker } from './sync';
+import { createSyncInstancesFromBroker, resolveSnapshotTenantId } from './sync';
 import {
   invalidateCachedSnapshots,
   removeCachedSnapshot,
@@ -1246,13 +1246,18 @@ const buildFallbackContextFromStored = (
   };
 };
 
-const buildFallbackInstancesFromSnapshots = (
+export const buildFallbackInstancesFromSnapshots = (
   tenantId: string,
   snapshots: WhatsAppBrokerInstanceSnapshot[]
 ): NormalizedInstance[] => {
   const instances: NormalizedInstance[] = [];
 
   for (const snapshot of snapshots) {
+    const snapshotTenantId = resolveSnapshotTenantId(snapshot);
+    if (!snapshotTenantId || snapshotTenantId !== tenantId) {
+      continue;
+    }
+
     const normalized = normalizeInstance(snapshot.instance);
     const status = normalizeInstanceStatusResponse(snapshot.status);
     const fallbackMetadataBase =
@@ -1272,7 +1277,7 @@ const buildFallbackInstancesFromSnapshots = (
     if (normalized) {
       instances.push({
         ...normalized,
-        tenantId: normalized.tenantId ?? snapshot.instance?.tenantId ?? tenantId ?? null,
+        tenantId: normalized.tenantId ?? snapshotTenantId ?? tenantId ?? null,
         status: status.status,
         connected: status.connected,
         stats: normalized.stats ?? snapshot.status?.stats ?? undefined,
@@ -1309,7 +1314,7 @@ const buildFallbackInstancesFromSnapshots = (
 
     instances.push({
       id: instanceId,
-      tenantId: instanceSource.tenantId ?? tenantId ?? null,
+      tenantId: instanceSource.tenantId ?? snapshotTenantId ?? tenantId ?? null,
       name: instanceSource.name ?? instanceId,
       status: status.status,
       connected: status.connected,
