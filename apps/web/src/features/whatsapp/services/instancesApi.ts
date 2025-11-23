@@ -90,6 +90,40 @@ const withPreferredLoad = (
   preferredInstanceId: preferredInstanceId ?? options.preferredInstanceId ?? null,
 });
 
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const withExponentialBackoff = async <T>(
+  task: () => Promise<T>,
+  {
+    attempts = 3,
+    baseDelayMs = 500,
+    onRetry,
+  }: { attempts?: number; baseDelayMs?: number; onRetry?: (meta: { attempt: number; delay: number; error: unknown }) => void } = {},
+): Promise<T> => {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === attempts - 1) {
+        break;
+      }
+
+      const delayMs = baseDelayMs * 2 ** attempt;
+      onRetry?.({ attempt: attempt + 1, delay: delayMs, error });
+      await delay(delayMs);
+    }
+  }
+
+  throw lastError ?? new Error('Unknown error during backoff retry');
+};
+
 export interface InstancesApiService {
   loadInstances(options?: InstancesLoadOptions): Promise<{
     success: boolean;
@@ -157,13 +191,28 @@ export const createInstancesApiService = ({
 
     try {
       const listUrl = shouldForce ? `${BASE_PATH}?refresh=1` : BASE_PATH;
-      let response = await api.get(listUrl);
+      const refreshRequest = () =>
+        withExponentialBackoff(
+          () => api.get(`${BASE_PATH}?refresh=1`),
+          {
+            attempts: 3,
+            baseDelayMs: 500,
+            onRetry: ({ attempt, delay, error: retryError }) =>
+              warn('Repetindo refresh de instâncias com backoff', {
+                attempt,
+                delay,
+                error: retryError,
+              }),
+          },
+        );
+
+      let response = shouldForce ? await refreshRequest() : await api.get(listUrl);
       let parsed = parseInstancesPayload(response);
 
       if (!parsed.instances.length && !shouldForce) {
         warn('Instâncias vazias, tentando refresh imediato.');
         try {
-          response = await api.get(`${BASE_PATH}?refresh=1`);
+          response = await refreshRequest();
           parsed = parseInstancesPayload(response);
           shouldForce = true;
           store.getState().markForcedAt(Date.now());
@@ -202,6 +251,38 @@ export const createInstancesApiService = ({
         store.getState().handleAuthFallback({ reset: true, error: err });
         store.getState().failLoad({ requestId: resolvedRequestId });
         return { success: false, error: err, skipped: true };
+      }
+
+      const cachedState = store.getState();
+      const cachedInstances = cachedState.instances ?? [];
+      if (cachedInstances.length > 0) {
+        warn('Falha no refresh; retornando instâncias em cache.', err);
+        store.getState().applyLoadResult(
+          {
+            instances: cachedInstances,
+            instance: cachedState.currentInstance ?? undefined,
+            status: cachedState.status ?? null,
+            connected:
+              cachedState.status === 'connected'
+                ? true
+                : cachedState.status === 'disconnected'
+                  ? false
+                  : null,
+          },
+          {
+            requestId: resolvedRequestId,
+            preferredInstanceId: options.preferredInstanceId ?? null,
+            campaignInstanceId: options.campaignInstanceId ?? null,
+            forced: shouldForce,
+          },
+        );
+
+        return {
+          success: true,
+          status: cachedState.status ?? null,
+          error: err,
+          skipped: false,
+        };
       }
 
       const delayMs = (err as { rateLimitDelayMs?: number })?.rateLimitDelayMs;
