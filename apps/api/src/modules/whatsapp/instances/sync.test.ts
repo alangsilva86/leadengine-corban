@@ -95,6 +95,35 @@ describe('createSyncInstancesFromBroker', () => {
     expect(upsertArgs.create.tenantId).toBe('tenant-xyz');
     expect(upsertArgs.update.tenantId).toBe('tenant-xyz');
   });
+
+  it('discards untrusted snapshots without tenant markers or allowlist entries', async () => {
+    const deps = buildDeps();
+    const syncInstances = createSyncInstancesFromBroker(deps as any);
+    const snapshots: WhatsAppBrokerInstanceSnapshot[] = [
+      {
+        instance: {
+          id: 'rogue-instance',
+          tenantId: 'tenant-rogue',
+          status: 'connected',
+          connected: true,
+          metadata: {},
+        } as any,
+        status: { status: 'connected', connected: true },
+      },
+    ];
+
+    await syncInstances('tenant-rogue', [], snapshots);
+
+    expect(deps.prisma.whatsAppInstance.upsert).not.toHaveBeenCalled();
+    expect(deps.prisma.whatsAppInstance.update).not.toHaveBeenCalled();
+    expect(deps.metrics.recordDiscardedSnapshot).toHaveBeenCalledWith(
+      'tenant-rogue',
+      'untrusted-snapshot',
+      'tenant-rogue',
+      'rogue-instance'
+    );
+    expect(deps.logger.warn).toHaveBeenCalledWith('whatsapp.instances.sync.discardUntrustedSnapshot', expect.any(Object));
+  });
 });
 
 describe('WhatsAppBrokerClient normalization', () => {

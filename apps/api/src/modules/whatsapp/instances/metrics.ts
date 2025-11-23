@@ -25,7 +25,7 @@ export type InstanceMetrics = {
   ) => void;
   recordDiscardedSnapshot: (
     tenantId: string,
-    reason: 'missing-tenant' | 'mismatched-tenant',
+    reason: 'missing-tenant' | 'mismatched-tenant' | 'untrusted-snapshot',
     reportedTenantId: string | null,
     brokerId: string | null
   ) => void;
@@ -107,7 +107,7 @@ export const createInstanceMetrics = (
 
   const recordDiscardedSnapshot = (
     tenantId: string,
-    reason: 'missing-tenant' | 'mismatched-tenant',
+    reason: 'missing-tenant' | 'mismatched-tenant' | 'untrusted-snapshot',
     reportedTenantId: string | null,
     brokerId: string | null
   ): void => {

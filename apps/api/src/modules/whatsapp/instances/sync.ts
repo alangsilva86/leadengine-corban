@@ -73,6 +73,8 @@ type CollectSnapshotsResult = {
   lookups: InstanceLookups;
 };
 
+type SnapshotAllowlist = Set<string>;
+
 type ReconcileSummary = {
   created: Array<{ id: string; status: WhatsAppInstanceStatus; connected: boolean; phoneNumber: string | null }>;
   updated: Array<{ id: string; status: WhatsAppInstanceStatus; connected: boolean; phoneNumber: string | null }>;
@@ -106,6 +108,31 @@ const buildInstanceLookups = (existing: StoredInstance[]): InstanceLookups => {
   return lookups;
 };
 
+const buildSnapshotAllowlist = (tenantId: string, existing: StoredInstance[]): SnapshotAllowlist => {
+  const allowlist: SnapshotAllowlist = new Set();
+
+  for (const instance of existing) {
+    if (instance.tenantId !== tenantId) {
+      continue;
+    }
+
+    allowlist.add(instance.id);
+
+    const brokerId = typeof instance.brokerId === 'string' ? instance.brokerId.trim() : '';
+    if (brokerId) {
+      allowlist.add(brokerId);
+    }
+
+    const metadata = (instance.metadata as Record<string, unknown> | null) ?? {};
+    const metadataBrokerId = typeof metadata?.brokerId === 'string' ? metadata.brokerId.trim() : '';
+    if (metadataBrokerId) {
+      allowlist.add(metadataBrokerId);
+    }
+  }
+
+  return allowlist;
+};
+
 const resolveSnapshotTenantId = (snapshot: WhatsAppBrokerInstanceSnapshot): string => {
   const instanceRecord = snapshot.instance as Record<string, unknown>;
   const directTenant = typeof instanceRecord?.tenantId === 'string' ? instanceRecord.tenantId.trim() : '';
@@ -124,6 +151,85 @@ const resolveSnapshotTenantId = (snapshot: WhatsAppBrokerInstanceSnapshot): stri
 
   const metadataAltTenant = metadata && typeof metadata.tenant_id === 'string' ? metadata.tenant_id.trim() : '';
   return metadataAltTenant ?? '';
+};
+
+const resolveSnapshotOrigin = (snapshot: WhatsAppBrokerInstanceSnapshot): string | null => {
+  const instanceRecord = snapshot.instance as Record<string, unknown>;
+  const metadata =
+    instanceRecord?.metadata && typeof instanceRecord.metadata === 'object'
+      ? (instanceRecord.metadata as Record<string, unknown>)
+      : null;
+
+  const directOrigin = typeof instanceRecord?.origin === 'string' ? instanceRecord.origin.trim() : '';
+  if (directOrigin) {
+    return directOrigin;
+  }
+
+  const metadataOrigin = metadata && typeof metadata.origin === 'string' ? metadata.origin.trim() : '';
+  if (metadataOrigin) {
+    return metadataOrigin;
+  }
+
+  const statusOrigin = snapshot.status && typeof snapshot.status.origin === 'string' ? snapshot.status.origin.trim() : '';
+  return statusOrigin || null;
+};
+
+const snapshotHasTenantBinding = (
+  snapshot: WhatsAppBrokerInstanceSnapshot,
+  tenantId: string
+): boolean => {
+  const instanceRecord = snapshot.instance as Record<string, unknown>;
+  const metadata =
+    instanceRecord?.metadata && typeof instanceRecord.metadata === 'object'
+      ? (instanceRecord.metadata as Record<string, unknown>)
+      : null;
+
+  const candidates = [
+    typeof metadata?.tenantId === 'string' ? metadata.tenantId.trim() : '',
+    typeof metadata?.tenant_id === 'string' ? metadata.tenant_id.trim() : '',
+  ].filter((value) => Boolean(value)) as string[];
+
+  if (candidates.includes(tenantId)) {
+    return true;
+  }
+
+  const tenantBoundFlag = metadata?.tenantBound === true || metadata?.tenant_bound === true;
+  const tenantScopedFlag = metadata?.tenantScoped === true || metadata?.tenant_scoped === true;
+
+  return Boolean(tenantBoundFlag || tenantScopedFlag);
+};
+
+const snapshotIsAllowlisted = (
+  snapshot: WhatsAppBrokerInstanceSnapshot,
+  derived: SnapshotDerivation,
+  allowlist: SnapshotAllowlist
+): boolean => {
+  const instanceRecord = snapshot.instance as Record<string, unknown>;
+  const metadata =
+    instanceRecord?.metadata && typeof instanceRecord.metadata === 'object'
+      ? (instanceRecord.metadata as Record<string, unknown>)
+      : null;
+
+  const candidates = new Set<string>();
+  candidates.add(derived.instanceId);
+
+  const brokerId = typeof instanceRecord?.id === 'string' ? instanceRecord.id.trim() : '';
+  if (brokerId) {
+    candidates.add(brokerId);
+  }
+
+  const metadataBrokerId = typeof metadata?.brokerId === 'string' ? metadata.brokerId.trim() : '';
+  if (metadataBrokerId) {
+    candidates.add(metadataBrokerId);
+  }
+
+  for (const candidate of candidates) {
+    if (allowlist.has(candidate)) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 const collectSnapshots = async (
@@ -455,7 +561,8 @@ const processSnapshot = async (
   tenantId: string,
   snapshot: WhatsAppBrokerInstanceSnapshot,
   archivedInstances: Map<string, InstanceArchiveRecord>,
-  lookups: InstanceLookups
+  lookups: InstanceLookups,
+  allowlistedSnapshotIds: SnapshotAllowlist
 ): Promise<{ created?: ReconcileSummary['created'][number]; updated?: ReconcileSummary['updated'][number]; unchangedId?: string }> => {
   const lookupId =
     typeof snapshot.instance?.id === 'string' ? snapshot.instance.id.trim() : '';
@@ -480,6 +587,24 @@ const processSnapshot = async (
       instanceId: derived.instanceId,
       deletedAt: archivedInstances.get(derived.instanceId)?.deletedAt ?? null,
     });
+    return {};
+  }
+
+  const snapshotOrigin = resolveSnapshotOrigin(snapshot);
+  const hasTrustedOrigin = Boolean(snapshotOrigin && snapshotOrigin !== 'broker-sync');
+  const hasTenantBinding = snapshotHasTenantBinding(snapshot, snapshotTenantId);
+  const isAllowlisted = snapshotIsAllowlisted(snapshot, derived, allowlistedSnapshotIds);
+
+  if (action === 'create' && !hasTrustedOrigin && !hasTenantBinding && !isAllowlisted) {
+    deps.logger.warn('whatsapp.instances.sync.discardUntrustedSnapshot', {
+      tenantId: snapshotTenantId,
+      instanceId: derived.instanceId,
+      brokerId: typeof snapshot.instance?.id === 'string' ? snapshot.instance.id : null,
+      origin: snapshotOrigin ?? null,
+      hasTenantBinding,
+      allowlisted: isAllowlisted,
+    });
+    deps.metrics.recordDiscardedSnapshot(snapshotTenantId, 'untrusted-snapshot', snapshotTenantId, derived.instanceId);
     return {};
   }
 
@@ -529,24 +654,32 @@ const processSnapshot = async (
   };
 };
 
-const reconcileSnapshots = async (
-  deps: SyncDependencies,
-  tenantId: string,
-  snapshots: WhatsAppBrokerInstanceSnapshot[],
-  archivedInstances: Map<string, InstanceArchiveRecord>,
-  lookups: InstanceLookups
-): Promise<ReconcileSummary> => {
-  const summary: ReconcileSummary = {
-    created: [],
-    updated: [],
-    unchanged: [],
-  };
+  const reconcileSnapshots = async (
+    deps: SyncDependencies,
+    tenantId: string,
+    snapshots: WhatsAppBrokerInstanceSnapshot[],
+    archivedInstances: Map<string, InstanceArchiveRecord>,
+    lookups: InstanceLookups,
+    allowlistedSnapshotIds: SnapshotAllowlist
+  ): Promise<ReconcileSummary> => {
+    const summary: ReconcileSummary = {
+      created: [],
+      updated: [],
+      unchanged: [],
+    };
 
-  for (const snapshot of snapshots) {
-    const result = await processSnapshot(deps, tenantId, snapshot, archivedInstances, lookups);
-    if (result.created) {
-      summary.created.push(result.created);
-    }
+    for (const snapshot of snapshots) {
+      const result = await processSnapshot(
+        deps,
+        tenantId,
+        snapshot,
+        archivedInstances,
+        lookups,
+        allowlistedSnapshotIds
+      );
+      if (result.created) {
+        summary.created.push(result.created);
+      }
     if (result.updated) {
       summary.updated.push(result.updated);
     }
@@ -584,29 +717,32 @@ const persistChanges = async (
 };
 
 export const createSyncInstancesFromBroker = (deps: SyncDependencies) => {
-  return async (
-    tenantId: string,
-    existing: StoredInstance[],
-    prefetchedSnapshots?: WhatsAppBrokerInstanceSnapshot[]
-  ): Promise<SyncInstancesResult> => {
-    const { snapshots, archivedInstances, lookups } = await collectSnapshots(
-      deps,
-      tenantId,
-      existing,
-      prefetchedSnapshots
-    );
+    return async (
+      tenantId: string,
+      existing: StoredInstance[],
+      prefetchedSnapshots?: WhatsAppBrokerInstanceSnapshot[]
+    ): Promise<SyncInstancesResult> => {
+      const { snapshots, archivedInstances, lookups } = await collectSnapshots(
+        deps,
+        tenantId,
+        existing,
+        prefetchedSnapshots
+      );
 
-    if (!snapshots.length) {
-      return { instances: existing, snapshots };
-    }
+      const allowlistedSnapshotIds = buildSnapshotAllowlist(tenantId, existing);
+
+      if (!snapshots.length) {
+        return { instances: existing, snapshots };
+      }
 
     const summary = await reconcileSnapshots(
-      deps,
-      tenantId,
-      snapshots,
-      archivedInstances,
-      lookups
-    );
+        deps,
+        tenantId,
+        snapshots,
+        archivedInstances,
+        lookups,
+        allowlistedSnapshotIds
+      );
 
     const instances = await persistChanges(deps, tenantId, summary);
     return { instances, snapshots };
