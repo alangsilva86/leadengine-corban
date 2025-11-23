@@ -1,4 +1,13 @@
-import { createElement, lazy, useCallback, useMemo, useRef, type ComponentType, type ReactNode } from 'react';
+import {
+  createElement,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
 import { ONBOARDING_PAGE_IDS } from '@/features/navigation/routes.ts';
 import type { ChatCommandCenterContainerProps } from '../chat/containers/ChatCommandCenterContainer';
 import { WhatsAppInstancesProvider } from '../whatsapp/hooks/useWhatsAppInstances.jsx';
@@ -153,6 +162,27 @@ export function useOnboardingJourney(options?: UseOnboardingJourneyOptions) {
       tenantId,
     };
   }, [providedCurrentUser]);
+
+  useEffect(() => {
+    if (selectedAgreement || !currentUser?.tenantId) {
+      return;
+    }
+
+    setSelectedAgreement((previous) => {
+      if (previous?.tenantId) {
+        return previous;
+      }
+
+      const tenantId = String(currentUser.tenantId);
+      const tenantFromUser = currentUser.tenant ?? null;
+
+      return {
+        id: tenantFromUser?.id ?? tenantId,
+        tenantId,
+        name: tenantFromUser?.name ?? currentUser.name ?? 'Minha operação',
+      } satisfies OnboardingAgreement;
+    });
+  }, [currentUser, selectedAgreement, setSelectedAgreement]);
 
   const computeNextSetupPage = useCallback((): OnboardingPage => {
     if (journeyKind === 'invite') {
