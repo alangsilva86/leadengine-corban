@@ -629,6 +629,10 @@ class WhatsAppBrokerClient {
     return performWhatsAppBrokerRequest<T>(path, init, options);
   }
 
+  async checkHealth(): Promise<void> {
+    await this.request('/health', { method: 'GET' });
+  }
+
   private resolveInstanceIdentifiers(
     fallbackId: string,
     override?: string | null
@@ -1472,6 +1476,7 @@ class WhatsAppBrokerClient {
     name: string;
     instanceId?: string;
     webhookUrl?: string;
+    idempotencyKey?: string;
   }): Promise<WhatsAppInstance> {
     const config = this.resolveConfig();
 
@@ -1480,6 +1485,10 @@ class WhatsAppBrokerClient {
       normalizedTenantId.length > 0
         ? { searchParams: { tenantId: normalizedTenantId }, tenantId: normalizedTenantId }
         : {};
+
+    if (args.idempotencyKey?.trim()) {
+      requestOptions.idempotencyKey = args.idempotencyKey.trim();
+    }
 
     const requestedInstanceId = (() => {
       const explicitId = typeof args.instanceId === 'string' ? args.instanceId.trim() : '';

@@ -30,6 +30,7 @@ export interface CreateInstancePayload {
   name: string;
   id?: Nullable<string>;
   tenantId?: Nullable<string>;
+  idempotencyKey?: Nullable<string>;
 }
 
 export interface DeleteInstancePayload {

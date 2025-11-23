@@ -520,9 +520,17 @@ export default function useWhatsAppInstances(options = {}) {
         toast.warning(message);
         throw new Error(message);
       }
+      const normalizedName = name.trim();
+      const normalizedId = typeof id === 'string' && id.trim() ? id.trim() : null;
+      const idempotencyKeyParts = [selectedAgreement?.tenantId ?? null, normalizedId ?? normalizedName]
+        .filter((value) => typeof value === 'string' && value)
+        .map((value) => value?.toString?.().trim())
+        .filter(Boolean);
+
       const payload = ensureTenantMeta(selectedAgreement, {
-        name: name.trim(),
-        id: id ?? undefined,
+        name: normalizedName,
+        id: normalizedId ?? undefined,
+        idempotencyKey: idempotencyKeyParts.length ? idempotencyKeyParts.join('|') : undefined,
       });
       try {
         await services.api.createInstance(payload);

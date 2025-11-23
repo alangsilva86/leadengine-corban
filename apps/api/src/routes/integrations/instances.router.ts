@@ -554,6 +554,11 @@ router.get(
 
       res.status(200).json(payload);
     } catch (error: unknown) {
+      if (error instanceof WhatsAppBrokerError || hasErrorName(error, 'WhatsAppBrokerError')) {
+        respondWhatsAppBrokerFailure(res, error as WhatsAppBrokerError);
+        return;
+      }
+
       if (handleWhatsAppIntegrationError(res, error)) {
         return;
       }

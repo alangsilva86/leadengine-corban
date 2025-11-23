@@ -732,11 +732,18 @@ export const createWhatsAppInstanceSchema = z
       .refine((value) => value.length > 0, INVALID_INSTANCE_ID_MESSAGE)
       .optional(),
     tenantId: z.string().optional().transform((value) => (typeof value === 'string' ? value.trim() : value)),
+    idempotencyKey: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length > 0, 'Chave de idempotência inválida.')
+      .optional(),
   })
   .transform((data) => ({
     ...data,
     id: data.id && data.id.length > 0 ? data.id : undefined,
     tenantId: data.tenantId && data.tenantId.length > 0 ? data.tenantId : undefined,
+    idempotencyKey:
+      data.idempotencyKey && data.idempotencyKey.length > 0 ? data.idempotencyKey : undefined,
   }));
 
 export const executeSideEffects = async (
@@ -1057,6 +1064,34 @@ const toJsonObject = (value: unknown): Record<string, unknown> => {
   }
 };
 
+const describeRefreshFailure = (
+  error: unknown,
+): { cause: string; status: number | null; code: string | null } => {
+  const status = readBrokerErrorStatus(error);
+  const code = readBrokerErrorCode(error);
+  const message = readBrokerErrorMessage(error)?.toLowerCase() ?? '';
+
+  if (status === 503 || status === 502 || code === '503') {
+    return { cause: 'service_unavailable', status, code };
+  }
+
+  if (
+    status === 504 ||
+    status === 408 ||
+    (code ? code.toLowerCase().includes('timeout') : false) ||
+    message.includes('timeout') ||
+    message.includes('timed out')
+  ) {
+    return { cause: 'timeout', status, code };
+  }
+
+  if (message.includes('dns') || message.includes('enotfound') || message.includes('getaddrinfo')) {
+    return { cause: 'dns', status, code };
+  }
+
+  return { cause: 'unknown', status, code };
+};
+
 export const createWhatsAppInstance = async ({
   tenantId,
   actorId,
@@ -1074,6 +1109,100 @@ export const createWhatsAppInstance = async ({
   let operationResult: InstanceOperationResult = 'success';
   const resolvedMode = mode || 'api';
 
+  const name = input.name.trim();
+  const explicitId = input.id?.trim() ?? '';
+  const instanceId = explicitId || name || resolveDefaultInstanceId();
+  const idempotencyKey = input.idempotencyKey?.trim() ?? null;
+
+  if (idempotencyKey) {
+    const existingByIdempotencyKey = await prisma.whatsAppInstance.findFirst({
+      where: {
+        tenantId,
+        metadata: {
+          path: ['idempotencyKey'],
+          equals: idempotencyKey,
+        },
+      },
+    });
+
+    if (existingByIdempotencyKey) {
+      const serialized = serializeStoredInstance(existingByIdempotencyKey, null);
+      return {
+        serialized,
+        sideEffects: [],
+        context: {
+          tenantId: existingByIdempotencyKey.tenantId,
+          actorId,
+          instanceId: serialized.id,
+          brokerId: existingByIdempotencyKey.brokerId,
+        },
+      };
+    }
+  }
+
+  const existing = await prisma.whatsAppInstance.findFirst({
+    where: {
+      tenantId,
+      id: instanceId,
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
+    throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
+  }
+
+  safeIncrementHttpCounter();
+  const brokerStartedAt = Date.now();
+  const brokerInstance = await whatsappBrokerClient.createInstance({
+    tenantId,
+    name,
+    instanceId,
+    idempotencyKey: idempotencyKey ?? undefined,
+  }).catch((error) => {
+    const responseTimeMs = Date.now() - brokerStartedAt;
+    if (error instanceof WhatsAppBrokerError) {
+      (error as WhatsAppBrokerError & { responseTimeMs?: number }).responseTimeMs = responseTimeMs;
+    }
+    throw error;
+  });
+
+  const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
+  const brokerId = brokerIdCandidate.length > 0 ? brokerIdCandidate : instanceId;
+  const brokerNameCandidate = typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
+  const displayName = brokerNameCandidate.length > 0 ? brokerNameCandidate : name;
+  const mappedStatus = mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
+  const connected = Boolean(brokerInstance.connected ?? mappedStatus === 'connected');
+  const phoneNumber =
+    typeof brokerInstance.phoneNumber === 'string' && brokerInstance.phoneNumber.trim().length > 0
+      ? brokerInstance.phoneNumber.trim()
+      : null;
+
+  const historyEntry = buildHistoryEntry(
+    'created',
+    actorId,
+    compactRecord({
+      status: mappedStatus,
+      connected,
+      name: displayName,
+      phoneNumber: phoneNumber ?? undefined,
+    }),
+  );
+
+  const baseMetadata: Record<string, unknown> = {
+    displayId: instanceId,
+    slug: instanceId,
+    brokerId,
+    displayName,
+    label: displayName,
+    origin: 'api-create',
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+  };
+  const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry);
+  const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
+
+  let stored: StoredInstance;
   try {
     const name = input.name.trim();
     const explicitId = input.id?.trim() ?? '';
@@ -1263,6 +1392,7 @@ type InstanceCollectionResult = {
   synced?: boolean;
   storageFallback?: boolean;
   warnings?: string[];
+  refreshFailure?: { cause: string; status: number | null; code: string | null } | null;
 };
 
 const toPublicInstance = (
@@ -1402,6 +1532,26 @@ export const collectInstancesForTenant = async (
   const mode = resolveCollectionMode(options);
   const requestId = options.requestId ?? null;
   let operationResult: InstanceOperationResult = 'success';
+  const refreshFlag = options.refresh;
+  const fetchSnapshots = options.fetchSnapshots ?? false;
+  const warnings: string[] = [];
+
+  let refreshFailure: InstanceCollectionResult['refreshFailure'] = null;
+
+  let storageDegraded = false;
+  let cacheHit: boolean | undefined;
+  let cacheBackend: SnapshotCacheBackendType | undefined;
+
+  const recordCacheOutcome = (result: SnapshotCacheReadResult | null): void => {
+    if (!result) return;
+    cacheHit = result.hit;
+    cacheBackend = result.backend;
+    const outcome = result.error ? 'error' : result.hit ? 'hit' : 'miss';
+    metrics.recordSnapshotCacheOutcome(tenantId, result.backend, outcome);
+    if (result.error) {
+      warnings.push('Cache de snapshots indisponível; executando fallback.');
+    }
+  };
 
   try {
     const refreshFlag = options.refresh;
@@ -1664,6 +1814,31 @@ export const collectInstancesForTenant = async (
           } else {
             throw error;
           }
+          const errorCode =
+            (error as { code?: string }).code ??
+            (error as { name?: string }).name ??
+            (error instanceof Error ? error.name : null);
+          metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
+          const failure = describeRefreshFailure(error);
+          refreshFailure = failure;
+          warnings.push('Refresh falhou; exibindo dados atuais de storage/cache.');
+
+          logger.warn('whatsapp.instances.collect.refreshFailure', {
+            tenantId,
+            attempt,
+            cause: failure.cause,
+            status: failure.status,
+            code: failure.code,
+            error: describeErrorForLog(error),
+          });
+
+          if (error instanceof WhatsAppBrokerNotConfiguredError) {
+            logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
+            snapshots = snapshots ?? [];
+            return;
+          }
+
+          return;
         }
       }
     } else if (!snapshots) {
@@ -1684,6 +1859,35 @@ export const collectInstancesForTenant = async (
         const normalizedId = typeof rawId === 'string' ? rawId.trim() : '';
         if (normalizedId && !snapshotMap.has(normalizedId)) {
           snapshotMap.set(normalizedId, snapshot);
+            logger.debug('whatsapp.instances.cache.write.success', {
+              tenantId,
+              operation: cacheWrite.name,
+              durationMs: cacheWrite.durationMs,
+              timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+            });
+          } catch (error) {
+            logger.warn('whatsapp.instances.cache.write.failure', {
+              tenantId,
+              operation: 'setCachedSnapshots',
+              error: describeErrorForLog(error),
+              timeoutMs: CACHE_WRITE_TIMEOUT_MS,
+            });
+          }
+        }
+      } catch (error) {
+        const failure = describeRefreshFailure(error);
+        logger.warn('whatsapp.instances.collect.snapshotFailure', {
+          tenantId,
+          cause: failure.cause,
+          status: failure.status,
+          code: failure.code,
+          error: describeErrorForLog(error),
+        });
+
+        if (error instanceof WhatsAppBrokerNotConfiguredError) {
+          snapshots = [];
+        } else {
+          throw error;
         }
       }
     }
@@ -1747,6 +1951,24 @@ export const collectInstancesForTenant = async (
       storageFallback: storageDegraded,
       warnings,
     };
+      refreshFailure,
+    } satisfies InstanceCollectionResult;
+  }
+
+  for (const stored of storedInstances) {
+    const snapshot = snapshotMap.get(stored.id) ??
+      (stored.brokerId ? snapshotMap.get(stored.brokerId) : undefined);
+    const brokerStatus = snapshot?.status ?? null;
+    const serialized = serializeStoredInstance(stored, brokerStatus);
+
+    // Keep E.164 normalized phone in DB when we discover a better one
+    if (serialized.phoneNumber && serialized.phoneNumber !== stored.phoneNumber) {
+      await repository.updatePhoneNumber(stored.id, serialized.phoneNumber);
+      stored.phoneNumber = serialized.phoneNumber;
+    }
+
+    entries.push({ stored, serialized, status: brokerStatus });
+  }
 
     return result;
   } catch (error) {
@@ -1757,6 +1979,26 @@ export const collectInstancesForTenant = async (
     metrics.recordOperationOutcome('collect', tenantId, mode, operationResult);
     metrics.recordOperationDuration('collect', tenantId, mode, operationResult, durationMs);
   }
+
+  const instances = entries.map(({ serialized }) => toPublicInstance(serialized));
+
+  const result: InstanceCollectionResult = {
+    entries,
+    instances,
+    rawInstances: entries.map(({ serialized }) => serialized),
+    map,
+    snapshots: snapshots ?? [],
+    cacheHit,
+    cacheBackend,
+    shouldRefresh,
+    fetchSnapshots,
+    synced,
+    storageFallback: storageDegraded,
+    warnings,
+    refreshFailure,
+  };
+
+  return result;
 };
 
 export type InstanceOperationContext = {

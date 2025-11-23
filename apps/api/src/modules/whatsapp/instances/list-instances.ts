@@ -2,6 +2,11 @@ import { z } from 'zod';
 import { collectInstancesForTenant } from '.';
 import type { NormalizedInstance } from './types';
 import { normalizeQueryValue } from '../../../utils/request-parsers';
+import { whatsappBrokerClient, WhatsAppBrokerError, WhatsAppBrokerNotConfiguredError } from '../../../services/whatsapp-broker-client';
+import { defaultInstanceMetrics } from './metrics';
+import { logger } from '../../../config/logger';
+import { describeErrorForLog } from './errors';
+import { readBrokerErrorStatus } from './http';
 
 const modeSchema = z.enum(['db', 'snapshot', 'sync']).optional();
 const fieldsSchema = z.enum(['basic', 'metrics', 'full']).optional();
@@ -77,6 +82,33 @@ const pickMetrics = (instance: NormalizedInstance) => ({
   rate: instance.rate ?? null,
 });
 
+const ensureBrokerHealthy = async (tenantId: string): Promise<void> => {
+  try {
+    await whatsappBrokerClient.checkHealth();
+  } catch (error) {
+    if (error instanceof WhatsAppBrokerNotConfiguredError) {
+      throw error;
+    }
+
+    const brokerError = error instanceof WhatsAppBrokerError ? error : null;
+    defaultInstanceMetrics.recordBrokerHealthFailure(tenantId, brokerError?.code ?? null);
+
+    logger.warn('whatsapp.instances.health.failed', {
+      tenantId,
+      status: readBrokerErrorStatus(brokerError ?? error),
+      code: brokerError?.code ?? null,
+      requestId: brokerError?.requestId ?? null,
+      error: describeErrorForLog(error),
+    });
+
+    throw new WhatsAppBrokerError('WhatsApp broker indisponível no momento.', {
+      code: 'BROKER_UNAVAILABLE',
+      status: readBrokerErrorStatus(brokerError ?? error) ?? 503,
+      requestId: brokerError?.requestId,
+    });
+  }
+};
+
 type ListInstancesUseCaseInput = {
   tenantId: string;
   query: ListInstancesQuery;
@@ -88,6 +120,7 @@ type ListInstancesMeta = {
   mode: ListInstancesQuery['mode'];
   refreshRequested: boolean;
   shouldRefresh: boolean;
+  refreshFailed: boolean;
   fetchSnapshots: boolean;
   synced: boolean;
   instancesCount: number;
@@ -96,6 +129,7 @@ type ListInstancesMeta = {
   warnings: string[];
   cacheHit?: boolean;
   cacheBackend?: 'memory' | 'redis';
+  refreshFailure?: { cause: string; status: number | null; code: string | null } | null;
 };
 
 type ListInstancesPayload = {
@@ -121,6 +155,9 @@ export const listInstancesUseCase = async ({
     mode: query.mode,
     requestId,
   });
+  await ensureBrokerHealthy(tenantId);
+
+  const result = await collectInstancesForTenant(tenantId, collectionOptions);
   const instancesSource = result.instances;
 
   const instances =
@@ -132,11 +169,13 @@ export const listInstancesUseCase = async ({
 
   const durationMs = Date.now() - startedAt;
   const refreshRequested = query.refreshOverride === true;
+  const refreshFailed = Boolean(result.refreshFailure);
   const meta: ListInstancesMeta = {
     tenantId,
     mode: query.mode,
     refreshRequested,
     shouldRefresh: result.shouldRefresh ?? false,
+    refreshFailed,
     fetchSnapshots: result.fetchSnapshots ?? false,
     synced: result.synced ?? false,
     instancesCount: instances.length,
@@ -145,6 +184,7 @@ export const listInstancesUseCase = async ({
     warnings: result.warnings ?? [],
     cacheHit: result.cacheHit,
     cacheBackend: result.cacheBackend,
+    refreshFailure: result.refreshFailure ?? null,
   };
 
   return {
@@ -165,6 +205,7 @@ export const listInstancesUseCase = async ({
       mode: query.mode,
       refreshRequested,
       shouldRefresh: meta.shouldRefresh,
+      refreshFailed: meta.refreshFailed,
       fetchSnapshots: meta.fetchSnapshots,
       synced: meta.synced,
       cacheHit: meta.cacheHit,
