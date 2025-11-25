@@ -19,6 +19,25 @@ const showToast = (type, message, stateRef) => {
   toast[type]?.(message);
 };
 
+const createHiddenTextarea = (value) => {
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'absolute';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (!cleaned && textarea?.parentNode === document.body) {
+      document.body.removeChild(textarea);
+    }
+    cleaned = true;
+  };
+
+  return { textarea, cleanup };
+};
+
 const copyWithFallback = async (value) => {
   try {
     if (typeof navigator !== 'undefined' && navigator?.clipboard?.writeText) {
@@ -30,20 +49,15 @@ const copyWithFallback = async (value) => {
   }
 
   if (typeof document !== 'undefined') {
-    const textarea = document.createElement('textarea');
-    textarea.value = value;
-    textarea.setAttribute('readonly', '');
-    textarea.style.position = 'absolute';
-    textarea.style.left = '-9999px';
-    document.body.appendChild(textarea);
+    const { textarea, cleanup } = createHiddenTextarea(value);
     textarea.select();
     try {
       const ok = document.execCommand('copy');
-      document.body.removeChild(textarea);
       return ok;
     } catch {
-      document.body.removeChild(textarea);
       return false;
+    } finally {
+      cleanup();
     }
   }
 
