@@ -1,6 +1,14 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog.jsx';
 import { cn } from '@/lib/utils.js';
 import {
   Check,
@@ -126,6 +134,12 @@ export const MessageBubble = ({
 
   const resolvedType = effectiveMessageType === 'media' && mediaType ? mediaType : effectiveMessageType;
 
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const isPreviewable = useMemo(
+    () => Boolean(mediaUrl && ['image', 'video', 'document'].includes(resolvedType)),
+    [mediaUrl, resolvedType]
+  );
+
   const resolveFileName = () => {
     if (typeof message.fileName === 'string' && message.fileName.trim().length > 0) {
       return message.fileName;
@@ -220,15 +234,41 @@ export const MessageBubble = ({
 
     if (resolvedType === 'image' && mediaUrl) {
       return (
-        <figure className="flex flex-col gap-2">
-          <img
-            src={mediaUrl}
-            alt={caption ?? 'Imagem recebida'}
-            className="max-h-64 w-full rounded-lg object-contain"
-          />
-          {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
-          {renderDownloadAction('Baixar imagem')}
-        </figure>
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <div className="flex flex-col gap-2">
+            <DialogTrigger asChild disabled={!isPreviewable}>
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                className="group relative rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[color:var(--accent-inbox-primary)]"
+              >
+                <img
+                  src={mediaUrl}
+                  alt={caption ?? 'Imagem recebida'}
+                  className="max-h-64 w-full rounded-lg object-contain transition group-hover:brightness-110"
+                />
+                <span className="sr-only">Ampliar imagem</span>
+              </button>
+            </DialogTrigger>
+            {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
+            {renderDownloadAction('Baixar imagem')}
+          </div>
+
+          <DialogContent className="sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Pré-visualização da imagem</DialogTitle>
+              {caption ? <DialogDescription>{caption}</DialogDescription> : null}
+            </DialogHeader>
+            <div className="max-h-[70vh] overflow-hidden rounded-md bg-black/50 p-2">
+              <img
+                src={mediaUrl}
+                alt={caption ?? 'Imagem recebida'}
+                className="mx-auto max-h-[65vh] w-full rounded-md object-contain"
+              />
+            </div>
+            {renderDownloadAction('Baixar imagem')}
+          </DialogContent>
+        </Dialog>
       );
     }
 
@@ -238,16 +278,43 @@ export const MessageBubble = ({
       }
 
       return (
-        <figure className="flex flex-col gap-2">
-          <video
-            controls
-            src={mediaUrl}
-            className="max-h-64 w-full overflow-hidden rounded-lg"
-            preload="metadata"
-          />
-          {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
-          {renderDownloadAction('Baixar vídeo')}
-        </figure>
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <div className="flex flex-col gap-2">
+            <DialogTrigger asChild disabled={!isPreviewable}>
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                className="group relative rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[color:var(--accent-inbox-primary)]"
+              >
+                <video
+                  controls
+                  src={mediaUrl}
+                  className="max-h-64 w-full overflow-hidden rounded-lg transition group-hover:brightness-[1.08]"
+                  preload="metadata"
+                />
+                <span className="sr-only">Ampliar vídeo</span>
+              </button>
+            </DialogTrigger>
+            {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
+            {renderDownloadAction('Baixar vídeo')}
+          </div>
+
+          <DialogContent className="sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>Pré-visualização do vídeo</DialogTitle>
+              {caption ? <DialogDescription>{caption}</DialogDescription> : null}
+            </DialogHeader>
+            <div className="max-h-[70vh] overflow-hidden rounded-md bg-black/50 p-2">
+              <video
+                controls
+                src={mediaUrl}
+                className="mx-auto max-h-[65vh] w-full overflow-hidden rounded-md"
+                preload="metadata"
+              />
+            </div>
+            {renderDownloadAction('Baixar vídeo')}
+          </DialogContent>
+        </Dialog>
       );
     }
 
@@ -274,19 +341,48 @@ export const MessageBubble = ({
       const fileName = resolveFileName();
 
       return (
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2">
-            <FileText className="h-4 w-4 text-foreground" aria-hidden="true" />
-            <div className="flex flex-col">
-              <span className="text-sm font-semibold text-foreground">{fileName}</span>
-              <span className="text-xs text-foreground-muted">Documento</span>
-            </div>
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <div className="flex flex-col gap-3">
+            <DialogTrigger asChild disabled={!isPreviewable}>
+              <button
+                type="button"
+                onClick={() => setPreviewOpen(true)}
+                className="flex items-center gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2 text-left transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[color:var(--accent-inbox-primary)]"
+              >
+                <FileText className="h-4 w-4 text-foreground" aria-hidden="true" />
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-foreground">{fileName}</span>
+                  <span className="text-xs text-foreground-muted">Documento</span>
+                </div>
+              </button>
+            </DialogTrigger>
+            {mediaUrl ? renderDownloadAction('Baixar arquivo') : (
+              <span className="text-xs opacity-60">Pré-visualização indisponível</span>
+            )}
+            {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
           </div>
-          {mediaUrl ? renderDownloadAction('Baixar arquivo') : (
-            <span className="text-xs opacity-60">Pré-visualização indisponível</span>
-          )}
-          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
-        </div>
+
+          {mediaUrl ? (
+            <DialogContent className="sm:max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>{fileName}</DialogTitle>
+                {caption ? <DialogDescription>{caption}</DialogDescription> : null}
+              </DialogHeader>
+              <div className="max-h-[70vh] overflow-hidden rounded-md bg-surface-overlay-quiet p-3">
+                <div className="flex items-center gap-2 pb-3">
+                  <FileText className="h-4 w-4 text-foreground" aria-hidden="true" />
+                  <span className="text-sm font-semibold text-foreground">Pré-visualização do documento</span>
+                </div>
+                <iframe
+                  title={`Pré-visualização de ${fileName}`}
+                  src={mediaUrl}
+                  className="h-[60vh] w-full rounded-md bg-white"
+                />
+              </div>
+              {renderDownloadAction('Baixar arquivo')}
+            </DialogContent>
+          ) : null}
+        </Dialog>
       );
     }
 
