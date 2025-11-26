@@ -1,6 +1,6 @@
 import express, { type Request } from 'express';
 import request from 'supertest';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../types/tickets';
 import {
   WhatsAppBrokerError,
@@ -94,6 +94,21 @@ const buildApp = () => {
 };
 
 describe('POST /api/tickets/messages validations', () => {
+  const originalDefaultInstanceId = process.env.WHATSAPP_DEFAULT_INSTANCE_ID;
+
+  beforeAll(() => {
+    process.env.WHATSAPP_DEFAULT_INSTANCE_ID = 'default-instance-id';
+  });
+
+  afterAll(() => {
+    if (originalDefaultInstanceId === undefined) {
+      delete process.env.WHATSAPP_DEFAULT_INSTANCE_ID;
+      return;
+    }
+
+    process.env.WHATSAPP_DEFAULT_INSTANCE_ID = originalDefaultInstanceId;
+  });
+
   beforeEach(() => {
     sendMessageMock.mockReset();
     findOrCreateOpenTicketByChatMock.mockReset();
@@ -294,6 +309,59 @@ describe('POST /api/tickets/messages validations', () => {
       messageId: 'message-chat-1',
       externalId: 'wamid-chat',
     });
+  });
+
+  it('accepts media payloads carrying only base64 and stores them', async () => {
+    const app = buildApp();
+
+    findOrCreateOpenTicketByChatMock.mockResolvedValueOnce({
+      ticket: { id: 'ticket-chat-124', contactId: 'contact-2' },
+      wasCreated: true,
+    });
+
+    upsertMessageByExternalIdMock.mockResolvedValueOnce({
+      message: { id: 'message-chat-2', ticketId: 'ticket-chat-124', externalId: 'wamid-chat-2' },
+      wasCreated: true,
+    });
+
+    const response = await request(app).post('/api/tickets/messages').send({
+      chatId: '5511988887777@s.whatsapp.net',
+      type: 'IMAGE',
+      media: {
+        mediaType: 'IMAGE',
+        base64: 'data:image/jpeg;base64,AAABBB',
+        caption: '  Foto do produto  ',
+      },
+    });
+
+    expect(response.status).toBe(200);
+
+    const [instanceId, transportPayload] = transportSendMessageMock.mock.calls[0];
+    expect(instanceId).toBe('default-instance-id');
+    expect(transportPayload).toMatchObject({
+      type: 'image',
+      caption: 'Foto do produto',
+      media: expect.objectContaining({
+        mediaType: 'image',
+        base64: 'data:image/jpeg;base64,AAABBB',
+      }),
+    });
+    expect(transportPayload.mediaUrl).toBeUndefined();
+
+    const storagePayload = upsertMessageByExternalIdMock.mock.calls[0]?.[0];
+    expect(storagePayload.media).toMatchObject({
+      mediaType: 'image',
+      base64: 'data:image/jpeg;base64,AAABBB',
+      url: null,
+      caption: 'Foto do produto',
+    });
+
+    expect(brokerObservabilityMocks.recordBrokerSuccessMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: '5511988887777@s.whatsapp.net',
+        brokerStatus: 200,
+      })
+    );
   });
 
   it('returns 502 when the broker rejects the send request', async () => {
