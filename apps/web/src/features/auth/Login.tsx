@@ -6,14 +6,15 @@ import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { useAuth } from './AuthProvider.jsx';
-import { getTenantId } from '@/lib/auth.js';
+import { getTenantId, getTenantSlugHint } from '@/lib/auth.js';
 import { getEnvVar } from '@/lib/runtime-env.js';
 
 const resolveEnvString = (value: unknown) => (typeof value === 'string' ? value : '');
 
-const storedTenant = getTenantId() ?? '';
+const storedTenantSlugHint = getTenantSlugHint() ?? '';
+const storedTenantId = getTenantId() ?? '';
 const defaultTenantHint = resolveEnvString(getEnvVar('VITE_DEFAULT_TENANT_HINT', ''));
-const initialTenant = storedTenant || defaultTenantHint;
+const initialTenant = storedTenantSlugHint || defaultTenantHint || storedTenantId;
 const prefillEmail = resolveEnvString(getEnvVar('VITE_AUTH_PREFILL_EMAIL', ''));
 const prefillPassword = resolveEnvString(getEnvVar('VITE_AUTH_PREFILL_PASSWORD', ''));
 const authProvider = resolveEnvString(getEnvVar('VITE_AUTH_PROVIDER', 'internal')).toLowerCase();
@@ -29,7 +30,7 @@ const resolveErrorMessage = (error: unknown) => {
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { status, loading, login, recoverPassword, selectTenant } = useAuth();
+  const { status, loading, login, recoverPassword } = useAuth();
   const [mode, setMode] = useState<'login' | 'recover'>('login');
   const [form, setForm] = useState({ email: prefillEmail, password: prefillPassword, tenantSlug: initialTenant });
   const [submitting, setSubmitting] = useState(false);
@@ -74,7 +75,6 @@ export default function LoginPage() {
           password: form.password,
           tenantSlug: normalize(form.tenantSlug),
         });
-        selectTenant?.(normalize(form.tenantSlug));
         navigate('/', { replace: true });
       } else {
         await recoverPassword({
