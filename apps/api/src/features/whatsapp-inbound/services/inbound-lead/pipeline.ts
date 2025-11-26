@@ -134,7 +134,7 @@ export const processStandardInboundEvent = async (
     (metadataContact as any).profilePicUrl,
     (metadataContact as any).profilePicture,
   ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
-  const resolvedName = pickPreferredName(contact.name, (contact as any).pushName, metadataPushName);
+  const resolvedName = pickPreferredName(metadataPushName, (contact as any).pushName, contact.name);
 
   const normalizedEventTenantId =
     typeof eventTenantId === 'string' && eventTenantId.trim().length > 0 ? eventTenantId.trim() : null;

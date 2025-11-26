@@ -1254,6 +1254,74 @@ describe('processStandardInboundEvent', () => {
     );
   });
 
+  it('prefers WhatsApp push name over contact name when deriving identity', async () => {
+    queueCacheByTenant.set('tenant-push', {
+      id: 'queue-identity',
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
+    });
+
+    const event: InboundEvent = {
+      id: 'event-push-name',
+      instanceId: 'instance-push',
+      tenantId: 'tenant-push',
+      direction: 'INBOUND',
+      contact: {
+        phone: '+5511999999999',
+        name: 'Acessus Serviços Financeiros',
+        pushName: 'Cliente WhatsApp',
+      },
+      message: { id: 'message-push', text: 'Olá!' },
+      timestamp: new Date('2024-03-22T10:00:00.000Z').toISOString(),
+      metadata: {
+        requestId: 'req-push-name',
+        pushName: 'Cliente WhatsApp',
+        contact: { pushName: 'Cliente WhatsApp' },
+      },
+      chatId: '5511999999999@s.whatsapp.net',
+      externalId: 'ext-push',
+      sessionId: 'session-push',
+    } as unknown as InboundEvent;
+
+    contactFindUniqueMock.mockResolvedValueOnce(null);
+    contactFindFirstMock.mockResolvedValueOnce(null);
+
+    const contactCreateCalls: Array<{ data?: Record<string, unknown> }> = [];
+    contactCreateMock.mockImplementationOnce(async (args: { data?: Record<string, unknown> }) => {
+      contactCreateCalls.push(args);
+      return {
+        id: 'contact-push',
+        tenantId: 'tenant-push',
+        primaryPhone: (args.data as any)?.primaryPhone ?? '+5511999999999',
+        displayName: (args.data as any)?.displayName,
+        fullName: (args.data as any)?.fullName,
+      };
+    });
+
+    createTicketMock.mockResolvedValueOnce({ id: 'ticket-push' });
+    ticketFindUniqueMock.mockResolvedValueOnce({
+      id: 'ticket-push',
+      status: 'OPEN',
+      updatedAt: new Date('2024-03-22T10:00:00.000Z'),
+    });
+
+    await testing.processStandardInboundEvent(event, Date.now(), { preloadedInstance: null });
+
+    expect(contactCreateCalls[0]?.data).toMatchObject({
+      displayName: 'Cliente WhatsApp',
+      fullName: 'Cliente WhatsApp',
+    });
+    expect(createTicketMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: 'Cliente WhatsApp',
+        metadata: expect.objectContaining({
+          contactName: 'Cliente WhatsApp',
+          contact: expect.objectContaining({ name: 'Cliente WhatsApp', pushName: 'Cliente WhatsApp' }),
+          whatsapp: expect.objectContaining({ pushName: 'Cliente WhatsApp' }),
+        }),
+      })
+    );
+  });
+
   it('enriches broker metadata with tenant hints before auto provisioning when webhook metadata lacks tenant fields', async () => {
     const now = new Date('2024-03-30T12:30:00.000Z');
 
