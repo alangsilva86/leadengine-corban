@@ -11,7 +11,15 @@ const DEFAULT_TENANT_ID = (() => {
     : 'demo-tenant';
 })();
 
+const DEFAULT_TENANT_SLUG_HINT = (() => {
+  const envTenantHint = getEnvVar('VITE_DEFAULT_TENANT_HINT');
+  return typeof envTenantHint === 'string' && envTenantHint.trim().length > 0
+    ? envTenantHint.trim()
+    : '';
+})();
+
 const TENANT_STORAGE_KEY = 'tenantId';
+const TENANT_SLUG_HINT_STORAGE_KEY = 'tenantSlugHint';
 const AUTH_STORAGE_KEY = 'leadengine.auth.session.v1';
 
 const storageCandidates = [
@@ -57,6 +65,7 @@ const tenantSubscribers = new Set();
 const tokenExpirationSubscribers = new Set();
 
 let currentTenantId = readFromStorage(TENANT_STORAGE_KEY) || DEFAULT_TENANT_ID;
+let currentTenantSlugHint = readFromStorage(TENANT_SLUG_HINT_STORAGE_KEY) || DEFAULT_TENANT_SLUG_HINT;
 let currentAuthToken = null;
 let currentAuthPayload = null;
 let currentAuthExpiresAt = null;
@@ -180,6 +189,13 @@ const applyTenantChange = (tenantId) => {
   return currentTenantId;
 };
 
+const applyTenantSlugHintChange = (tenantSlug) => {
+  const normalized = typeof tenantSlug === 'string' ? tenantSlug.trim() : '';
+  currentTenantSlugHint = normalized;
+  writeToStorage(TENANT_SLUG_HINT_STORAGE_KEY, currentTenantSlugHint || null);
+  return currentTenantSlugHint;
+};
+
 const restoreAuthState = () => {
   const raw = readFromStorage(AUTH_STORAGE_KEY);
   if (!raw) {
@@ -287,6 +303,8 @@ export const clearAuthToken = () => {
 
 export const getTenantId = () => currentTenantId;
 
+export const getTenantSlugHint = () => currentTenantSlugHint || DEFAULT_TENANT_SLUG_HINT;
+
 export const onTenantIdChange = (callback) => {
   if (typeof callback !== 'function') {
     return () => {};
@@ -298,8 +316,14 @@ export const onTenantIdChange = (callback) => {
 
 export const setTenantId = (tenantId) => applyTenantChange(tenantId);
 
+export const setTenantSlugHint = (tenantSlug) => applyTenantSlugHintChange(tenantSlug);
+
 export const clearTenantId = () => {
   applyTenantChange(DEFAULT_TENANT_ID);
+};
+
+export const clearTenantSlugHint = () => {
+  applyTenantSlugHintChange(DEFAULT_TENANT_SLUG_HINT);
 };
 
 export default {
@@ -311,6 +335,9 @@ export default {
   getAuthPayload,
   getTenantId,
   setTenantId,
+  getTenantSlugHint,
+  setTenantSlugHint,
   clearTenantId,
+  clearTenantSlugHint,
   onTenantIdChange,
 };

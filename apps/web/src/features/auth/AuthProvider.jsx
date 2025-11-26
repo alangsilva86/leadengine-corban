@@ -10,6 +10,7 @@ import {
   onAuthTokenExpire,
   setAuthToken,
   setTenantId,
+  setTenantSlugHint,
 } from '@/lib/auth.js';
 
 const AuthContext = createContext(null);
@@ -23,6 +24,19 @@ const resolveTenantFromUser = (user) => {
   }
   if (user.tenant && typeof user.tenant === 'object') {
     const candidate = user.tenant.id ?? user.tenant.tenantId;
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+};
+
+const resolveTenantSlugHintFromUser = (user) => {
+  if (!user || typeof user !== 'object') {
+    return null;
+  }
+  if (user.tenant && typeof user.tenant === 'object') {
+    const candidate = user.tenant.slug ?? user.tenant.name;
     if (typeof candidate === 'string' && candidate.trim()) {
       return candidate.trim();
     }
@@ -80,8 +94,12 @@ export const AuthProvider = ({ children }) => {
         }
         const user = response?.data ?? null;
         const tenantFromUser = resolveTenantFromUser(user);
+        const tenantSlugHint = resolveTenantSlugHintFromUser(user);
         if (tenantFromUser) {
           setTenantId(tenantFromUser);
+        }
+        if (tenantSlugHint) {
+          setTenantSlugHint(tenantSlugHint);
         }
         finishWith(user ? 'authenticated' : 'unauthenticated', user);
         return user;
@@ -166,8 +184,13 @@ export const AuthProvider = ({ children }) => {
     const expiresAt = Date.now() + (remember ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000);
     setAuthToken(token, { expiresAt });
     const tenant = payload?.data?.user?.tenant?.id ?? payload?.data?.user?.tenantId ?? tenantSlug;
+    const tenantSlugHint =
+      payload?.data?.user?.tenant?.slug ?? payload?.data?.user?.tenant?.name ?? tenantSlug ?? null;
     if (tenant) {
       setTenantId(tenant);
+    }
+    if (tenantSlugHint) {
+      setTenantSlugHint(tenantSlugHint);
     }
 
     setCurrentUser(payload?.data?.user ?? null);
