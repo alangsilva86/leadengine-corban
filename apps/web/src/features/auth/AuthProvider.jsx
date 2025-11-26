@@ -146,7 +146,7 @@ export const AuthProvider = ({ children }) => {
     };
   }, [finishWith, refresh]);
 
-  const login = useCallback(async ({ email, password, tenantSlug }) => {
+  const login = useCallback(async ({ email, password, tenantSlug, remember = false }) => {
     if (!email || !password || !tenantSlug) {
       throw new Error('Informe e-mail, senha e tenant para continuar.');
     }
@@ -155,6 +155,7 @@ export const AuthProvider = ({ children }) => {
       email,
       password,
       tenantSlug,
+      remember,
     });
 
     const token = payload?.data?.token?.accessToken;
@@ -162,7 +163,8 @@ export const AuthProvider = ({ children }) => {
       throw new Error('Resposta inválida ao autenticar.');
     }
 
-    setAuthToken(token);
+    const expiresAt = Date.now() + (remember ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000);
+    setAuthToken(token, { expiresAt });
     const tenant = payload?.data?.user?.tenant?.id ?? payload?.data?.user?.tenantId ?? tenantSlug;
     if (tenant) {
       setTenantId(tenant);
