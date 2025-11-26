@@ -18,6 +18,7 @@ import {
 } from '../routes/campaigns.validators';
 
 const LOG_CONTEXT = '[/api/campaigns]';
+const UPSTREAM_TIMEOUT_MS = 1500;
 
 const createEmptyRawMetrics = () =>
   ({
@@ -77,6 +78,25 @@ const readMetadata = (metadata: CampaignMetadata): Record<string, unknown> => {
   }
   return {};
 };
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error(`Operation timed out after ${timeoutMs}ms`);
+      error.name = 'TimeoutError';
+      reject(error);
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
 
 const toFixedNumber = (input: number | null, fractionDigits = 2): number | null => {
   if (input === null) {
@@ -345,7 +365,34 @@ export const listCampaigns = async ({
 
   logger.info(`${LOG_CONTEXT} list request received`, logContext);
 
+  const storeFilters: Parameters<typeof loadCampaignsFromStore>[0] = {
+    tenantId,
+    productType: productType ?? null,
+    marginType: marginType ?? null,
+    strategy: strategy ?? null,
+    tags,
+    statuses: statuses.length > 0 ? statuses : [DEFAULT_STATUS],
+    requestId,
+  };
+
+  if (agreementId) {
+    storeFilters.agreementId = agreementId;
+  }
+
+  if (instanceId) {
+    storeFilters.instanceId = instanceId;
+  }
+
+  const storePromise = loadCampaignsFromStore(storeFilters);
+  storePromise.catch((error) => {
+    logger.error(`${LOG_CONTEXT} failed to preload campaigns from store`, {
+      ...logContext,
+      error: toSafeError(error),
+    });
+  });
+
   let upstreamFailed = false;
+  let upstreamTimeout = false;
 
   if (getUseRealDataFlag()) {
     logger.info(`${LOG_CONTEXT} attempting upstream sync`, {
@@ -380,7 +427,10 @@ export const listCampaigns = async ({
         upstreamFilters.tags = tags.join(',');
       }
 
-      const items = await fetchLeadEngineCampaigns(upstreamFilters);
+      const items = await withTimeout(
+        fetchLeadEngineCampaigns(upstreamFilters),
+        UPSTREAM_TIMEOUT_MS
+      );
 
       logger.info(`${LOG_CONTEXT} upstream responded successfully`, {
         ...logContext,
@@ -392,14 +442,27 @@ export const listCampaigns = async ({
     } catch (upstreamError) {
       upstreamFailed = true;
       const upstreamStatus = (upstreamError as { status?: number }).status;
+      upstreamTimeout = upstreamError instanceof Error && upstreamError.name === 'TimeoutError';
 
       if (upstreamStatus === 404) {
         logger.info(`${LOG_CONTEXT} upstream retornou 404 (sem campanhas)`, logContext);
         return { items: [], meta: { source: 'upstream', upstreamFallback: false } };
       }
 
-      if (typeof upstreamStatus === 'number' && upstreamStatus >= 500) {
+      if (upstreamTimeout) {
+        logger.warn(`${LOG_CONTEXT} upstream fetch timed out`, {
+          ...logContext,
+          timeoutMs: UPSTREAM_TIMEOUT_MS,
+          error: toSafeError(upstreamError),
+        });
+      } else if (typeof upstreamStatus === 'number' && upstreamStatus >= 500) {
         logger.error(`${LOG_CONTEXT} upstream failure`, {
+          ...logContext,
+          upstreamStatus,
+          error: toSafeError(upstreamError),
+        });
+      } else if (typeof upstreamStatus === 'number' && upstreamStatus >= 400) {
+        logger.warn(`${LOG_CONTEXT} upstream returned client error, falling back to store`, {
           ...logContext,
           upstreamStatus,
           error: toSafeError(upstreamError),
@@ -414,29 +477,12 @@ export const listCampaigns = async ({
       logger.warn(`${LOG_CONTEXT} falling back to local store after upstream error`, {
         ...logContext,
         upstreamStatus: upstreamStatus ?? null,
+        timeout: upstreamTimeout,
       });
     }
   }
 
-  const storeFilters: Parameters<typeof loadCampaignsFromStore>[0] = {
-    tenantId,
-    productType: productType ?? null,
-    marginType: marginType ?? null,
-    strategy: strategy ?? null,
-    tags,
-    statuses: statuses.length > 0 ? statuses : [DEFAULT_STATUS],
-    requestId,
-  };
-
-  if (agreementId) {
-    storeFilters.agreementId = agreementId;
-  }
-
-  if (instanceId) {
-    storeFilters.instanceId = instanceId;
-  }
-
-  const { items, warnings } = await loadCampaignsFromStore(storeFilters);
+  const { items, warnings } = await storePromise;
 
   const result: ListCampaignsResult = {
     items,
@@ -444,6 +490,7 @@ export const listCampaigns = async ({
     meta: {
       source: upstreamFailed ? 'store-fallback' : 'store',
       upstreamFallback: upstreamFailed,
+      upstreamTimeout,
     },
   };
 
