@@ -1243,7 +1243,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   };
 
   return (
-    <WhatsAppInstancesProvider autoRefresh={false} initialFetch={false} logger={{}}>
+    <WhatsAppInstancesProvider autoRefresh initialFetch logger={{}}>
       <ChatCommandCenter
         currentUser={currentUser}
         manualConversation={manualConversationProps}
