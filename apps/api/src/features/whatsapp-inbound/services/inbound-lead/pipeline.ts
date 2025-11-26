@@ -44,6 +44,7 @@ import {
   getDefaultQueueId,
   isForeignKeyError,
   isUniqueViolation,
+  isInboundAutoProvisionAllowed,
   provisionDefaultQueueForTenant,
   provisionFallbackCampaignForInstance,
   queueCacheByTenant,
@@ -282,6 +283,16 @@ export const processStandardInboundEvent = async (
 
   const autoProvisionInstance = async (candidateId: string | null | undefined) => {
     if (!candidateId) {
+      return null;
+    }
+
+    if (!isInboundAutoProvisionAllowed(tenantIdentifiersForAutoProvision)) {
+      logger.warn('🎯 LeadEngine • WhatsApp :: 🚧 Autoprovisionamento ignorado para tenant não aprovado', {
+        requestId,
+        candidateId,
+        tenantIdentifiers: tenantIdentifiersForAutoProvision,
+        brokerId: resolvedBrokerId ?? null,
+      });
       return null;
     }
 

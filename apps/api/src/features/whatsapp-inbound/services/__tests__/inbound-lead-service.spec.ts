@@ -449,6 +449,8 @@ describe('metadata helpers', () => {
     };
 
     beforeEach(() => {
+      process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED = 'true';
+      process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST = 'tenant-autoprov';
       whatsappInstanceFindUniqueMock.mockReset();
       whatsappInstanceCreateMock.mockReset();
       whatsappInstanceFindFirstMock.mockReset();
@@ -456,6 +458,11 @@ describe('metadata helpers', () => {
       tenantFindFirstMock.mockReset();
       ensureTenantRecordMock.mockReset();
       whatsappInstanceFindFirstMock.mockResolvedValue(null);
+    });
+
+    afterEach(() => {
+      delete process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED;
+      delete process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST;
     });
 
     it('returns null when tenant identifiers cannot be resolved', async () => {
@@ -533,25 +540,8 @@ describe('metadata helpers', () => {
       );
     });
 
-    it('ensures tenant automatically when missing before provisioning instance', async () => {
-      const ensuredTenant = { id: 'tenant-ensured', name: 'Tenant Ensured', slug: 'tenant-ensured' };
-      const instanceRecord = {
-        id: 'wa-auto',
-        tenantId: ensuredTenant.id,
-        name: 'WhatsApp Principal',
-        brokerId: 'wa-auto',
-        status: 'connected',
-        connected: true,
-        phoneNumber: null,
-        lastSeenAt: null,
-        metadata: {},
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      tenantFindFirstMock.mockResolvedValueOnce(null).mockResolvedValueOnce(ensuredTenant);
-      ensureTenantRecordMock.mockResolvedValueOnce(ensuredTenant);
-      whatsappInstanceCreateMock.mockResolvedValueOnce(instanceRecord);
+    it('returns null when tenant cannot be located instead of provisioning automatically', async () => {
+      tenantFindFirstMock.mockResolvedValueOnce(null);
 
       const result = await attemptAutoProvisionWhatsAppInstance({
         instanceId: 'wa-auto',
@@ -559,36 +549,9 @@ describe('metadata helpers', () => {
         requestId: 'req-ensure',
       });
 
-      expect(ensureTenantRecordMock).toHaveBeenCalledWith(
-        'tenant-autoprov',
-        expect.objectContaining({
-          source: 'whatsapp-inbound-auto',
-          action: 'ensure-tenant',
-          instanceId: 'wa-auto',
-          requestId: 'req-ensure',
-        })
-      );
-      expect(tenantFindFirstMock).toHaveBeenCalledTimes(2);
-      expect(tenantFindFirstMock).toHaveBeenNthCalledWith(2, {
-        where: {
-          OR: [
-            { id: 'tenant-autoprov' },
-            { slug: 'tenant-autoprov' },
-          ],
-        },
-      });
-      expect(whatsappInstanceCreateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ tenantId: ensuredTenant.id }),
-        })
-      );
-      expect(result).toEqual(
-        expect.objectContaining({
-          instance: expect.objectContaining({ tenantId: ensuredTenant.id }),
-          wasCreated: true,
-          brokerId: 'wa-auto',
-        })
-      );
+      expect(result).toBeNull();
+      expect(ensureTenantRecordMock).not.toHaveBeenCalled();
+      expect(whatsappInstanceCreateMock).not.toHaveBeenCalled();
     });
 
     it('creates a WhatsApp instance with inbound-auto source', async () => {
@@ -639,6 +602,22 @@ describe('metadata helpers', () => {
           brokerId: 'wa-friendly',
         })
       );
+    });
+
+    it('blocks autoprovision when tenant is not allowlisted', async () => {
+      process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST = 'another-tenant';
+      const tenantRecord = { id: 'tenant-autoprov', name: 'Tenant Demo', slug: 'tenant-autoprov' };
+
+      tenantFindFirstMock.mockResolvedValueOnce(tenantRecord);
+
+      const result = await attemptAutoProvisionWhatsAppInstance({
+        instanceId: 'wa-auto',
+        metadata: baseMetadata,
+        requestId: 'req-blocked',
+      });
+
+      expect(result).toBeNull();
+      expect(whatsappInstanceCreateMock).not.toHaveBeenCalled();
     });
 
     it('reuses existing instance located by broker before creating a new record', async () => {
