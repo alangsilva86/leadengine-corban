@@ -185,7 +185,6 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
   app.use('/api/integrations', authMiddleware, integrationsRouter);
   app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
   app.use('/api', authMiddleware, requireTenant, agreementsRouter);
-  app.use('/api/agreements', authMiddleware, requireTenant, agreementsRouter);
   app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
   app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
   app.use('/api/sales', authMiddleware, requireTenant, salesRouter);
