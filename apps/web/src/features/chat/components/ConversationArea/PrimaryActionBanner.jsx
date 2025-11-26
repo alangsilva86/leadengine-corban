@@ -137,9 +137,9 @@ const JroIndicator = ({ jro }) => {
   const chipTone = SLA_TONE_MAP[jro?.state] ?? 'neutral';
 
   return (
-    <div className="min-w-[200px] flex-1" role="group" aria-label={`SLA interno. ${readableStatus}`}>
+    <div className="min-w-[160px] flex-1" role="group" aria-label={`SLA interno. ${readableStatus}`}>
       <Indicator icon={Clock3} tone={chipTone} label={`SLA interno · ${displayTime}`} />
-      <div className="mt-2 h-1.5 rounded-full bg-surface-overlay-glass-border/60" aria-hidden="true">
+      <div className="mt-1.5 h-1 rounded-full bg-surface-overlay-glass-border/60" aria-hidden="true">
         <div
           className={cn(
             'h-full rounded-full transition-[width] duration-500 ease-out motion-reduce:transition-none',
@@ -251,15 +251,15 @@ const PrimaryActionBanner = ({
   const canShowStageProgress = typeof stageKey === 'string' && stageKey.trim().length > 0;
 
   return (
-    <div data-testid="conversation-header-summary" className="py-1">
+    <div data-testid="conversation-header-summary" className="py-0.5">
       <div
         className={cn(
-          'grid gap-3 items-start',
+          'grid items-center gap-2',
           'md:grid-cols-[minmax(0,1fr)_auto]',
           'lg:grid-cols-[minmax(0,1fr)_auto_auto]',
         )}
       >
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
           <Avatar className="h-11 w-11">
             <AvatarFallback>{buildInitials(name, 'CT')}</AvatarFallback>
           </Avatar>
@@ -275,7 +275,7 @@ const PrimaryActionBanner = ({
             </div>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 md:justify-self-end lg:justify-self-start">
+        <div className="flex flex-wrap items-center gap-1.5 md:justify-self-end lg:justify-self-start">
           <Indicator
             icon={statusInfo?.icon}
             tone={statusInfo?.tone}
@@ -339,7 +339,7 @@ const PrimaryActionBanner = ({
             variant="outline"
             size="sm"
             className={cn(
-              'inline-flex items-center gap-2 rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-overlay-strong',
+              'inline-flex items-center gap-2 rounded-xl border-surface-overlay-glass-border bg-surface-overlay-quiet px-2.5 py-1.5 text-[11px] font-semibold text-foreground hover:bg-surface-overlay-strong',
               detailsOpen && 'bg-surface-overlay-strong text-foreground',
             )}
             aria-label={detailsOpen ? 'Ocultar detalhes do contato' : 'Mostrar detalhes do contato'}
@@ -351,7 +351,7 @@ const PrimaryActionBanner = ({
         </div>
         <div
           className={cn(
-            'flex flex-wrap items-center gap-2',
+            'flex flex-wrap items-center gap-1.5',
             'md:col-span-2 md:justify-self-end',
             'lg:col-span-3 lg:justify-self-end lg:flex-nowrap',
           )}

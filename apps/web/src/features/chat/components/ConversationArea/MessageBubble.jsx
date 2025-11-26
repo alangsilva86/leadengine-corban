@@ -258,7 +258,12 @@ export const MessageBubble = ({
 
       return (
         <div className="flex flex-col gap-2">
-          <audio controls src={mediaUrl} className="w-full" preload="metadata" />
+          <audio
+            controls
+            src={mediaUrl}
+            className="w-full min-w-[240px] max-w-[560px]"
+            preload="metadata"
+          />
           {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
           {renderDownloadAction('Baixar áudio')}
         </div>
