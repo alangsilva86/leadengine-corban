@@ -1108,105 +1108,37 @@ export const createWhatsAppInstance = async ({
   const startedAt = Date.now();
   let operationResult: InstanceOperationResult = 'success';
   const resolvedMode = mode || 'api';
-
-  const name = input.name.trim();
-  const explicitId = input.id?.trim() ?? '';
-  const instanceId = explicitId || name || resolveDefaultInstanceId();
-  const idempotencyKey = input.idempotencyKey?.trim() ?? null;
-
-  if (idempotencyKey) {
-    const existingByIdempotencyKey = await prisma.whatsAppInstance.findFirst({
-      where: {
-        tenantId,
-        metadata: {
-          path: ['idempotencyKey'],
-          equals: idempotencyKey,
-        },
-      },
-    });
-
-    if (existingByIdempotencyKey) {
-      const serialized = serializeStoredInstance(existingByIdempotencyKey, null);
-      return {
-        serialized,
-        sideEffects: [],
-        context: {
-          tenantId: existingByIdempotencyKey.tenantId,
-          actorId,
-          instanceId: serialized.id,
-          brokerId: existingByIdempotencyKey.brokerId,
-        },
-      };
-    }
-  }
-
-  const existing = await prisma.whatsAppInstance.findFirst({
-    where: {
-      tenantId,
-      id: instanceId,
-    },
-    select: { id: true },
-  });
-
-  if (existing) {
-    const suggestion = await generateInstanceIdSuggestion(tenantId, name, instanceId);
-    throw new WhatsAppInstanceAlreadyExistsError(undefined, suggestion);
-  }
-
-  safeIncrementHttpCounter();
-  const brokerStartedAt = Date.now();
-  const brokerInstance = await whatsappBrokerClient.createInstance({
-    tenantId,
-    name,
-    instanceId,
-    idempotencyKey: idempotencyKey ?? undefined,
-  }).catch((error) => {
-    const responseTimeMs = Date.now() - brokerStartedAt;
-    if (error instanceof WhatsAppBrokerError) {
-      (error as WhatsAppBrokerError & { responseTimeMs?: number }).responseTimeMs = responseTimeMs;
-    }
-    throw error;
-  });
-
-  const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
-  const brokerId = brokerIdCandidate.length > 0 ? brokerIdCandidate : instanceId;
-  const brokerNameCandidate = typeof brokerInstance.name === 'string' ? brokerInstance.name.trim() : '';
-  const displayName = brokerNameCandidate.length > 0 ? brokerNameCandidate : name;
-  const mappedStatus = mapBrokerInstanceStatusToDbStatus(brokerInstance.status ?? null);
-  const connected = Boolean(brokerInstance.connected ?? mappedStatus === 'connected');
-  const phoneNumber =
-    typeof brokerInstance.phoneNumber === 'string' && brokerInstance.phoneNumber.trim().length > 0
-      ? brokerInstance.phoneNumber.trim()
-      : null;
-
-  const historyEntry = buildHistoryEntry(
-    'created',
-    actorId,
-    compactRecord({
-      status: mappedStatus,
-      connected,
-      name: displayName,
-      phoneNumber: phoneNumber ?? undefined,
-    }),
-  );
-
-  const baseMetadata: Record<string, unknown> = {
-    displayId: instanceId,
-    slug: instanceId,
-    brokerId,
-    displayName,
-    label: displayName,
-    origin: 'api-create',
-    ...(idempotencyKey ? { idempotencyKey } : {}),
-  };
-  const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry);
-  const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
-
-  let stored: StoredInstance;
   try {
     const name = input.name.trim();
     const explicitId = input.id?.trim() ?? '';
     const instanceId = explicitId || name || resolveDefaultInstanceId();
+    const idempotencyKey = input.idempotencyKey?.trim() ?? null;
+
+    if (idempotencyKey) {
+      const existingByIdempotencyKey = await prisma.whatsAppInstance.findFirst({
+        where: {
+          tenantId,
+          metadata: {
+            path: ['idempotencyKey'],
+            equals: idempotencyKey,
+          },
+        },
+      });
+
+      if (existingByIdempotencyKey) {
+        const serialized = serializeStoredInstance(existingByIdempotencyKey, null);
+        return {
+          serialized,
+          sideEffects: [],
+          context: {
+            tenantId: existingByIdempotencyKey.tenantId,
+            actorId,
+            instanceId: serialized.id,
+            brokerId: existingByIdempotencyKey.brokerId,
+          },
+        };
+      }
+    }
 
     const existing = await prisma.whatsAppInstance.findFirst({
       where: {
@@ -1222,11 +1154,21 @@ export const createWhatsAppInstance = async ({
     }
 
     safeIncrementHttpCounter();
-    const brokerInstance = await whatsappBrokerClient.createInstance({
-      tenantId,
-      name,
-      instanceId,
-    });
+    const brokerStartedAt = Date.now();
+    const brokerInstance = await whatsappBrokerClient
+      .createInstance({
+        tenantId,
+        name,
+        instanceId,
+        idempotencyKey: idempotencyKey ?? undefined,
+      })
+      .catch((error) => {
+        const responseTimeMs = Date.now() - brokerStartedAt;
+        if (error instanceof WhatsAppBrokerError) {
+          (error as WhatsAppBrokerError & { responseTimeMs?: number }).responseTimeMs = responseTimeMs;
+        }
+        throw error;
+      });
 
     const brokerIdCandidate = typeof brokerInstance.id === 'string' ? brokerInstance.id.trim() : '';
     const brokerId = brokerIdCandidate.length > 0 ? brokerIdCandidate : instanceId;
@@ -1257,6 +1199,7 @@ export const createWhatsAppInstance = async ({
       displayName,
       label: displayName,
       origin: 'api-create',
+      ...(idempotencyKey ? { idempotencyKey } : {}),
     };
     const metadataWithHistory = appendInstanceHistory(baseMetadata, historyEntry);
     const metadataWithoutError = withInstanceLastError(metadataWithHistory, null);
