@@ -451,7 +451,7 @@ export const processStandardInboundEvent = async (
     }
   }
 
-  const leadName = resolvedName ?? 'Contato WhatsApp';
+  const leadName = resolvedName ?? normalizedPhone ?? 'Contato WhatsApp';
   const registrations = uniqueStringList((contact as any).registrations || null);
   const leadIdBase = (message as any).id || `${instance.id}:${normalizedPhone ?? document}:${timestamp ?? now}`;
 

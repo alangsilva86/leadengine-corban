@@ -187,6 +187,7 @@ export const ensureContact = async (
       name,
       readString(existing?.fullName),
       readString(existing?.displayName),
+      phone,
       'Contato WhatsApp'
     ) ?? 'Contato WhatsApp';
 

@@ -1322,6 +1322,69 @@ describe('processStandardInboundEvent', () => {
     );
   });
 
+  it('falls back to phone when name is missing to keep ticket identification clear', async () => {
+    queueCacheByTenant.set('tenant-phone-fallback', {
+      id: 'queue-identity',
+      expires: Date.now() + DEFAULT_QUEUE_CACHE_TTL_MS,
+    });
+
+    const event: InboundEvent = {
+      id: 'event-phone-fallback',
+      instanceId: 'instance-phone-fallback',
+      tenantId: 'tenant-phone-fallback',
+      direction: 'INBOUND',
+      contact: {
+        phone: '+5511999999999',
+      },
+      message: { id: 'message-phone-fallback', text: 'Olá!' },
+      timestamp: new Date('2024-03-22T10:00:00.000Z').toISOString(),
+      metadata: { requestId: 'req-phone-fallback' },
+      chatId: '5511999999999@s.whatsapp.net',
+      externalId: 'ext-phone-fallback',
+      sessionId: 'session-phone-fallback',
+    } as unknown as InboundEvent;
+
+    contactFindUniqueMock.mockResolvedValueOnce(null);
+    contactFindFirstMock.mockResolvedValueOnce(null);
+
+    const contactCreateCalls: Array<{ data?: Record<string, unknown> }> = [];
+    contactCreateMock.mockImplementationOnce(async (args: { data?: Record<string, unknown> }) => {
+      contactCreateCalls.push(args);
+      return {
+        id: 'contact-phone-fallback',
+        tenantId: 'tenant-phone-fallback',
+        primaryPhone: (args.data as any)?.primaryPhone ?? '+5511999999999',
+        displayName: (args.data as any)?.displayName,
+        fullName: (args.data as any)?.fullName,
+      };
+    });
+
+    createTicketMock.mockResolvedValueOnce({ id: 'ticket-phone-fallback' });
+    ticketFindUniqueMock.mockResolvedValueOnce({
+      id: 'ticket-phone-fallback',
+      status: 'OPEN',
+      updatedAt: new Date('2024-03-22T10:00:00.000Z'),
+    });
+
+    await testing.processStandardInboundEvent(event, Date.now(), { preloadedInstance: null });
+
+    expect(contactCreateCalls[0]?.data).toMatchObject({
+      displayName: '+5511999999999',
+      fullName: '+5511999999999',
+      primaryPhone: '+5511999999999',
+    });
+    expect(createTicketMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: '+5511999999999',
+        metadata: expect.objectContaining({
+          contactName: '+5511999999999',
+          contact: expect.objectContaining({ name: '+5511999999999', phone: '+5511999999999' }),
+          whatsapp: expect.objectContaining({ phone: '+5511999999999' }),
+        }),
+      })
+    );
+  });
+
   it('enriches broker metadata with tenant hints before auto provisioning when webhook metadata lacks tenant fields', async () => {
     const now = new Date('2024-03-30T12:30:00.000Z');
 
