@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
+import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
@@ -31,7 +32,12 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { status, loading, login, recoverPassword, selectTenant } = useAuth();
   const [mode, setMode] = useState<'login' | 'recover'>('login');
-  const [form, setForm] = useState({ email: prefillEmail, password: prefillPassword, tenantSlug: initialTenant });
+  const [form, setForm] = useState({
+    email: prefillEmail,
+    password: prefillPassword,
+    tenantSlug: initialTenant,
+    remember: false,
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,6 +79,7 @@ export default function LoginPage() {
           email: normalize(form.email),
           password: form.password,
           tenantSlug: normalize(form.tenantSlug),
+          remember: Boolean(form.remember),
         });
         selectTenant?.(normalize(form.tenantSlug));
         navigate('/', { replace: true });
@@ -149,6 +156,21 @@ export default function LoginPage() {
                 />
               </div>
             ) : null}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="remember"
+                  checked={form.remember}
+                  onCheckedChange={(checked) =>
+                    setForm((prev) => ({ ...prev, remember: Boolean(checked) }))
+                  }
+                  disabled={formDisabled}
+                />
+                <Label htmlFor="remember" className="cursor-pointer text-sm">
+                  Lembrar de mim
+                </Label>
+              </div>
+            </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button type="submit" className="w-full" disabled={!canSubmit || formDisabled}>
               {mode === 'login' ? 'Entrar' : 'Enviar instruções'}

@@ -15,8 +15,18 @@ import {
 const router: Router = Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_ACCESS_TOKEN_TTL || '15m';
-const REFRESH_TOKEN_EXPIRES_IN = process.env.JWT_REFRESH_TOKEN_TTL || '7d';
+const DEFAULT_ACCESS_TOKEN_EXPIRES_IN = '24h';
+const DEFAULT_REFRESH_TOKEN_EXPIRES_IN = '7d';
+
+const normalizeExpiresIn = (value: unknown, fallback: string | number): string | number => {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === 'number' && value > 0) {
+    return value;
+  }
+  return fallback;
+};
 
 const normalizeJson = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
@@ -66,7 +76,10 @@ const signToken = (
   user: User,
   tenant: Tenant,
   permissions: string[],
-  type: 'access' | 'refresh'
+  type: 'access' | 'refresh',
+  expiresIn: string | number,
+  rememberSession: boolean,
+  sessionMeta?: { accessTtl?: string | number; refreshTtl?: string | number }
 ): string =>
   jwt.sign(
     {
@@ -74,19 +87,37 @@ const signToken = (
       tenantId: tenant.id,
       permissions,
       type,
+      remember: rememberSession || undefined,
+      ...(type === 'refresh'
+        ? { accessTtl: sessionMeta?.accessTtl, refreshTtl: sessionMeta?.refreshTtl }
+        : {}),
     },
     JWT_SECRET,
-    { expiresIn: type === 'access' ? ACCESS_TOKEN_EXPIRES_IN : REFRESH_TOKEN_EXPIRES_IN }
+    { expiresIn }
   );
 
-export const buildSessionPayload = (user: User, tenant: Tenant, permissions: string[]) => ({
-  token: {
-    accessToken: signToken(user, tenant, permissions, 'access'),
-    refreshToken: signToken(user, tenant, permissions, 'refresh'),
-    expiresIn: ACCESS_TOKEN_EXPIRES_IN,
-  },
-  user: buildUserProfile(user, tenant, permissions),
-});
+export const buildSessionPayload = (
+  user: User,
+  tenant: Tenant,
+  permissions: string[],
+  options?: { accessExpiresIn?: string | number; refreshExpiresIn?: string | number; rememberSession?: boolean }
+) => {
+  const accessExpiresIn = normalizeExpiresIn(options?.accessExpiresIn, DEFAULT_ACCESS_TOKEN_EXPIRES_IN);
+  const refreshExpiresIn = normalizeExpiresIn(options?.refreshExpiresIn, DEFAULT_REFRESH_TOKEN_EXPIRES_IN);
+  const rememberSession = Boolean(options?.rememberSession);
+
+  return {
+    token: {
+      accessToken: signToken(user, tenant, permissions, 'access', accessExpiresIn, rememberSession),
+      refreshToken: signToken(user, tenant, permissions, 'refresh', refreshExpiresIn, rememberSession, {
+        accessTtl: accessExpiresIn,
+        refreshTtl: refreshExpiresIn,
+      }),
+      expiresIn: accessExpiresIn,
+    },
+    user: buildUserProfile(user, tenant, permissions),
+  };
+};
 
 const respondWithSession = (res: Response, session: ReturnType<typeof buildSessionPayload>) => {
   res.json({
@@ -106,6 +137,15 @@ const handleAuthError = (res: Response, message: string, status = 401) =>
 
 router.post('/login', async (req: Request, res: Response) => {
   const { email, password, tenantSlug } = req.body ?? {};
+  const rememberSession = req.body?.remember === true || req.body?.remember === 'true';
+  const accessExpiresIn = normalizeExpiresIn(
+    req.body?.accessTtl,
+    rememberSession ? '7d' : DEFAULT_ACCESS_TOKEN_EXPIRES_IN
+  );
+  const refreshExpiresIn = normalizeExpiresIn(
+    req.body?.refreshTtl,
+    rememberSession ? '7d' : DEFAULT_REFRESH_TOKEN_EXPIRES_IN
+  );
 
   if (!email || !password || !tenantSlug) {
     return res.status(400).json({
@@ -141,7 +181,14 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const permissions = getPermissionsByRole(user.role as UserRole);
 
-    respondWithSession(res, buildSessionPayload(user, tenant, permissions));
+    respondWithSession(
+      res,
+      buildSessionPayload(user, tenant, permissions, {
+        accessExpiresIn,
+        refreshExpiresIn,
+        rememberSession,
+      })
+    );
   } catch (error) {
     logger.error('[Auth] Falha ao executar login', { error });
     res.status(500).json({
@@ -271,6 +318,9 @@ router.post('/token/refresh', async (req: Request, res: Response) => {
       tenantId: string;
       permissions?: string[];
       type?: string;
+      remember?: boolean;
+      accessTtl?: string | number;
+      refreshTtl?: string | number;
     };
 
     if (!payload.sub || !payload.tenantId || payload.type !== 'refresh') {
@@ -294,7 +344,24 @@ router.post('/token/refresh', async (req: Request, res: Response) => {
       ? payload.permissions
       : getPermissionsByRole(user.role as UserRole);
 
-    respondWithSession(res, buildSessionPayload(user, user.tenant, permissions));
+    const rememberSession = payload.remember === true;
+    const accessExpiresIn = normalizeExpiresIn(
+      payload.accessTtl,
+      rememberSession ? '7d' : DEFAULT_ACCESS_TOKEN_EXPIRES_IN
+    );
+    const refreshExpiresIn = normalizeExpiresIn(
+      payload.refreshTtl,
+      rememberSession ? '7d' : DEFAULT_REFRESH_TOKEN_EXPIRES_IN
+    );
+
+    respondWithSession(
+      res,
+      buildSessionPayload(user, user.tenant, permissions, {
+        accessExpiresIn,
+        refreshExpiresIn,
+        rememberSession,
+      })
+    );
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
       return handleAuthError(res, 'Refresh token expirado.');
