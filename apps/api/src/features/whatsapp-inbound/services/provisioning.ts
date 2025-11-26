@@ -2,8 +2,8 @@ import type { Prisma } from '@prisma/client';
 
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
-import { ensureTenantRecord } from '../../../services/tenant-service';
 import { emitToTenant } from '../../../lib/socket-registry';
+import { ensureTenantRecord } from '../../../services/tenant-service';
 import {
   DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX,
   DEFAULT_CAMPAIGN_FALLBACK_NAME,
@@ -43,6 +43,53 @@ const toJsonRecord = (value: Prisma.JsonValue | null | undefined): Record<string
     return { ...(value as Record<string, unknown>) };
   }
   return {};
+};
+
+const normalizeBoolean = (value: string | undefined | null, fallback = false): boolean => {
+  if (typeof value !== 'string') return fallback;
+
+  switch (value.trim().toLowerCase()) {
+    case '1':
+    case 'true':
+    case 'yes':
+    case 'on':
+      return true;
+    case '0':
+    case 'false':
+    case 'no':
+    case 'off':
+      return false;
+    default:
+      return fallback;
+  }
+};
+
+const normalizeAllowlist = (value: string | undefined | null): string[] =>
+  (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => entry.toLowerCase());
+
+const inboundAutoprovEnabled = (): boolean =>
+  normalizeBoolean(process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED, false);
+
+const inboundAutoprovAllowlist = (): Set<string> =>
+  new Set(normalizeAllowlist(process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST));
+
+export const isInboundAutoProvisionAllowed = (tenantIdentifiers: string[]): boolean => {
+  if (!inboundAutoprovEnabled()) {
+    return false;
+  }
+
+  const allowlist = inboundAutoprovAllowlist();
+  if (allowlist.size === 0) {
+    return false;
+  }
+
+  return tenantIdentifiers.some((identifier) => allowlist.has(identifier.toLowerCase()))
+    ? true
+    : false;
 };
 
 type ProvisionQueueOptions = {
@@ -471,6 +518,15 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
     return null;
   }
 
+  if (!isInboundAutoProvisionAllowed(tenantIdentifiers)) {
+    logger.warn('🎯 LeadEngine • WhatsApp :: 🚧 Autoprovisionamento bloqueado por allowlist', {
+      instanceId,
+      requestId,
+      tenantIdentifiers,
+    });
+    return null;
+  }
+
   let tenant = await prisma.tenant.findFirst({
     where: {
       OR: tenantIdentifiers.flatMap((identifier) => [
@@ -486,49 +542,7 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
       requestId,
       tenantIdentifiers,
     });
-
-    const ensureIdentifier = tenantIdentifiers[0];
-
-    if (!ensureIdentifier) {
-      return null;
-    }
-
-    try {
-      const ensuredTenant = await ensureTenantRecord(ensureIdentifier, {
-        source: 'whatsapp-inbound-auto',
-        action: 'ensure-tenant',
-        instanceId,
-        requestId,
-      });
-
-      tenant =
-        (await prisma.tenant.findFirst({
-          where: {
-            OR: tenantIdentifiers.flatMap((identifier) => [
-              { id: identifier },
-              { slug: identifier },
-            ]),
-          },
-        })) ?? ensuredTenant;
-    } catch (error) {
-      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao garantir tenant para autoprov de instância', {
-        instanceId,
-        requestId,
-        tenantIdentifiers,
-        ensureIdentifier,
-        error: mapErrorForLog(error),
-      });
-      return null;
-    }
-
-    if (!tenant) {
-      logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Tenant indisponível mesmo após tentativa de garantia', {
-        instanceId,
-        requestId,
-        tenantIdentifiers,
-      });
-      return null;
-    }
+    return null;
   }
 
   const brokerId = resolveBrokerIdFromMetadata(metadata) ?? instanceId;
