@@ -43,6 +43,71 @@ import {
   buildDisabledDebugMessagesRouter,
 } from '../features/debug/routes/messages';
 
+type CacheEntry<T> = { data: T; expiresAt: number };
+
+const CACHE_TTL_MS = 15_000;
+const debugCache = new Map<string, CacheEntry<unknown>>();
+
+const getCachedValue = <T>(key: string): T | null => {
+  const cached = debugCache.get(key);
+
+  if (!cached) {
+    return null;
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    debugCache.delete(key);
+    return null;
+  }
+
+  return cached.data as T;
+};
+
+const setCachedValue = <T>(key: string, data: T, ttlMs = CACHE_TTL_MS) => {
+  debugCache.set(key, { data, expiresAt: Date.now() + ttlMs });
+};
+
+const parseNumberQueryParam = (value: unknown, { defaultValue, max, min = 0 }: { defaultValue: number; max?: number; min?: number }): number => {
+  const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : Number.NaN;
+  const bounded = Number.isFinite(parsed) ? parsed : defaultValue;
+  const withMin = Math.max(min ?? 0, bounded);
+
+  if (typeof max === 'number') {
+    return Math.min(max, withMin);
+  }
+
+  return withMin;
+};
+
+type AiAutoReplyPayload = {
+  note: string;
+  ok: true;
+  timestamp: string;
+  environment: string;
+  openaiKeyConfigured: boolean;
+  loggerTransports: { name: string; level: string }[];
+  tenants: { id: string; slug: string; aiEnabled: boolean; aiMode: unknown; aiModel: unknown }[];
+};
+
+type AiConfigDebugPayload = {
+  ok: true;
+  note: string;
+  tenantId: string;
+  scopeKey: string;
+  config: {
+    model: string;
+    defaultMode: string;
+    temperature: number;
+    streamingEnabled: boolean;
+    vectorStoreEnabled: boolean;
+    vectorStoreIds: string[];
+    confidenceThreshold: number | null;
+    maxOutputTokens: number | null;
+    updatedAt: string;
+    createdAt: string;
+  } | null;
+};
+
 type RegisterRoutersDeps = {
   logger: Logger;
   nodeEnv: string;
@@ -106,11 +171,25 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
     res.status(200).json(payload);
   });
 
-  app.get('/_diag/ai-auto-reply', async (_req, res) => {
+  app.get('/_diag/ai-auto-reply', authMiddleware, requirePlatformAdmin, async (req, res) => {
     try {
       const { prisma } = await import('../lib/prisma');
 
+      const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId : undefined;
+      const take = parseNumberQueryParam(req.query.take, { defaultValue: 25, max: 100, min: 1 });
+      const skip = parseNumberQueryParam(req.query.skip, { defaultValue: 0, min: 0 });
+      const cacheKey = `ai-auto-reply:${tenantId ?? 'all'}:${take}:${skip}`;
+
+      const cachedResponse = getCachedValue<AiAutoReplyPayload>(cacheKey);
+
+      if (cachedResponse) {
+        logger.info('🔍 AI AUTO-REPLY DEBUG ENDPOINT CACHED', { tenantId, take, skip });
+        res.status(200).json({ ...cachedResponse, cached: true });
+        return;
+      }
+
       const tenants = await prisma.tenant.findMany({
+        where: tenantId ? { id: tenantId } : undefined,
         select: {
           id: true,
           slug: true,
@@ -118,9 +197,14 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
           aiMode: true,
           aiModel: true,
         },
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
       });
 
       const payload = {
+        note:
+          'Endpoint de observabilidade para admins da plataforma: exibe status de AI Auto-Reply sem dados sensíveis.',
         ok: true,
         timestamp: new Date().toISOString(),
         environment: nodeEnv,
@@ -138,6 +222,7 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
         })),
       };
 
+      setCachedValue(cacheKey, payload);
       logger.info('🔍 AI AUTO-REPLY DEBUG ENDPOINT ACCESSED', payload);
       res.status(200).json(payload);
     } catch (error) {
@@ -214,29 +299,79 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
       .end();
   });
 
-  app.get('/_debug/ai-config', async (req, res) => {
+  app.get('/_debug/ai-config', authMiddleware, requirePlatformAdmin, async (req, res) => {
     try {
       const { prisma } = await import('../lib/prisma');
+
+      const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId : 'demo-tenant';
+      const scopeKey = typeof req.query.scopeKey === 'string' ? req.query.scopeKey : '__global__';
+      const cacheKey = `ai-config:${tenantId}:${scopeKey}`;
+
+      const cached = getCachedValue<AiConfigDebugPayload>(cacheKey);
+
+      if (cached) {
+        res.json({ ...cached, cached: true });
+        return;
+      }
+
       const aiConfig = await prisma.aiConfig.findUnique({
-        where: { tenantId: 'demo-tenant' },
+        where: { tenantId_scopeKey: { tenantId, scopeKey } },
+        select: {
+          model: true,
+          defaultMode: true,
+          temperature: true,
+          streamingEnabled: true,
+          vectorStoreEnabled: true,
+          vectorStoreIds: true,
+          confidenceThreshold: true,
+          maxOutputTokens: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
-      res.json({
-        tenantId: 'demo-tenant',
-        aiConfig,
-      });
+
+      const payload: AiConfigDebugPayload = {
+        ok: true,
+        note:
+          'Observabilidade: mostra configuração de AI por tenant/scope apenas para administradores, sem prompts ou segredos.',
+        tenantId,
+        scopeKey,
+        config: aiConfig
+          ? {
+              model: aiConfig.model,
+              defaultMode: aiConfig.defaultMode,
+              temperature: aiConfig.temperature,
+              streamingEnabled: aiConfig.streamingEnabled,
+              vectorStoreEnabled: aiConfig.vectorStoreEnabled,
+              vectorStoreIds: aiConfig.vectorStoreIds,
+              confidenceThreshold: aiConfig.confidenceThreshold,
+              maxOutputTokens: aiConfig.maxOutputTokens,
+              updatedAt: aiConfig.updatedAt.toISOString(),
+              createdAt: aiConfig.createdAt.toISOString(),
+            }
+          : null,
+      };
+
+      setCachedValue(cacheKey, payload);
+      res.json(payload);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
   });
 
-  app.post('/_debug/ai-config/update', async (_req, res) => {
+  app.post('/_debug/ai-config/update', authMiddleware, requirePlatformAdmin, async (req, res) => {
     try {
       const { prisma } = await import('../lib/prisma');
+      const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : 'demo-tenant';
+      const scopeKey = typeof req.body?.scopeKey === 'string' ? req.body.scopeKey : '__global__';
+
       const updated = await prisma.aiConfig.update({
-        where: { tenantId: 'demo-tenant' },
+        where: { tenantId_scopeKey: { tenantId, scopeKey } },
         data: { defaultMode: 'IA_AUTO' },
       });
-      res.json({ success: true, updated });
+
+      debugCache.delete(`ai-config:${tenantId}:${scopeKey}`);
+      res.json({ success: true, tenantId, scopeKey, updatedFields: { defaultMode: updated.defaultMode } });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
