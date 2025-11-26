@@ -68,7 +68,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /api/agreements/v1/agreements:
+  /api/v1/agreements:
     get:
       operationId: listAgreements
       summary: Lista acordos comerciais
@@ -203,7 +203,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /api/agreements/v1/agreements/{agreementId}:
+  /api/v1/agreements/{agreementId}:
     parameters:
       - name: agreementId
         in: path
@@ -295,7 +295,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /api/agreements/v1/agreements/import:
+  /api/v1/agreements/import:
     post:
       operationId: importAgreements
       summary: Importa acordos comerciais em lote
@@ -347,7 +347,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ValidationErrorResponse'
-  /api/agreements/v1/agreements/providers/{providerId}/sync:
+  /api/v1/agreements/providers/{providerId}/sync:
     post:
       operationId: triggerProviderAgreementSync
       summary: Dispara sincronização de acordos para um provedor

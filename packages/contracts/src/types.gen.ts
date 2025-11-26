@@ -12,7 +12,7 @@ export interface paths {
      */
     post: operations["createTicketMessage"];
   };
-  "/api/agreements/v1/agreements": {
+  "/api/v1/agreements": {
     /**
      * Lista acordos comerciais
      * @description Retorna uma coleção paginada de acordos aplicando filtros de status, provedor e período de vigência.
@@ -24,7 +24,7 @@ export interface paths {
      */
     post: operations["createAgreement"];
   };
-  "/api/agreements/v1/agreements/{agreementId}": {
+  "/api/v1/agreements/{agreementId}": {
     /**
      * Recupera detalhes de um acordo comercial
      * @description Retorna o acordo completo com tabelas, janelas, taxas e metadados vigentes.
@@ -42,14 +42,14 @@ export interface paths {
       };
     };
   };
-  "/api/agreements/v1/agreements/import": {
+  "/api/v1/agreements/import": {
     /**
      * Importa acordos comerciais em lote
      * @description Permite subir novos acordos em massa via upload de planilha ou JSON estruturado. A importação é assíncrona e retorna o identificador do job.
      */
     post: operations["importAgreements"];
   };
-  "/api/agreements/v1/agreements/providers/{providerId}/sync": {
+  "/api/v1/agreements/providers/{providerId}/sync": {
     /**
      * Dispara sincronização de acordos para um provedor
      * @description Agenda uma sincronização assíncrona dos acordos ativos com o provedor remoto.
