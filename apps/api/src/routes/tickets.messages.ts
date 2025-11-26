@@ -187,6 +187,8 @@ const sendMessageValidation = [
     const hasContent = typeof value.content === 'string' && value.content.trim().length > 0;
     const media = value.media;
     const hasMedia = media && typeof media === 'object';
+    const mediaBase64 = normalizeString(media?.base64);
+    const mediaUrl = normalizeString(media?.mediaUrl);
 
     if (hasMedia) {
       const mediaType = normalizeString(media.mediaType)?.toLowerCase();
@@ -194,7 +196,7 @@ const sendMessageValidation = [
         throw new Error('media.mediaType deve ser image, video, audio ou document');
       }
 
-      const hasPayload = normalizeString(media.base64) || normalizeString(media.mediaUrl);
+      const hasPayload = mediaBase64 || mediaUrl;
       if (!hasPayload) {
         throw new Error('media.base64 ou media.mediaUrl deve ser informado');
       }
@@ -209,7 +211,9 @@ const sendMessageValidation = [
       ? (rawType as MessageType)
       : 'TEXT';
     const requiresMedia = allowedFileMessageTypes.has(normalizedType);
-    const hasMediaUrl = typeof value.mediaUrl === 'string' && value.mediaUrl.trim().length > 0;
+    const hasMediaUrl =
+      (typeof value.mediaUrl === 'string' && value.mediaUrl.trim().length > 0) || Boolean(mediaUrl);
+    const hasMediaBase64 = Boolean(mediaBase64);
 
     if (normalizedType === 'TEXT' && !hasContent && !hasText) {
       throw new Error('Informe content ou text para enviar mensagem.');
@@ -227,8 +231,8 @@ const sendMessageValidation = [
       throw new Error('Informe os dados do template para enviar mensagem de template.');
     }
 
-    if (requiresMedia && !hasMediaUrl) {
-      throw new Error('mediaUrl deve ser informado para mensagens de mídia.');
+    if (requiresMedia && !hasMediaUrl && !hasMediaBase64) {
+      throw new Error('mediaUrl ou media.base64 deve ser informado para mensagens de mídia.');
     }
 
     return true;
