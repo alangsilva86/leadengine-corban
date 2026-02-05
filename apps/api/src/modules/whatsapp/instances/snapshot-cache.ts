@@ -30,10 +30,3 @@ export const createSnapshotCache = (client: typeof prisma = prisma): SnapshotCac
     writeCachedSnapshots(tenantId, snapshots, ttlSeconds),
   invalidateCachedSnapshots: (tenantId: string) => invalidateSnapshots(tenantId),
 });
-
-export const defaultSnapshotCache = createSnapshotCache();
-export const getLastSyncAt = defaultSnapshotCache.getLastSyncAt;
-export const setLastSyncAt = defaultSnapshotCache.setLastSyncAt;
-export const getCachedSnapshots = defaultSnapshotCache.getCachedSnapshots;
-export const setCachedSnapshots = defaultSnapshotCache.setCachedSnapshots;
-export const invalidateCachedSnapshots = defaultSnapshotCache.invalidateCachedSnapshots;

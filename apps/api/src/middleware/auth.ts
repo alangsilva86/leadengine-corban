@@ -100,23 +100,29 @@ const normalizeJsonObject = (value: unknown): Record<string, unknown> =>
 const buildAuthenticatedUser = (
   user: User & { tenant?: Tenant | null },
   permissions?: string[]
-): AuthenticatedUser => ({
-  id: user.id,
-  tenantId: user.tenantId,
-  email: user.email,
-  name: user.name,
-  role: user.role as UserRole,
-  isActive: user.isActive,
-  permissions: permissions && permissions.length ? permissions : getPermissionsByRole(user.role as UserRole),
-  tenant: user.tenant
-    ? {
-        id: user.tenant.id,
-        name: user.tenant.name,
-        slug: user.tenant.slug,
-        settings: normalizeJsonObject(user.tenant.settings),
-      }
-    : undefined,
-});
+): AuthenticatedUser => {
+  const authenticated: AuthenticatedUser = {
+    id: user.id,
+    tenantId: user.tenantId,
+    email: user.email,
+    name: user.name,
+    role: user.role as UserRole,
+    isActive: user.isActive,
+    permissions:
+      permissions && permissions.length ? permissions : getPermissionsByRole(user.role as UserRole),
+  };
+
+  if (user.tenant) {
+    authenticated.tenant = {
+      id: user.tenant.id,
+      name: user.tenant.name,
+      slug: user.tenant.slug,
+      settings: normalizeJsonObject(user.tenant.settings),
+    };
+  }
+
+  return authenticated;
+};
 
 const respondUnauthorized = (res: Response, message = 'Token inválido ou ausente', code = 'UNAUTHORIZED') =>
   res.status(401).json({

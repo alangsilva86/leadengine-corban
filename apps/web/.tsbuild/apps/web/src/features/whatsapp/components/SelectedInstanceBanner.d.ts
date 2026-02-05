@@ -1,0 +1,23 @@
+export default SelectedInstanceBanner;
+declare function SelectedInstanceBanner({ copy, summary, selectedInstance, selectedInstanceStatusInfo, selectedInstancePhone, instancesCountLabel, onMarkConnected, localStatus, onRefresh, onCreateInstance, createInstanceDisabled, createInstanceWarning, onViewLogs, loadingInstances, isAuthenticated, qrStatusMessage, countdownMessage, journeySteps, canContinue, readinessChecklist, }: {
+    copy: any;
+    summary: any;
+    selectedInstance: any;
+    selectedInstanceStatusInfo: any;
+    selectedInstancePhone: any;
+    instancesCountLabel: any;
+    onMarkConnected: any;
+    localStatus: any;
+    onRefresh: any;
+    onCreateInstance: any;
+    createInstanceDisabled?: boolean | undefined;
+    createInstanceWarning?: null | undefined;
+    onViewLogs: any;
+    loadingInstances: any;
+    isAuthenticated: any;
+    qrStatusMessage: any;
+    countdownMessage: any;
+    journeySteps: any;
+    canContinue: any;
+    readinessChecklist: any;
+}): import("react/jsx-runtime").JSX.Element;

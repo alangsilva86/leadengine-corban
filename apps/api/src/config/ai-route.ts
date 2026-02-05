@@ -27,7 +27,8 @@ export const getAiRouteMode = (): AiRouteMode => {
 };
 
 const resolveServerAutoReplyEnabled = (): boolean => {
-  const fallback = true;
+  // Safe-by-default: backend auto-reply must be explicit opt-in.
+  const fallback = false;
   const raw =
     process.env.AI_AUTO_REPLY_ENABLED ??
     process.env.AI_AUTO_REPLY_SERVER_ENABLED ??

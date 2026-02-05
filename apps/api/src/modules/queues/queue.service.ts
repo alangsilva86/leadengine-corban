@@ -44,14 +44,18 @@ export class QueueService {
         data: {
           tenantId,
           name: input.name,
-          description: input.description ?? undefined,
-          color: input.color ?? undefined,
+          ...(input.description !== undefined ? { description: input.description ?? null } : {}),
+          ...(input.color !== undefined ? { color: input.color ?? null } : {}),
           isActive: typeof input.isActive === 'boolean' ? input.isActive : true,
           orderIndex: nextOrderIndex,
-          settings:
-            typeof input.settings === 'object' && input.settings !== null
-              ? (input.settings as Prisma.JsonObject)
-              : undefined,
+          ...(input.settings !== undefined
+            ? {
+                settings:
+                  typeof input.settings === 'object' && input.settings !== null
+                    ? (input.settings as Prisma.JsonObject)
+                    : {},
+              }
+            : {}),
         },
         select: queueSelect,
       });
@@ -66,16 +70,26 @@ export class QueueService {
       where: { tenantId },
       orderBy: { orderIndex: 'desc' },
       select: { orderIndex: true },
-      lock: { mode: 'ForUpdate' },
     });
 
     return (lastQueue?.orderIndex ?? -1) + 1;
   }
 
   async updateQueue(tenantId: string, queueId: string, updates: QueueUpdateInput): Promise<QueueEntity | null> {
+    const data: Prisma.QueueUpdateManyMutationInput = { ...updates } as Prisma.QueueUpdateManyMutationInput;
+
+    if ('settings' in updates) {
+      const settings = updates.settings;
+      if (settings === null) {
+        (data as any).settings = Prisma.JsonNull;
+      } else if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
+        (data as any).settings = settings as Prisma.InputJsonValue;
+      }
+    }
+
     const updatedCount = await this.prisma.queue.updateMany({
       where: { id: queueId, tenantId },
-      data: updates,
+      data,
     });
 
     if (updatedCount.count === 0) {

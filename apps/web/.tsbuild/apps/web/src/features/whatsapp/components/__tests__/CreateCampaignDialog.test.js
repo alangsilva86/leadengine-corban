@@ -1,0 +1,87 @@
+import { jsx as _jsx } from "react/jsx-runtime";
+/** @vitest-environment jsdom */
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom/vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import CreateCampaignDialog from '../CreateCampaignDialog.jsx';
+import { TOTAL_STEPS } from '../CreateCampaignWizard.jsx';
+const buildInstance = (overrides = {}) => ({
+    id: 'instance-1',
+    name: 'Instância A',
+    connected: true,
+    metadata: {},
+    ...overrides,
+});
+describe('CreateCampaignDialog wizard', () => {
+    const expectStepLabelToBe = async (stepNumber) => {
+        const label = new RegExp(`Passo ${stepNumber} de ${TOTAL_STEPS}`);
+        await waitFor(() => {
+            expect(screen.getAllByText(label)).toHaveLength(2);
+        });
+    };
+    it('permite configurar a campanha em múltiplos passos e envia o payload completo', async () => {
+        const onSubmit = vi.fn(async () => { });
+        const onOpenChange = vi.fn();
+        const user = userEvent.setup();
+        render(_jsx(CreateCampaignDialog, { open: true, onOpenChange: onOpenChange, agreement: { id: 'agreement-1', name: 'Convênio Alpha' }, instances: [buildInstance(), buildInstance({ id: 'instance-2', name: 'Instância B', connected: true })], defaultInstanceId: "instance-1", onSubmit: onSubmit }));
+        await expectStepLabelToBe(1);
+        await user.click(screen.getByRole('button', { name: /Avançar/i }));
+        await expectStepLabelToBe(2);
+        await user.type(screen.getByLabelText('Origem (sourceId)'), 'agreement-2');
+        await user.type(screen.getByLabelText('Origem (nome)'), 'Convênio Beta');
+        await user.click(screen.getByRole('button', { name: /Avançar/i }));
+        await expectStepLabelToBe(3);
+        await user.click(screen.getByRole('button', { name: /Cartão benefício/i }));
+        const marginInput = screen.getByLabelText(/Margem alvo/);
+        expect(marginInput).toHaveValue('0.9');
+        await user.clear(marginInput);
+        await user.type(marginInput, '1,2');
+        expect(marginInput).toHaveValue('1.2');
+        await user.click(screen.getByRole('button', { name: /Avançar/i }));
+        await expectStepLabelToBe(4);
+        await user.click(screen.getByRole('button', { name: /^WARM/i }));
+        await user.click(screen.getByRole('button', { name: /Avançar/i }));
+        await expectStepLabelToBe(5);
+        const nameInput = screen.getByLabelText(/Nome da campanha/i);
+        await user.clear(nameInput);
+        await user.type(nameInput, 'Campanha Especial');
+        await user.click(screen.getByRole('button', { name: /Criar campanha/i }));
+        await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+        expect(onSubmit).toHaveBeenCalledWith({
+            name: 'Campanha Especial',
+            status: 'active',
+            instanceId: 'instance-1',
+            agreementId: 'agreement-2',
+            agreementName: 'Convênio Beta',
+            product: 'benefit_card',
+            margin: 1.2,
+            strategy: 'proactive_followup',
+        });
+        await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    });
+    it('bloqueia avanço quando a instância selecionada não está conectada', async () => {
+        const user = userEvent.setup();
+        const onSubmit = vi.fn();
+        render(_jsx(CreateCampaignDialog, { open: true, onOpenChange: vi.fn(), agreement: null, instances: [buildInstance({ connected: false })], defaultInstanceId: "instance-1", onSubmit: onSubmit }));
+        const advanceButton = screen.getByRole('button', { name: /Avançar/i });
+        expect(advanceButton).toBeDisabled();
+        expect(onSubmit).not.toHaveBeenCalled();
+    });
+    it('exibe mensagem de erro quando a criação falha', async () => {
+        const user = userEvent.setup();
+        const error = new Error('Falha na API');
+        const onSubmit = vi.fn().mockRejectedValue(error);
+        render(_jsx(CreateCampaignDialog, { open: true, onOpenChange: vi.fn(), agreement: { id: 'agreement-1', name: 'Convênio Alpha' }, instances: [buildInstance()], defaultInstanceId: "instance-1", onSubmit: onSubmit }));
+        await user.click(screen.getByRole('button', { name: /Avançar/i }));
+        await user.click(screen.getByRole('combobox', { name: /^Convênio$/i }));
+        await user.click(await screen.findByRole('option', { name: /Convênio Alpha/i }));
+        await user.click(screen.getByRole('button', { name: /Avançar/i }));
+        await user.click(screen.getByRole('button', { name: /Crédito consignado/i }));
+        await user.click(screen.getByRole('button', { name: /Avançar/i }));
+        await user.click(screen.getByRole('button', { name: /^HOT/i }));
+        await user.click(screen.getByRole('button', { name: /Avançar/i }));
+        await user.click(screen.getByRole('button', { name: /Criar campanha/i }));
+        expect(await screen.findByText(/Falha na API/)).toBeInTheDocument();
+    });
+});

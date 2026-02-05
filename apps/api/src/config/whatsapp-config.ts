@@ -74,8 +74,7 @@ const normalizePositiveInteger = (value: string | undefined | null): number | nu
 };
 
 const DEFAULT_BROKER_TIMEOUT_MS = 15_000;
-const DEFAULT_WEBHOOK_URL =
-  'https://ticketzapi-production.up.railway.app/api/integrations/whatsapp/webhook';
+const DEFAULT_WEBHOOK_URL_DEV = 'http://localhost:4000/api/integrations/whatsapp/webhook';
 
 const buildWhatsAppConfig = (): WhatsAppConfig => {
   const timeoutCandidates = [
@@ -98,7 +97,7 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
     normalizeString(process.env.WHATSAPP_BROKER_WEBHOOK_URL) ??
     normalizeString(process.env.WHATSAPP_WEBHOOK_URL) ??
     normalizeString(process.env.WEBHOOK_URL) ??
-    DEFAULT_WEBHOOK_URL;
+    DEFAULT_WEBHOOK_URL_DEV;
 
   return {
     broker: {

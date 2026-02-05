@@ -1,0 +1,31 @@
+import { jsx as _jsx } from "react/jsx-runtime";
+/** @vitest-environment jsdom */
+import '@testing-library/jest-dom/vitest';
+import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import StageProgress from '../StageProgress.jsx';
+describe('StageProgress', () => {
+    it('highlights the current stage and lists the upcoming steps', () => {
+        render(_jsx(StageProgress, { currentStage: "Proposta" }));
+        const currentStage = screen.getByLabelText('Etapa atual: Proposta');
+        expect(currentStage).toHaveAttribute('aria-current', 'step');
+        expect(screen.getByLabelText('Próxima etapa: Documentação')).toBeInTheDocument();
+        expect(screen.getByLabelText('Próxima etapa: Documentos/Averbação')).toBeInTheDocument();
+    });
+    it('falls back to an accessible label when the stage is not part of the funnel', () => {
+        render(_jsx(StageProgress, { currentStage: "Nova etapa misteriosa" }));
+        expect(screen.getByLabelText('Etapa atual: Nova Etapa Misteriosa')).toBeInTheDocument();
+    });
+    it('supports legacy aliases for the new sales enum', () => {
+        render(_jsx(StageProgress, { currentStage: "qualificando" }));
+        expect(screen.getByLabelText('Etapa atual: Qualificação')).toBeInTheDocument();
+    });
+    it('does not render when the stage is unknown', () => {
+        const { container } = render(_jsx(StageProgress, { currentStage: null }));
+        expect(container).toBeEmptyDOMElement();
+    });
+    it('matches the snapshot for a mid-funnel stage', () => {
+        const { asFragment } = render(_jsx(StageProgress, { currentStage: "Proposta" }));
+        expect(asFragment()).toMatchSnapshot();
+    });
+});

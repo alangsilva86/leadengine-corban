@@ -139,40 +139,6 @@ const LEAD_LAST_CONTACT_HELP =
   '# HELP lead_last_contact_timestamp Timestamp (epoch ms) do último contato inbound por lead';
 const LEAD_LAST_CONTACT_TYPE = '# TYPE lead_last_contact_timestamp gauge';
 
-const AGREEMENT_IMPORT_ENQUEUED_METRIC = 'agreement_import_enqueued_total';
-const AGREEMENT_IMPORT_ENQUEUED_HELP =
-  '# HELP agreement_import_enqueued_total Contador de jobs de importação de convênios enfileirados';
-const AGREEMENT_IMPORT_ENQUEUED_TYPE = '# TYPE agreement_import_enqueued_total counter';
-
-const AGREEMENT_IMPORT_SUCCESS_METRIC = 'agreement_import_success_total';
-const AGREEMENT_IMPORT_SUCCESS_HELP =
-  '# HELP agreement_import_success_total Contador de jobs de importação de convênios concluídos com sucesso';
-const AGREEMENT_IMPORT_SUCCESS_TYPE = '# TYPE agreement_import_success_total counter';
-
-const AGREEMENT_IMPORT_FAILURE_METRIC = 'agreement_import_failure_total';
-const AGREEMENT_IMPORT_FAILURE_HELP =
-  '# HELP agreement_import_failure_total Contador de jobs de importação de convênios que falharam';
-const AGREEMENT_IMPORT_FAILURE_TYPE = '# TYPE agreement_import_failure_total counter';
-const AGREEMENTS_SYNC_REQUEST_METRIC = 'agreements_sync_requests_total';
-const AGREEMENTS_SYNC_REQUEST_HELP =
-  '# HELP agreements_sync_requests_total Contador de execuções de sincronização de convênios por provedor e resultado';
-const AGREEMENTS_SYNC_REQUEST_TYPE = '# TYPE agreements_sync_requests_total counter';
-
-const AGREEMENTS_SYNC_FAILURE_METRIC = 'agreements_sync_failures_total';
-const AGREEMENTS_SYNC_FAILURE_HELP =
-  '# HELP agreements_sync_failures_total Contador de falhas ao sincronizar convênios por provedor';
-const AGREEMENTS_SYNC_FAILURE_TYPE = '# TYPE agreements_sync_failures_total counter';
-
-const AGREEMENTS_SYNC_DURATION_METRIC = 'agreements_sync_duration_ms';
-const AGREEMENTS_SYNC_DURATION_HELP =
-  '# HELP agreements_sync_duration_ms Duração das sincronizações de convênios por provedor (ms)';
-const AGREEMENTS_SYNC_DURATION_TYPE = '# TYPE agreements_sync_duration_ms summary';
-
-const AGREEMENTS_SYNC_LAST_SUCCESS_METRIC = 'agreements_sync_last_success_timestamp';
-const AGREEMENTS_SYNC_LAST_SUCCESS_HELP =
-  '# HELP agreements_sync_last_success_timestamp Timestamp (epoch ms) da última sincronização bem-sucedida por provedor';
-const AGREEMENTS_SYNC_LAST_SUCCESS_TYPE = '# TYPE agreements_sync_last_success_timestamp gauge';
-
 type CounterLabels = Record<string, string | number | boolean | null | undefined>;
 
 type LabelConstraint = {
@@ -263,21 +229,6 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     dimensionValue: DIMENSION_VALUE_CONSTRAINT,
     stage: STAGE_CONSTRAINT,
   },
-  [AGREEMENT_IMPORT_ENQUEUED_METRIC]: {
-    ...BASE_LABEL_CONSTRAINTS,
-    agreementId: AGREEMENT_CONSTRAINT,
-    origin: ORIGIN_CONSTRAINT,
-  },
-  [AGREEMENT_IMPORT_SUCCESS_METRIC]: {
-    ...BASE_LABEL_CONSTRAINTS,
-    agreementId: AGREEMENT_CONSTRAINT,
-    origin: ORIGIN_CONSTRAINT,
-  },
-  [AGREEMENT_IMPORT_FAILURE_METRIC]: {
-    ...BASE_LABEL_CONSTRAINTS,
-    agreementId: AGREEMENT_CONSTRAINT,
-    origin: ORIGIN_CONSTRAINT,
-  },
   [WHATSAPP_STORAGE_UNAVAILABLE_METRIC]: {
     ...BASE_LABEL_CONSTRAINTS,
     operation: OPERATION_CONSTRAINT,
@@ -329,20 +280,6 @@ const METRIC_CONSTRAINTS: Record<string, MetricConstraints> = {
     operation: OPERATION_CONSTRAINT,
     result: RESULT_CONSTRAINT,
   },
-  [AGREEMENTS_SYNC_REQUEST_METRIC]: {
-    providerId: PROVIDER_CONSTRAINT,
-    result: RESULT_CONSTRAINT,
-  },
-  [AGREEMENTS_SYNC_FAILURE_METRIC]: {
-    providerId: PROVIDER_CONSTRAINT,
-    errorCode: RESULT_CONSTRAINT,
-  },
-  [AGREEMENTS_SYNC_DURATION_METRIC]: {
-    providerId: PROVIDER_CONSTRAINT,
-  },
-  [AGREEMENTS_SYNC_LAST_SUCCESS_METRIC]: {
-    providerId: PROVIDER_CONSTRAINT,
-  },
 };
 
 const labelValueTracker = new Map<string, Map<string, Set<string>>>();
@@ -376,14 +313,6 @@ const salesProposalCounterStore = new Map<string, number>();
 const salesDealCounterStore = new Map<string, number>();
 const salesFunnelStageGaugeStore = new Map<string, number>();
 const leadLastContactGaugeStore = new Map<string, number>();
-const agreementImportEnqueuedStore = new Map<string, number>();
-const agreementImportSuccessStore = new Map<string, number>();
-const agreementImportFailureStore = new Map<string, number>();
-const agreementsSyncRequestCounterStore = new Map<string, number>();
-const agreementsSyncFailureCounterStore = new Map<string, number>();
-const agreementsSyncDurationStore = new Map<string, { sum: number; count: number }>();
-const agreementsSyncLastSuccessStore = new Map<string, number>();
-
 const toLabelString = (value: unknown): string | null => {
   if (value === undefined || value === null) {
     return null;
@@ -662,24 +591,6 @@ export const inboundMessagesProcessedCounter = {
   },
 };
 
-export const incrementAgreementImportEnqueued = (labels: CounterLabels = {}, value = 1): void => {
-  const key = buildLabelKey(AGREEMENT_IMPORT_ENQUEUED_METRIC, labels);
-  const current = agreementImportEnqueuedStore.get(key) ?? 0;
-  agreementImportEnqueuedStore.set(key, current + value);
-};
-
-export const incrementAgreementImportSuccess = (labels: CounterLabels = {}, value = 1): void => {
-  const key = buildLabelKey(AGREEMENT_IMPORT_SUCCESS_METRIC, labels);
-  const current = agreementImportSuccessStore.get(key) ?? 0;
-  agreementImportSuccessStore.set(key, current + value);
-};
-
-export const incrementAgreementImportFailure = (labels: CounterLabels = {}, value = 1): void => {
-  const key = buildLabelKey(AGREEMENT_IMPORT_FAILURE_METRIC, labels);
-  const current = agreementImportFailureStore.get(key) ?? 0;
-  agreementImportFailureStore.set(key, current + value);
-};
-
 export const whatsappInboundMetrics = {
   observeLatency(labels: CounterLabels = {}, latencyMs: number): void {
     if (!Number.isFinite(latencyMs) || latencyMs < 0) {
@@ -760,42 +671,6 @@ export const leadLastContactGauge = {
 
     const key = buildLabelKey(LEAD_LAST_CONTACT_METRIC, labels);
     leadLastContactGaugeStore.set(key, timestampMs);
-  },
-};
-
-export const agreementsSyncRequestCounter = buildCounter(
-  AGREEMENTS_SYNC_REQUEST_METRIC,
-  agreementsSyncRequestCounterStore
-);
-
-export const agreementsSyncFailureCounter = buildCounter(
-  AGREEMENTS_SYNC_FAILURE_METRIC,
-  agreementsSyncFailureCounterStore
-);
-
-export const agreementsSyncDurationSummary = {
-  observe(labels: CounterLabels = {}, durationMs: number): void {
-    if (!Number.isFinite(durationMs) || durationMs < 0) {
-      return;
-    }
-
-    const key = buildLabelKey(AGREEMENTS_SYNC_DURATION_METRIC, labels);
-    const current = agreementsSyncDurationStore.get(key) ?? { sum: 0, count: 0 };
-    agreementsSyncDurationStore.set(key, {
-      sum: current.sum + durationMs,
-      count: current.count + 1,
-    });
-  },
-};
-
-export const agreementsSyncLastSuccessGauge = {
-  set(labels: CounterLabels = {}, timestampMs: number): void {
-    if (!Number.isFinite(timestampMs)) {
-      return;
-    }
-
-    const key = buildLabelKey(AGREEMENTS_SYNC_LAST_SUCCESS_METRIC, labels);
-    agreementsSyncLastSuccessStore.set(key, timestampMs);
   },
 };
 
@@ -1030,36 +905,6 @@ export const renderMetrics = async (): Promise<string> => {
     }
   }
 
-  lines.push(AGREEMENT_IMPORT_ENQUEUED_HELP, AGREEMENT_IMPORT_ENQUEUED_TYPE);
-  if (agreementImportEnqueuedStore.size === 0) {
-    lines.push(`${AGREEMENT_IMPORT_ENQUEUED_METRIC} 0`);
-  } else {
-    for (const [labelString, value] of agreementImportEnqueuedStore.entries()) {
-      const suffix = labelString ? `{${labelString}}` : '';
-      lines.push(`${AGREEMENT_IMPORT_ENQUEUED_METRIC}${suffix} ${value}`);
-    }
-  }
-
-  lines.push(AGREEMENT_IMPORT_SUCCESS_HELP, AGREEMENT_IMPORT_SUCCESS_TYPE);
-  if (agreementImportSuccessStore.size === 0) {
-    lines.push(`${AGREEMENT_IMPORT_SUCCESS_METRIC} 0`);
-  } else {
-    for (const [labelString, value] of agreementImportSuccessStore.entries()) {
-      const suffix = labelString ? `{${labelString}}` : '';
-      lines.push(`${AGREEMENT_IMPORT_SUCCESS_METRIC}${suffix} ${value}`);
-    }
-  }
-
-  lines.push(AGREEMENT_IMPORT_FAILURE_HELP, AGREEMENT_IMPORT_FAILURE_TYPE);
-  if (agreementImportFailureStore.size === 0) {
-    lines.push(`${AGREEMENT_IMPORT_FAILURE_METRIC} 0`);
-  } else {
-    for (const [labelString, value] of agreementImportFailureStore.entries()) {
-      const suffix = labelString ? `{${labelString}}` : '';
-      lines.push(`${AGREEMENT_IMPORT_FAILURE_METRIC}${suffix} ${value}`);
-    }
-  }
-
   lines.push(SALES_FUNNEL_STAGE_HELP, SALES_FUNNEL_STAGE_TYPE);
   if (salesFunnelStageGaugeStore.size === 0) {
     lines.push(`${SALES_FUNNEL_STAGE_METRIC} 0`);
@@ -1132,48 +977,6 @@ export const renderMetrics = async (): Promise<string> => {
     }
   }
 
-  lines.push(AGREEMENTS_SYNC_REQUEST_HELP, AGREEMENTS_SYNC_REQUEST_TYPE);
-  if (agreementsSyncRequestCounterStore.size === 0) {
-    lines.push(`${AGREEMENTS_SYNC_REQUEST_METRIC} 0`);
-  } else {
-    for (const [labelString, value] of agreementsSyncRequestCounterStore.entries()) {
-      const suffix = labelString ? `{${labelString}}` : '';
-      lines.push(`${AGREEMENTS_SYNC_REQUEST_METRIC}${suffix} ${value}`);
-    }
-  }
-
-  lines.push(AGREEMENTS_SYNC_FAILURE_HELP, AGREEMENTS_SYNC_FAILURE_TYPE);
-  if (agreementsSyncFailureCounterStore.size === 0) {
-    lines.push(`${AGREEMENTS_SYNC_FAILURE_METRIC} 0`);
-  } else {
-    for (const [labelString, value] of agreementsSyncFailureCounterStore.entries()) {
-      const suffix = labelString ? `{${labelString}}` : '';
-      lines.push(`${AGREEMENTS_SYNC_FAILURE_METRIC}${suffix} ${value}`);
-    }
-  }
-
-  lines.push(AGREEMENTS_SYNC_DURATION_HELP, AGREEMENTS_SYNC_DURATION_TYPE);
-  if (agreementsSyncDurationStore.size === 0) {
-    lines.push(`${AGREEMENTS_SYNC_DURATION_METRIC}_sum 0`);
-    lines.push(`${AGREEMENTS_SYNC_DURATION_METRIC}_count 0`);
-  } else {
-    for (const [labelString, stats] of agreementsSyncDurationStore.entries()) {
-      const suffix = labelString ? `{${labelString}}` : '';
-      lines.push(`${AGREEMENTS_SYNC_DURATION_METRIC}_sum${suffix} ${stats.sum}`);
-      lines.push(`${AGREEMENTS_SYNC_DURATION_METRIC}_count${suffix} ${stats.count}`);
-    }
-  }
-
-  lines.push(AGREEMENTS_SYNC_LAST_SUCCESS_HELP, AGREEMENTS_SYNC_LAST_SUCCESS_TYPE);
-  if (agreementsSyncLastSuccessStore.size === 0) {
-    lines.push(`${AGREEMENTS_SYNC_LAST_SUCCESS_METRIC} 0`);
-  } else {
-    for (const [labelString, value] of agreementsSyncLastSuccessStore.entries()) {
-      const suffix = labelString ? `{${labelString}}` : '';
-      lines.push(`${AGREEMENTS_SYNC_LAST_SUCCESS_METRIC}${suffix} ${value}`);
-    }
-  }
-
   const basePayload = `${lines.join('\n')}\n`;
 
   const hasUserMetrics = userMetricsRegistry.getMetricsAsArray().length > 0;
@@ -1221,13 +1024,6 @@ export const resetMetrics = (): void => {
   salesDealCounterStore.clear();
   salesFunnelStageGaugeStore.clear();
   leadLastContactGaugeStore.clear();
-  agreementImportEnqueuedStore.clear();
-  agreementImportSuccessStore.clear();
-  agreementImportFailureStore.clear();
-  agreementsSyncRequestCounterStore.clear();
-  agreementsSyncFailureCounterStore.clear();
-  agreementsSyncDurationStore.clear();
-  agreementsSyncLastSuccessStore.clear();
   labelValueTracker.clear();
   resetUserMetrics();
 };

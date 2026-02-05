@@ -34,3 +34,27 @@ export const resolveTicketAgreementId = (ticket: unknown): string | null => {
     null
   );
 };
+
+export const resolveTicketCampaignId = (ticket: unknown): string | null => {
+  if (!ticket || typeof ticket !== 'object') {
+    return null;
+  }
+
+  const ticketRecord = ticket as Record<string, unknown> & {
+    metadata?: Prisma.JsonValue | null;
+  };
+
+  const directCampaign = readString(ticketRecord['campaignId']);
+  if (directCampaign) {
+    return directCampaign;
+  }
+
+  const metadataRecord = toRecord(ticketRecord.metadata ?? null);
+  return (
+    readString(metadataRecord.campaignId) ??
+    readString(metadataRecord.campaign_id) ??
+    readNestedString(metadataRecord, ['campaign', 'id']) ??
+    readNestedString(metadataRecord, ['lead', 'campaignId']) ??
+    null
+  );
+};

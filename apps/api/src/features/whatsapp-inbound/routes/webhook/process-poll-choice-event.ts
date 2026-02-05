@@ -179,22 +179,22 @@ export const processPollChoiceEvent = async (
     instanceId?: string | null;
     tenantOverride?: string | null;
   }
-): Promise<{ persisted: number; ignored: number; failures: number }> => {
-  const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
-  const normalizedPayload = normalizePollChoiceEventPayload(payloadRecord);
-  const validation = PollChoiceEventSchema.safeParse(normalizedPayload);
+  ): Promise<{ persisted: number; ignored: number; failures: number }> => {
+    const payloadRecord = asRecord((eventRecord as { payload?: unknown }).payload);
+  const normalizedPayload = normalizePollChoiceEventPayload(payloadRecord ?? {});
+    const validation = PollChoiceEventSchema.safeParse(normalizedPayload);
   const baseTenantId = context.tenantOverride ?? null;
   const baseInstanceId = context.instanceId ?? null;
 
-  if (!validation.success) {
-    pollChoiceEventBus.emit('pollChoiceInvalid', {
-      requestId: context.requestId,
-      reason: 'invalid_payload',
-      issues: validation.error.issues,
-      preview: toRawPreview(eventRecord),
-      tenantId: baseTenantId,
-      instanceId: baseInstanceId,
-    });
+    if (!validation.success) {
+      pollChoiceEventBus.emit('pollChoiceInvalid', {
+        requestId: context.requestId,
+        reason: 'schema_error',
+        issues: validation.error.issues,
+        preview: toRawPreview(eventRecord),
+        tenantId: baseTenantId,
+        instanceId: baseInstanceId,
+      });
     pollChoiceEventBus.emit('pollChoiceCompleted', {
       requestId: context.requestId,
       pollId: null,

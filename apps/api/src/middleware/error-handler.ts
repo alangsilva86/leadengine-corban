@@ -107,11 +107,16 @@ export const errorHandler = (
 
   // Tratar diferentes tipos de erro
   if (error instanceof HandledError || hasErrorName(error, 'HandledError')) {
+    const handled = error as unknown as HandledError & {
+      status?: number;
+      code?: string;
+      details?: unknown;
+    };
     apiError = {
-      status: error.status,
-      code: error.code,
+      status: handled.status ?? 400,
+      code: handled.code ?? 'HANDLED_ERROR',
       message: error.message,
-      details: readErrorDetails(error) ?? error.details,
+      details: readErrorDetails(error) ?? handled.details,
     };
   } else if (error instanceof ValidationError || hasErrorName(error, 'ValidationError')) {
     apiError = {
@@ -250,7 +255,7 @@ export const errorHandler = (
   }
 
   // Incluir stack trace apenas em desenvolvimento
-  if (process.env.NODE_ENV !== 'production' && apiError.status >= 500) {
+  if (process.env.NODE_ENV !== 'production' && apiError.status >= 500 && error.stack) {
     apiError.stack = error.stack;
   }
 

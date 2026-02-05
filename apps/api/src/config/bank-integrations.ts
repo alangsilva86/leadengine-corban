@@ -66,13 +66,6 @@ const atlasSettings: BankIntegrationSettings = {
   id: 'atlas-promotora',
   name: 'Atlas Promotora',
   baseUrl: atlasBaseUrl,
-  auth: atlasApiKey
-    ? {
-        type: 'apiKey',
-        header: 'X-Atlas-Key',
-        value: atlasApiKey,
-      }
-    : undefined,
   timeoutMs: DEFAULT_TIMEOUT_MS,
   maxRetries: DEFAULT_MAX_RETRIES,
   throttle: buildThrottle(Math.max(DEFAULT_THROTTLE_RPS, 8)),
@@ -84,20 +77,21 @@ const atlasSettings: BankIntegrationSettings = {
   },
   enabled: Boolean(atlasBaseUrl && atlasApiKey),
   tags: ['consignado', 'promotora'],
+  ...(atlasApiKey
+    ? {
+        auth: {
+          type: 'apiKey',
+          header: 'X-Atlas-Key',
+          value: atlasApiKey,
+        },
+      }
+    : {}),
 };
 
 const auroraSettings: BankIntegrationSettings = {
   id: 'aurora-bank',
   name: 'Aurora Bank',
   baseUrl: auroraBaseUrl,
-  auth:
-    auroraUser && auroraPassword
-      ? {
-          type: 'basic',
-          username: auroraUser,
-          password: auroraPassword,
-        }
-      : undefined,
   timeoutMs: DEFAULT_TIMEOUT_MS,
   maxRetries: DEFAULT_MAX_RETRIES,
   throttle: buildThrottle(DEFAULT_THROTTLE_RPS),
@@ -109,18 +103,21 @@ const auroraSettings: BankIntegrationSettings = {
   },
   enabled: Boolean(auroraBaseUrl && auroraUser && auroraPassword),
   tags: ['banco-digital'],
+  ...(auroraUser && auroraPassword
+    ? {
+        auth: {
+          type: 'basic',
+          username: auroraUser,
+          password: auroraPassword,
+        },
+      }
+    : {}),
 };
 
 const zeniteSettings: BankIntegrationSettings = {
   id: 'zenite-finance',
   name: 'Zênite Financeira',
   baseUrl: zeniteBaseUrl,
-  auth: zeniteToken
-    ? {
-        type: 'bearer',
-        token: zeniteToken,
-      }
-    : undefined,
   timeoutMs: DEFAULT_TIMEOUT_MS,
   maxRetries: DEFAULT_MAX_RETRIES,
   throttle: buildThrottle(Math.max(DEFAULT_THROTTLE_RPS, 3)),
@@ -134,6 +131,14 @@ const zeniteSettings: BankIntegrationSettings = {
   deprecated: Boolean(process.env.BANK_ZENITE_DEPRECATED === 'true'),
   sunsetAt: (process.env.BANK_ZENITE_SUNSET_AT ?? '').trim() || null,
   tags: ['credito-pessoal'],
+  ...(zeniteToken
+    ? {
+        auth: {
+          type: 'bearer',
+          token: zeniteToken,
+        },
+      }
+    : {}),
 };
 
 export const bankIntegrationSettings: BankIntegrationSettings[] = [
@@ -159,4 +164,3 @@ export const __testing = {
   toNumber,
   buildThrottle,
 };
-

@@ -86,8 +86,6 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 ### Feature hooks
 
 - `components/dashboard/useDashboardData.ts`
-- `features/agreements/useAgreements.js`
-- `features/agreements/useConvenioCatalog.ts`
 - `features/chat/api/useInboxLayoutPreferences.js`
 - `features/chat/api/useMessagesQuery.js`
 - `features/chat/api/useNotesMutation.js`
@@ -105,8 +103,6 @@ Hooks shared across the application are grouped by feature. Tests and stories ar
 - `features/chat/hooks/useRealtimeTickets.js`
 - `features/chat/hooks/useTypingIndicator.js`
 - `features/debug/hooks/useBaileysEvents.ts`
-- `features/onboarding/useOnboardingJourney.js`
-- `features/onboarding/useOnboardingStepLabel.js`
 - `features/shared/usePlayfulLogger.js`
 - `features/whatsapp/hooks/useInstanceLiveUpdates.js`
 - `features/whatsapp/hooks/useQrImageSource.js`

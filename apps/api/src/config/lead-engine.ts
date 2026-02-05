@@ -1,98 +1,5 @@
-
 import { z, ZodError } from 'zod';
 import { logger } from './logger';
-
-export interface AgreementDefinition {
-  id: string;
-  name: string;
-  slug: string;
-  description: string;
-  region: string;
-  basePrice: number;
-  unit: 'lead';
-  suggestedBatch: number;
-  tags: string[];
-}
-
-export const agreementDefinitions: AgreementDefinition[] = [
-  {
-    id: 'saec-goiania',
-    name: 'SAEC Goiânia',
-    slug: 'SaecGoiania',
-    description: 'Servidores municipais de Goiânia com folha SAEC.',
-    region: 'GO',
-    basePrice: 12,
-    unit: 'lead',
-    suggestedBatch: 25,
-    tags: ['prefeitura', 'consignado'],
-  },
-  {
-    id: 'saec-curaca',
-    name: 'SAEC Curaçá',
-    slug: 'SaecCuraca',
-    description: 'Convênio ativo para consignado em Curaçá (BA).',
-    region: 'BA',
-    basePrice: 12,
-    unit: 'lead',
-    suggestedBatch: 20,
-    tags: ['prefeitura'],
-  },
-  {
-    id: 'saec-caldas-novas',
-    name: 'SAEC Caldas Novas',
-    slug: 'SaecCaldasNovas',
-    description: 'Convênio municipal com alta taxa de resposta aos canais de voz.',
-    region: 'GO',
-    basePrice: 12,
-    unit: 'lead',
-    suggestedBatch: 25,
-    tags: ['prefeitura', 'hotspot'],
-  },
-  {
-    id: 'rf1-boa-vista',
-    name: 'RF1 Boa Vista',
-    slug: 'Rf1BoaVista',
-    description: 'Convênio estadual de Roraima com forte adesão.',
-    region: 'RR',
-    basePrice: 12,
-    unit: 'lead',
-    suggestedBatch: 20,
-    tags: ['estado'],
-  },
-  {
-    id: 'econsig-londrina',
-    name: 'EConsig Londrina',
-    slug: 'EConsigLondrina',
-    description: 'Convênio do município de Londrina com integração eConsig.',
-    region: 'PR',
-    basePrice: 12,
-    unit: 'lead',
-    suggestedBatch: 30,
-    tags: ['prefeitura'],
-  },
-  {
-    id: 'consigtec-maringa',
-    name: 'ConsigTec Maringá',
-    slug: 'ConsigTecMaringa',
-    description: 'Convênio ativo do ConsigTec com servidores de Maringá.',
-    region: 'PR',
-    basePrice: 12,
-    unit: 'lead',
-    suggestedBatch: 25,
-    tags: ['prefeitura'],
-  },
-  {
-    id: 'econsig-guaratuba',
-    name: 'EConsig Guaratuba',
-    slug: 'EConsigGuaratuba',
-    description: 'Convênio com integração eConsig para o município de Guaratuba.',
-    region: 'PR',
-    basePrice: 12,
-    unit: 'lead',
-    suggestedBatch: 20,
-    tags: ['prefeitura'],
-  },
-];
 
 const isoDateString = z
   .string()
@@ -180,12 +87,6 @@ logger.info('Lead Engine configuration normalised', {
   defaultStartDate: leadEngineConfig.defaultStartDate || null,
   defaultEndDate: leadEngineConfig.defaultEndDate || null,
 });
-
-export interface AgreementSummary extends AgreementDefinition {
-  availableLeads: number;
-  hotLeads: number;
-  lastSyncAt: string | null;
-}
 
 export interface BrokerLeadRecord {
   id: string;

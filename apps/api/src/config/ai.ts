@@ -7,7 +7,8 @@ const RELEASE_SUFFIX_REGEX = /-(?:20\d{2}-\d{2}-\d{2}|latest)$/i;
 
 type AiAssistantMode = 'IA_AUTO' | 'COPILOTO' | 'HUMANO';
 
-const DEFAULT_ASSISTANT_MODE: AiAssistantMode = 'IA_AUTO';
+// Safe-by-default: do not enable autonomous replies unless explicitly configured.
+const DEFAULT_ASSISTANT_MODE: AiAssistantMode = 'COPILOTO';
 
 const aiEnvSchema = z.object({
   OPENAI_API_KEY: z.string().min(1).optional(),
@@ -122,7 +123,7 @@ export const RESPONSES_API_URL =
 // Função para logar configuração (chamada após inicialização)
 export function logAiConfiguration() {
   try {
-    console.log('AI Configuration:', {
+    logger.info('AI configuration resolved', {
       isAiEnabled,
       hasApiKey: Boolean(aiConfig.apiKey),
       apiKeyLength: aiConfig.apiKey?.length ?? 0,
@@ -130,7 +131,9 @@ export function logAiConfiguration() {
       defaultAssistantMode: aiConfig.defaultAssistantMode,
     });
   } catch (error) {
-    console.error('Failed to log AI configuration:', error);
+    logger.warn('Failed to log AI configuration', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 

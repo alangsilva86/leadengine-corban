@@ -1,0 +1,4 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { Badge } from '@/components/ui/badge.jsx';
+const CampaignGroup = ({ agreementId, children, count, label }) => (_jsxs("div", { className: "space-y-3", children: [_jsxs("div", { className: "flex flex-wrap items-center justify-between gap-2", children: [_jsxs("div", { className: "flex items-center gap-2", children: [_jsx("p", { className: "text-sm font-semibold text-foreground", children: label }), _jsxs(Badge, { variant: "secondary", children: [count, " campanha(s)"] })] }), agreementId ? (_jsxs("p", { className: "text-xs text-muted-foreground", children: ["ID: ", agreementId] })) : (_jsx("p", { className: "text-xs text-muted-foreground", children: "Conv\u00EAnio sem identifica\u00E7\u00E3o" }))] }), _jsx("div", { className: "space-y-3", children: children })] }));
+export default CampaignGroup;

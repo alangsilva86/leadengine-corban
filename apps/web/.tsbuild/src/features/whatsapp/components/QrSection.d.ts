@@ -1,0 +1,21 @@
+export default QrSection;
+declare function QrSection({ surfaceStyles, open, onOpenChange, qrImageSrc, isGeneratingQrImage, qrStatusMessage, onGenerate, onOpenQrDialog, generateDisabled, openDisabled, pairingPhoneInput, onPairingPhoneChange, pairingDisabled, requestingPairingCode, onRequestPairingCode, pairingPhoneError, timelineItems, realtimeConnected, }: {
+    surfaceStyles: any;
+    open: any;
+    onOpenChange: any;
+    qrImageSrc: any;
+    isGeneratingQrImage: any;
+    qrStatusMessage: any;
+    onGenerate: any;
+    onOpenQrDialog: any;
+    generateDisabled: any;
+    openDisabled: any;
+    pairingPhoneInput: any;
+    onPairingPhoneChange: any;
+    pairingDisabled: any;
+    requestingPairingCode: any;
+    onRequestPairingCode: any;
+    pairingPhoneError: any;
+    timelineItems: any;
+    realtimeConnected: any;
+}): import("react/jsx-runtime").JSX.Element;

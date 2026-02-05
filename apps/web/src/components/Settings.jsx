@@ -22,8 +22,6 @@ import {
 import QueuesTab from './settings/QueuesTab.jsx';
 import AiSettingsTab from './settings/AiSettingsTab';
 import MetaSettingsTab from './settings/MetaSettingsTab';
-import ConveniosSettingsTab from './settings/convenios/ConveniosSettingsTab.jsx';
-import OnboardingInvitesTab from './settings/OnboardingInvitesTab';
 import UsersSettingsTab from '@/features/users/components/UsersSettingsTab';
 
 const Settings = () => {
@@ -81,10 +79,8 @@ const Settings = () => {
           <TabsTrigger value="users">Usuários</TabsTrigger>
           <TabsTrigger value="notifications">Notificações</TabsTrigger>
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
-          <TabsTrigger value="agreements">Convênios & Tabelas</TabsTrigger>
           <TabsTrigger value="meta">Meta</TabsTrigger>
           <TabsTrigger value="ai">IA</TabsTrigger>
-          <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
           <TabsTrigger value="security">Segurança</TabsTrigger>
           <TabsTrigger value="queues">Filas</TabsTrigger>
         </TabsList>
@@ -158,10 +154,6 @@ const Settings = () => {
           <MetaSettingsTab />
         </TabsContent>
 
-        <TabsContent value="onboarding" className="space-y-6">
-          <OnboardingInvitesTab />
-        </TabsContent>
-
         {/* Gerenciamento de Usuários */}
         <TabsContent value="users" className="space-y-6">
           <UsersSettingsTab />
@@ -222,10 +214,6 @@ const Settings = () => {
         </TabsContent>
 
         {/* Integrações */}
-
-        <TabsContent value="agreements" className="space-y-6">
-          <ConveniosSettingsTab />
-        </TabsContent>
 
         <TabsContent value="integrations" className="space-y-6">
           <Card>

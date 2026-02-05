@@ -114,14 +114,26 @@ export const processInboundMediaRetryJobs = async (options: MediaRetryWorkerOpti
       }
 
       const metadataRecord = toRecord(claimed.metadata);
-      const descriptor = await saveWhatsAppMedia({
+      const resolvedOriginalName =
+        readNullableString(metadataRecord.fileName) ?? downloadResult.fileName ?? null;
+      const resolvedMimeType =
+        readNullableString(metadataRecord.mimeType) ?? downloadResult.mimeType ?? null;
+
+      const saveInput: Parameters<typeof saveWhatsAppMedia>[0] = {
         buffer: downloadResult.buffer,
         tenantId: claimed.tenantId,
         instanceId: claimed.instanceId,
         messageId: claimed.messageExternalId ?? claimed.messageId,
-        originalName: readNullableString(metadataRecord.fileName) ?? downloadResult.fileName ?? undefined,
-        mimeType: readNullableString(metadataRecord.mimeType) ?? downloadResult.mimeType ?? undefined,
-      });
+      };
+
+      if (resolvedOriginalName) {
+        saveInput.originalName = resolvedOriginalName;
+      }
+      if (resolvedMimeType) {
+        saveInput.mimeType = resolvedMimeType;
+      }
+
+      const descriptor = await saveWhatsAppMedia(saveInput);
 
       const resolvedMime = downloadResult.mimeType ?? readNullableString(metadataRecord.mimeType);
       const resolvedSize = downloadResult.size ?? readNullableNumber(metadataRecord.size);

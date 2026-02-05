@@ -120,12 +120,24 @@ export const respondWhatsAppStorageUnavailable = (
     prismaCode,
   });
 
-  trackStorageUnavailable(operation, {
-    tenantId: context.tenantId,
-    instanceId: context.instanceId,
-    operationType: context.operationType,
+  const metricContext: {
+    tenantId?: string;
+    instanceId?: string | null;
+    operationType?: string | null;
+    errorCode?: string | null;
+  } = {
     errorCode: storageDisabled ? 'DATABASE_DISABLED' : 'WHATSAPP_STORAGE_UNAVAILABLE',
-  });
+  };
+  if (typeof context.tenantId === 'string' && context.tenantId.trim().length > 0) {
+    metricContext.tenantId = context.tenantId;
+  }
+  if (context.instanceId !== undefined) {
+    metricContext.instanceId = context.instanceId;
+  }
+  if (context.operationType !== undefined) {
+    metricContext.operationType = context.operationType;
+  }
+  trackStorageUnavailable(operation, metricContext);
 
   if (storageDisabled) {
     if (!res.locals) {

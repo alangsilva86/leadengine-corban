@@ -6,13 +6,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import CreateCampaignWizard from '../CreateCampaignWizard.jsx';
 
-const mockUseAgreements = vi.fn();
-
-vi.mock('@/features/agreements/useAgreements.js', () => ({
-  __esModule: true,
-  default: () => mockUseAgreements(),
-}));
-
 describe('CreateCampaignWizard', () => {
   const defaultProps = {
     open: true,
@@ -33,22 +26,8 @@ describe('CreateCampaignWizard', () => {
     onCancel: vi.fn(),
   };
 
-  const buildAgreementsState = () => ({
-    agreements: [
-      {
-        id: 'agreement-1',
-        name: 'Convênio Central',
-        whatsappProductScope: ['consigned_credit', 'benefit_card'],
-      },
-    ],
-    isLoading: false,
-    error: null,
-    retry: vi.fn(),
-  });
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseAgreements.mockReturnValue(buildAgreementsState());
   });
 
   it('keeps progress when advancing to Produto & margem and preserves a custom name on review', async () => {
@@ -64,6 +43,9 @@ describe('CreateCampaignWizard', () => {
     await user.click(advanceButtonStep1);
 
     expect(await screen.findByText('Defina a origem de leads')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Origem (sourceId)'), 'agreement-1');
+    await user.type(screen.getByLabelText('Origem (nome)'), 'Convênio Central');
 
     const advanceButtonStep2 = screen.getByRole('button', { name: 'Avançar' });
     await user.click(advanceButtonStep2);

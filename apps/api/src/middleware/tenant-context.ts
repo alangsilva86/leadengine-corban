@@ -2,11 +2,13 @@ import type { Request, RequestHandler } from 'express';
 
 import { resolveRequestTenantId } from '../services/tenant-service';
 
-declare module 'express-serve-static-core' {
-  interface Request {
-    tenantContext?: {
-      tenantId: string;
-    };
+declare global {
+  namespace Express {
+    interface Request {
+      tenantContext?: {
+        tenantId: string;
+      };
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-import type { Application, Router } from 'express';
+import type { Application, RequestHandler, Router } from 'express';
 
 import type { Logger } from '../types/logger';
 import { renderMetrics } from '../lib/metrics';
@@ -6,8 +6,6 @@ import { buildHealthPayload } from '../health';
 import { authMiddleware, requireTenant } from '../middleware/auth';
 import { requirePlatformAdmin } from '../middleware/platform-admin';
 import { authRouter } from '../routes/auth';
-import { onboardingRouter } from '../routes/onboarding';
-import { onboardingInvitationsRouter } from '../routes/onboarding-invitations';
 import { integrationWebhooksRouter, webhooksRouter } from '../routes/webhooks';
 import { leadEngineRouter } from '../routes/lead-engine';
 import { aiRouter } from '../routes/ai';
@@ -22,17 +20,12 @@ import { whatsappMessagesRouter } from '../routes/integrations/whatsapp.messages
 import { whatsappUploadsRouter } from '../routes/whatsapp.uploads';
 import { integrationsRouter } from '../routes/integrations';
 import { campaignsRouter } from '../routes/campaigns';
-import { reportsRouter } from '../routes/reports';
 import { queuesRouter } from '../routes/queues';
 import { preferencesRouter } from '../routes/preferences';
-import { agreementsRouter } from '../routes/agreements';
-import { agreementsProvidersRouter } from '../routes/agreements.providers';
 import { tenantsRouter } from '../routes/tenants';
 import { usersRouter } from '../routes/users';
-import { salesRouter } from '../routes/sales';
 import { whatsappDebugRouter } from '../features/debug/routes/whatsapp-debug';
 import { isWhatsappDebugToolsEnabled } from '../config/feature-flags';
-import { tenantAdminRouterFactory } from '../modules/tenant-admin/tenants.routes';
 import { errorHandler } from '../middleware/error-handler';
 import { getBrokerBaseUrl } from '../config/whatsapp';
 import { logAiConfiguration } from '../config/ai';
@@ -86,7 +79,7 @@ type AiAutoReplyPayload = {
   environment: string;
   openaiKeyConfigured: boolean;
   loggerTransports: { name: string; level: string }[];
-  tenants: { id: string; slug: string; aiEnabled: boolean; aiMode: unknown; aiModel: unknown }[];
+  tenants: { id: string; slug: string }[];
 };
 
 type AiConfigDebugPayload = {
@@ -118,7 +111,17 @@ export const buildDebugMessagesRouter = (shouldRegisterWhatsappDebugRoutes: bool
   shouldRegisterWhatsappDebugRoutes ? enabledDebugMessagesRouter : buildDisabledDebugMessagesRouter();
 
 export const registerRouters = (app: Application, { logger, nodeEnv, debugMessagesRouter }: RegisterRoutersDeps) => {
-  const tenantAdminRouter = tenantAdminRouterFactory();
+  const debugRoutesEnabled = process.env.DEBUG_ROUTES === 'true' && nodeEnv !== 'production';
+  const requireDebugRoutesEnabled: RequestHandler = (req, res, next) => {
+    if (!debugRoutesEnabled) {
+      res.status(404).json({
+        error: 'Not Found',
+        message: `Route ${req.originalUrl} not found`,
+      });
+      return;
+    }
+    next();
+  };
 
   app.get('/metrics', async (_req, res) => {
     const payload = await renderMetrics();
@@ -171,9 +174,14 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
     res.status(200).json(payload);
   });
 
-  app.get('/_diag/ai-auto-reply', authMiddleware, requirePlatformAdmin, async (req, res) => {
+  app.get(
+    '/_diag/ai-auto-reply',
+    requireDebugRoutesEnabled,
+    authMiddleware,
+    requirePlatformAdmin,
+    async (req, res) => {
     try {
-      const { prisma } = await import('../lib/prisma');
+      const { prisma } = await import('../lib/prisma.js');
 
       const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId : undefined;
       const take = parseNumberQueryParam(req.query.take, { defaultValue: 25, max: 100, min: 1 });
@@ -189,13 +197,10 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
       }
 
       const tenants = await prisma.tenant.findMany({
-        where: tenantId ? { id: tenantId } : undefined,
+        ...(tenantId ? { where: { id: tenantId } } : {}),
         select: {
           id: true,
           slug: true,
-          aiEnabled: true,
-          aiMode: true,
-          aiModel: true,
         },
         orderBy: { createdAt: 'desc' },
         take,
@@ -209,16 +214,13 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
         timestamp: new Date().toISOString(),
         environment: nodeEnv,
         openaiKeyConfigured: !!process.env.OPENAI_API_KEY,
-        loggerTransports: logger.transports.map((t: any) => ({
-          name: t.name,
-          level: t.level,
+        loggerTransports: logger.transports.map((transport: any) => ({
+          name: String(transport?.name ?? 'unknown'),
+          level: String(transport?.level ?? 'info'),
         })),
         tenants: tenants.map((t) => ({
           id: t.id,
           slug: t.slug,
-          aiEnabled: t.aiEnabled,
-          aiMode: t.aiMode,
-          aiModel: t.aiModel,
         })),
       };
 
@@ -232,16 +234,14 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-  });
+    }
+  );
 
   app.use('/api/auth', authRouter);
-  app.use('/api/onboarding/invitations', authMiddleware, onboardingInvitationsRouter);
-  app.use('/api/onboarding', onboardingRouter);
   app.use('/api/integrations', integrationWebhooksRouter);
   app.use('/api/webhooks', webhooksRouter);
   app.use('/api/lead-engine', authMiddleware, requireTenant, leadEngineRouter);
   app.use('/api/ai', authMiddleware, requireTenant, aiRouter);
-  app.use('/api/tenant-admin/tenants', authMiddleware, requirePlatformAdmin, tenantAdminRouter);
   app.use('/api/crm', authMiddleware, crmRouter);
   app.use(
     '/api/debug/wa',
@@ -257,7 +257,9 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
     },
     whatsappDebugRouter,
   );
-  app.use('/api', debugMessagesRouter);
+  if (debugRoutesEnabled) {
+    app.use('/api', authMiddleware, requirePlatformAdmin, debugMessagesRouter);
+  }
 
   app.use('/api/tickets', authMiddleware, requireTenant, ticketsRouter);
   app.use('/api/leads', authMiddleware, requireTenant, leadsRouter);
@@ -269,13 +271,9 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
   app.use('/api', authMiddleware, whatsappUploadsRouter);
   app.use('/api/integrations', authMiddleware, integrationsRouter);
   app.use('/api/campaigns', authMiddleware, requireTenant, campaignsRouter);
-  app.use('/api', authMiddleware, requireTenant, agreementsRouter);
-  app.use('/api/reports', authMiddleware, requireTenant, reportsRouter);
   app.use('/api/queues', authMiddleware, requireTenant, queuesRouter);
-  app.use('/api/sales', authMiddleware, requireTenant, salesRouter);
   app.use('/api/tenants', authMiddleware, requireTenant, tenantsRouter);
   app.use('/api/users', authMiddleware, requireTenant, usersRouter);
-  app.use('/api/v1/agreements', authMiddleware, requireTenant, agreementsProvidersRouter);
   app.use('/api', authMiddleware, preferencesRouter);
 
   const rootAvailabilityPayload = {
@@ -299,9 +297,9 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
       .end();
   });
 
-  app.get('/_debug/ai-config', authMiddleware, requirePlatformAdmin, async (req, res) => {
+  app.get('/_debug/ai-config', requireDebugRoutesEnabled, authMiddleware, requirePlatformAdmin, async (req, res) => {
     try {
-      const { prisma } = await import('../lib/prisma');
+      const { prisma } = await import('../lib/prisma.js');
 
       const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId : 'demo-tenant';
       const scopeKey = typeof req.query.scopeKey === 'string' ? req.query.scopeKey : '__global__';
@@ -359,9 +357,14 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
     }
   });
 
-  app.post('/_debug/ai-config/update', authMiddleware, requirePlatformAdmin, async (req, res) => {
+  app.post(
+    '/_debug/ai-config/update',
+    requireDebugRoutesEnabled,
+    authMiddleware,
+    requirePlatformAdmin,
+    async (req, res) => {
     try {
-      const { prisma } = await import('../lib/prisma');
+      const { prisma } = await import('../lib/prisma.js');
       const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : 'demo-tenant';
       const scopeKey = typeof req.body?.scopeKey === 'string' ? req.body.scopeKey : '__global__';
 
@@ -375,7 +378,8 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
-  });
+    }
+  );
 
   app.use(errorHandler);
 

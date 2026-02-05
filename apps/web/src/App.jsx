@@ -9,16 +9,19 @@ import {
 } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import './App.css';
-import useOnboardingJourney from './features/onboarding/useOnboardingJourney.js';
 import { Button } from '@/components/ui/button.jsx';
 import AuthProvider, { useAuth } from './features/auth/AuthProvider.jsx';
 import LoginPage from './features/auth/Login.tsx';
-import { NAVIGATION_PAGES, ONBOARDING_PAGE_IDS } from '@/features/navigation/routes.ts';
+import { NAVIGATION_PAGES } from '@/features/navigation/routes.ts';
 
 const ContactsModule = lazy(() => import('./features/contacts/ContactsModule.jsx'));
 const CrmModule = lazy(() => import('./features/crm/CrmModule.jsx'));
-const TenantAdminListPage = lazy(() => import('./features/tenant-admin/pages/TenantListPage.tsx'));
-const TenantAdminFormPage = lazy(() => import('./features/tenant-admin/pages/TenantFormPage.tsx'));
+const Dashboard = lazy(() => import('./components/Dashboard.jsx'));
+const WhatsAppConnect = lazy(() => import('./features/whatsapp/connect/index'));
+const WhatsAppCampaigns = lazy(() => import('./features/whatsapp/campaigns/index'));
+const ChatCommandCenter = lazy(() => import('./features/chat/containers/ChatCommandCenterContainer.js'));
+const Settings = lazy(() => import('./components/Settings.jsx'));
+const BaileysLogs = lazy(() => import('./features/debug/BaileysLogs.jsx'));
 
 export const PageFallback = () => (
   <div className="flex min-h-[200px] items-center justify-center text-muted-foreground">
@@ -91,56 +94,28 @@ const RouteErrorBoundary = () => {
   );
 };
 
-const ONBOARDING_PAGE_SET = new Set(ONBOARDING_PAGE_IDS);
-
-const dispatchGlobalNavigation = (targetPage) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  const event = new CustomEvent('leadengine:navigate', { detail: targetPage });
-  window.dispatchEvent(event);
-};
-
-const OnboardingRoute = ({ initialPage, journeyKind = 'app' }) => {
+const LayoutRoute = ({ currentPage, fullWidthContent = false, children }) => {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
-  const { safeCurrentPage, onboarding, handleNavigate, page } = useOnboardingJourney({
-    initialPage,
-    currentUser: user,
-    loadingCurrentUser: authLoading,
-    journeyKind,
-  });
 
   const handleRouteNavigate = useCallback(
     (nextPage) => {
       const definition = NAVIGATION_PAGES[nextPage];
-      const shouldUpdateOnboarding = ONBOARDING_PAGE_SET.has(nextPage);
 
       if (definition?.path) {
-        dispatchGlobalNavigation(nextPage);
-        if (shouldUpdateOnboarding) {
-          handleNavigate(nextPage);
-        }
         navigate(definition.path);
-        return;
-      }
-
-      if (shouldUpdateOnboarding) {
-        handleNavigate(nextPage);
       }
     },
-    [handleNavigate, navigate]
+    [navigate]
   );
 
   return (
     <Layout
-      currentPage={safeCurrentPage}
+      currentPage={currentPage}
       onNavigate={handleRouteNavigate}
-      onboarding={onboarding}
-      fullWidthContent={safeCurrentPage === 'inbox'}
+      onboarding={null}
+      fullWidthContent={fullWidthContent}
     >
-      <Suspense fallback={<PageFallback />}>{page}</Suspense>
+      <Suspense fallback={<PageFallback />}>{children}</Suspense>
     </Layout>
   );
 };
@@ -175,22 +150,6 @@ const AuthGate = ({ children }) => {
   return children;
 };
 
-const OnboardingPortalRoute = () => {
-  const { user, loading: authLoading } = useAuth();
-  const { page } = useOnboardingJourney({
-    initialPage: 'accept-invite',
-    journeyKind: 'invite',
-    currentUser: user,
-    loadingCurrentUser: authLoading,
-  });
-
-  return (
-    <Suspense fallback={<PageFallback />}>
-      {page}
-    </Suspense>
-  );
-};
-
 const LogoutRoute = () => {
   const { logout } = useAuth();
   const navigate = useNavigate();
@@ -220,7 +179,9 @@ const router = createBrowserRouter([
     path: '/',
     element: (
       <AuthGate>
-        <OnboardingRoute initialPage={null} journeyKind="app" />
+        <LayoutRoute currentPage={NAVIGATION_PAGES.dashboard.id}>
+          <Dashboard />
+        </LayoutRoute>
       </AuthGate>
     ),
     errorElement: <RouteErrorBoundary />,
@@ -229,7 +190,9 @@ const router = createBrowserRouter([
     path: '/channels',
     element: (
       <AuthGate>
-        <OnboardingRoute initialPage="channels" journeyKind="app" />
+        <LayoutRoute currentPage={NAVIGATION_PAGES.channels.id}>
+          <WhatsAppConnect />
+        </LayoutRoute>
       </AuthGate>
     ),
     errorElement: <RouteErrorBoundary />,
@@ -238,7 +201,42 @@ const router = createBrowserRouter([
     path: '/campaigns',
     element: (
       <AuthGate>
-        <OnboardingRoute initialPage="campaigns" journeyKind="app" />
+        <LayoutRoute currentPage={NAVIGATION_PAGES.campaigns.id}>
+          <WhatsAppCampaigns />
+        </LayoutRoute>
+      </AuthGate>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/inbox',
+    element: (
+      <AuthGate>
+        <LayoutRoute currentPage={NAVIGATION_PAGES.inbox.id} fullWidthContent>
+          <ChatCommandCenter />
+        </LayoutRoute>
+      </AuthGate>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/settings',
+    element: (
+      <AuthGate>
+        <LayoutRoute currentPage={NAVIGATION_PAGES.settings.id}>
+          <Settings />
+        </LayoutRoute>
+      </AuthGate>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: '/baileys-logs',
+    element: (
+      <AuthGate>
+        <LayoutRoute currentPage={NAVIGATION_PAGES['baileys-logs'].id}>
+          <BaileysLogs />
+        </LayoutRoute>
       </AuthGate>
     ),
     errorElement: <RouteErrorBoundary />,
@@ -262,39 +260,6 @@ const router = createBrowserRouter([
     errorElement: <RouteErrorBoundary />,
   },
   {
-    path: '/admin/tenants',
-    element: (
-      <AuthGate>
-        <Suspense fallback={<PageFallback />}>
-          <TenantAdminListPage />
-        </Suspense>
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/admin/tenants/new',
-    element: (
-      <AuthGate>
-        <Suspense fallback={<PageFallback />}>
-          <TenantAdminFormPage />
-        </Suspense>
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/admin/tenants/:tenantId',
-    element: (
-      <AuthGate>
-        <Suspense fallback={<PageFallback />}>
-          <TenantAdminFormPage />
-        </Suspense>
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
     path: '/login',
     element: <LoginPage />,
     errorElement: <RouteErrorBoundary />,
@@ -306,11 +271,6 @@ const router = createBrowserRouter([
         <LogoutRoute />
       </AuthGate>
     ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/onboarding',
-    element: <OnboardingPortalRoute />, 
     errorElement: <RouteErrorBoundary />,
   },
   {

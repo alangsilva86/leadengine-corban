@@ -11,7 +11,7 @@ import { logger } from '../../../config/logger';
 import { prisma } from '../../../lib/prisma';
 import { inboundMessagesProcessedCounter } from '../../../lib/metrics';
 import {
-  emitToAgreement,
+  emitToCampaign,
   emitToTenant,
   emitToTicket,
   getSocketServer,
@@ -30,7 +30,7 @@ import {
   type InboundMessageDetails,
   type InboundWhatsAppEvent,
 } from './types';
-import { resolveTicketAgreementId } from './ticket-utils';
+import { resolveTicketAgreementId, resolveTicketCampaignId } from './ticket-utils';
 import { downloadViaBaileys, downloadViaBroker } from './media-downloader';
 import { saveWhatsAppMedia } from '../../../services/whatsapp-media-service';
 
@@ -85,10 +85,12 @@ export const emitPassthroughRealtimeUpdates = async ({
     }
 
     const agreementId = resolveTicketAgreementId(ticketRecord);
+    const campaignId = resolveTicketCampaignId(ticketRecord);
 
     const ticketPayload = {
       tenantId,
       ticketId: ticketRecord.id,
+      campaignId,
       agreementId,
       instanceId: instanceId ?? null,
       messageId: message.id,
@@ -101,15 +103,15 @@ export const emitPassthroughRealtimeUpdates = async ({
 
     emitToTicket(ticketRecord.id, 'tickets.updated', ticketPayload);
     emitToTenant(tenantId, 'tickets.updated', ticketPayload);
-    if (agreementId) {
-      emitToAgreement(agreementId, 'tickets.updated', ticketPayload);
+    if (campaignId) {
+      emitToCampaign(campaignId, 'tickets.updated', ticketPayload);
     }
 
     if (ticketWasCreated) {
       emitToTicket(ticketRecord.id, 'tickets.new', ticketPayload);
       emitToTenant(tenantId, 'tickets.new', ticketPayload);
-      if (agreementId) {
-        emitToAgreement(agreementId, 'tickets.new', ticketPayload);
+      if (campaignId) {
+        emitToCampaign(campaignId, 'tickets.new', ticketPayload);
       }
     }
   } catch (error) {

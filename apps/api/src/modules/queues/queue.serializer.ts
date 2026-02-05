@@ -31,14 +31,34 @@ const normalizeSettings = (value: unknown): Prisma.JsonObject | null | undefined
 
 export class QueueSerializer {
   buildCreateInput(body: Record<string, unknown>): QueueInput {
-    return {
+    const input: QueueInput = {
       name: String(body.name ?? '').trim(),
-      description: sanitizeOptionalString(body.description) ?? undefined,
-      color: sanitizeOptionalString(body.color) ?? undefined,
-      isActive: typeof body.isActive === 'boolean' ? body.isActive : undefined,
-      orderIndex: typeof body.orderIndex === 'number' ? body.orderIndex : undefined,
-      settings: normalizeSettings(body.settings),
     };
+
+    const description = sanitizeOptionalString(body.description);
+    if (description !== undefined) {
+      input.description = description ?? null;
+    }
+
+    const color = sanitizeOptionalString(body.color);
+    if (color !== undefined) {
+      input.color = color ?? null;
+    }
+
+    if (typeof body.isActive === 'boolean') {
+      input.isActive = body.isActive;
+    }
+
+    if (typeof body.orderIndex === 'number' && Number.isFinite(body.orderIndex)) {
+      input.orderIndex = body.orderIndex;
+    }
+
+    const settings = normalizeSettings(body.settings);
+    if (settings !== undefined) {
+      input.settings = settings ?? null;
+    }
+
+    return input;
   }
 
   buildUpdateInput(body: Record<string, unknown>): { updates: QueueUpdateInput; hasUpdates: boolean } {
@@ -62,11 +82,17 @@ export class QueueSerializer {
     }
 
     if (hasOwn.call(body, 'orderIndex')) {
-      updates.orderIndex = (body as { orderIndex?: number }).orderIndex;
+      const value = (body as { orderIndex?: unknown }).orderIndex;
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        updates.orderIndex = value;
+      }
     }
 
     if (hasOwn.call(body, 'settings')) {
-      updates.settings = normalizeSettings((body as { settings?: Record<string, unknown> | null }).settings);
+      const normalized = normalizeSettings((body as { settings?: Record<string, unknown> | null }).settings);
+      if (normalized !== undefined) {
+        updates.settings = normalized ?? null;
+      }
     }
 
     return { updates, hasUpdates: Object.keys(updates).length > 0 };

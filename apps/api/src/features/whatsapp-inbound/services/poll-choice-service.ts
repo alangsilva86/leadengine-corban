@@ -254,7 +254,11 @@ const decryptEncryptedVoteSelections = (params: {
   messageSecret: string | null;
   creationMessageId: string | null;
   creationMessageKey:
-    | { remoteJid?: string | null; participant?: string | null; fromMe?: boolean | null }
+    | {
+        remoteJid?: string | null | undefined;
+        participant?: string | null | undefined;
+        fromMe?: boolean | null | undefined;
+      }
     | null;
   metadataOptions: PollMetadataOption[] | null | undefined;
   stateOptions: PollChoiceState['options'];
@@ -461,7 +465,7 @@ export const recordPollChoiceVote = async (
 
   const mergedMetadata = (() => {
     if (!runtimeMetadata && !pollMetadata) {
-      return null as const;
+      return null;
     }
 
     const runtimeOptions = runtimeMetadata?.options ?? [];
@@ -667,7 +671,10 @@ export const recordPollChoiceVote = async (
       pollId,
       voterJid,
       optionIds: selectedOptionIds,
-      selectedOptions,
+      selectedOptions: selectedOptions.map((option) => ({
+        id: option.id,
+        title: option.title ?? null,
+      })),
     });
   } catch (runtimeError) {
     logger.warn('Failed to cache poll vote selection in runtime service', {

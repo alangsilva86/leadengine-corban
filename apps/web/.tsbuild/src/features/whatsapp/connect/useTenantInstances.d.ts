@@ -1,0 +1,61 @@
+import type { WhatsAppConnectAction, WhatsAppConnectState } from './useWhatsAppConnect';
+interface UseTenantInstancesParams {
+    selectedAgreement: any;
+    status?: string;
+    activeCampaign?: any;
+    onStatusChange?: (status: string) => void;
+    onError: (message: string | null, meta?: any) => void;
+    logger: {
+        log: (...args: any[]) => void;
+        warn: (...args: any[]) => void;
+        error: (...args: any[]) => void;
+    };
+    dispatch: (action: WhatsAppConnectAction) => void;
+    state: WhatsAppConnectState;
+    campaignInstanceId: string | null;
+}
+declare const useTenantInstances: ({ selectedAgreement, status, activeCampaign, onStatusChange, onError, logger, dispatch, state, campaignInstanceId, }: UseTenantInstancesParams) => {
+    instance: import("../state/instancesStore.js").Nullable<import("../lib/instances").NormalizedInstance>;
+    instances: import("../lib/instances").NormalizedInstance[];
+    renderInstances: import("../lib/instances").NormalizedInstance[];
+    instancesReady: boolean;
+    hasHiddenInstances: boolean;
+    visibleInstanceCount: number;
+    totalInstanceCount: number;
+    tenantScopeNotice: string | null;
+    tenantFilterId: string | null;
+    tenantFilterLabel: string | null;
+    tenantFilteredOutCount: number;
+    selectedInstanceBelongsToTenant: boolean;
+    tenantScopedInstances: import("../lib/instances").NormalizedInstance[];
+    localStatus: string;
+    qrData: unknown;
+    secondsLeft: import("../state/instancesStore.js").Nullable<number>;
+    loadingInstances: boolean;
+    loadingQr: boolean;
+    isAuthenticated: boolean;
+    deletingInstanceId: import("../state/instancesStore.js").Nullable<string>;
+    liveEvents: import("../state/instancesStore.js").RealtimeEventEntry[];
+    loadInstances: (loadOptions?: {}) => Promise<any>;
+    selectInstance: (id: any, options?: {}) => void;
+    generateQr: (instanceId: any, options?: {}) => Promise<void>;
+    connectInstance: (instanceId: any, pairingOptions?: {}) => Promise<any>;
+    createInstance: ({ name, id }: {
+        name: any;
+        id: any;
+    }) => Promise<boolean>;
+    deleteInstance: (instance: any) => Promise<void>;
+    markConnected: () => Promise<any>;
+    handleAuthFallback: (fallbackOptions?: {}) => void;
+    setSecondsLeft: (value: any) => void;
+    setGeneratingQrState: (value: any) => void;
+    setInstanceStatus: (nextStatus: any) => void;
+    realtimeConnected: boolean;
+    selectedInstanceStatus: string;
+    showAllInstances: boolean;
+    setShowAllInstances: (value: boolean) => void;
+    createInstanceWarning: string | null;
+    canCreateInstance: boolean;
+    nextInstanceOrdinal: number;
+};
+export default useTenantInstances;

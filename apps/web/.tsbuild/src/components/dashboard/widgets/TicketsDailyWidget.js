@@ -1,0 +1,8 @@
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { memo } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
+import { Skeleton } from '@/components/ui/skeleton.jsx';
+import { cn } from '@/lib/utils.js';
+import { CartesianGrid, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+const TicketsDailyWidgetComponent = ({ data, loading = false, className }) => (_jsxs(Card, { className: cn('transition-shadow duration-200 hover:shadow-lg', className), children: [_jsxs(CardHeader, { children: [_jsx(CardTitle, { children: "Tickets por Dia" }), _jsx(CardDescription, { children: "Acompanhe o volume de tickets abertos, fechados e pendentes" })] }), _jsx(CardContent, { children: loading ? (_jsx(Skeleton, { className: "h-[300px] w-full rounded-lg", "data-testid": "tickets-daily-skeleton" })) : (_jsxs(_Fragment, { children: [_jsx(ResponsiveContainer, { width: "100%", height: 300, "data-testid": "tickets-daily-chart", children: _jsxs(BarChart, { data: data, children: [_jsx(CartesianGrid, { strokeDasharray: "3 3" }), _jsx(XAxis, { dataKey: "name" }), _jsx(YAxis, { allowDecimals: false }), _jsx(Tooltip, {}), _jsx(Bar, { dataKey: "abertos", fill: "var(--color-error)", name: "Abertos" }), _jsx(Bar, { dataKey: "fechados", fill: "var(--color-success)", name: "Fechados" }), _jsx(Bar, { dataKey: "pendentes", fill: "var(--color-warning)", name: "Pendentes" })] }) }), data.length === 0 ? (_jsx("p", { className: "mt-4 text-sm text-muted-foreground", "data-testid": "tickets-daily-empty", children: "Nenhum ticket registrado nos \u00FAltimos dias." })) : null] })) })] }));
+export const TicketsDailyWidget = memo(TicketsDailyWidgetComponent);

@@ -7,25 +7,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import CreateCampaignDialog from '../CreateCampaignDialog.jsx';
 import { TOTAL_STEPS } from '../CreateCampaignWizard.jsx';
 
-const mockUseAgreements = vi.fn();
-
-vi.mock('@/features/agreements/useAgreements.js', () => ({
-  __esModule: true,
-  default: () => mockUseAgreements(),
-}));
-
-const buildAgreementsState = (overrides = {}) => ({
-  agreements: [
-    { id: 'agreement-1', name: 'Convênio Alpha', region: 'SP' },
-    { id: 'agreement-2', name: 'Convênio Beta' },
-  ],
-  isLoading: false,
-  error: null,
-  retry: vi.fn(),
-  fetch: vi.fn(),
-  ...overrides,
-});
-
 const buildInstance = (overrides = {}) => ({
   id: 'instance-1',
   name: 'Instância A',
@@ -35,10 +16,6 @@ const buildInstance = (overrides = {}) => ({
 });
 
 describe('CreateCampaignDialog wizard', () => {
-  beforeEach(() => {
-    mockUseAgreements.mockReturnValue(buildAgreementsState());
-  });
-
   const expectStepLabelToBe = async (stepNumber) => {
     const label = new RegExp(`Passo ${stepNumber} de ${TOTAL_STEPS}`);
     await waitFor(() => {
@@ -68,8 +45,8 @@ describe('CreateCampaignDialog wizard', () => {
 
     await expectStepLabelToBe(2);
 
-    await user.click(screen.getByRole('combobox', { name: /^Convênio$/i }));
-    await user.click(await screen.findByRole('option', { name: /Convênio Beta/i }));
+    await user.type(screen.getByLabelText('Origem (sourceId)'), 'agreement-2');
+    await user.type(screen.getByLabelText('Origem (nome)'), 'Convênio Beta');
 
     await user.click(screen.getByRole('button', { name: /Avançar/i }));
 

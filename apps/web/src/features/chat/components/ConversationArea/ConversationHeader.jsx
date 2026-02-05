@@ -55,7 +55,7 @@ const PRIMARY_ACTION_PRESETS = {
     default: { id: 'qualify', label: 'Registrar próximo passo' },
   },
   proposal: {
-    default: { id: 'sales-simulate', label: 'Simular proposta' },
+    default: { id: 'qualify', label: 'Registrar próximo passo' },
   },
   documentation: {
     default: { id: 'send-steps', label: 'Enviar passo a passo' },
@@ -208,8 +208,6 @@ const ConversationHeader = ({
   onSendTemplate,
   onCreateNextStep,
   onGenerateProposal,
-  onOpenSimulation,
-  onOpenDeal,
   onScheduleFollowUp,
   onSendSMS,
   onAttachFile,
@@ -399,7 +397,6 @@ const ConversationHeader = ({
     () => ({
       ticket,
       handlers: {
-        onOpenSimulation,
         onGenerateProposal,
         onAssign,
         onRegisterResult,
@@ -412,7 +409,7 @@ const ConversationHeader = ({
         onCreateNote,
       },
       capabilities: {
-        canGenerateProposal: Boolean(ticket && onOpenSimulation),
+        canGenerateProposal: Boolean(ticket && onGenerateProposal),
         canAssign: Boolean(ticket),
         canRegisterResult: Boolean(ticket),
         canCall: Boolean(rawPhone),
@@ -443,7 +440,6 @@ const ConversationHeader = ({
       onEditContact,
       onGenerateProposal,
       onRegisterCallResult,
-      onOpenSimulation,
       onRegisterResult,
       onScheduleFollowUp,
       openDialog,
@@ -476,17 +472,6 @@ const ConversationHeader = ({
       case 'generate-proposal':
         onGenerateProposal?.(ticket);
         break;
-      case 'sales-simulate':
-        onOpenSimulation?.(ticket);
-        break;
-      case 'sales-proposal':
-        onGenerateProposal?.(ticket);
-        break;
-      case 'sales-deal':
-        onOpenDeal?.(ticket);
-        break;
-      case 'sales-done':
-        break;
       case 'send-steps':
         onSendTemplate?.({ id: 'steps' });
         break;
@@ -505,8 +490,6 @@ const ConversationHeader = ({
     onGenerateProposal,
     onScheduleFollowUp,
     onSendTemplate,
-    onOpenSimulation,
-    onOpenDeal,
     openDialog,
     primaryAction,
     revealNextStepEditor,

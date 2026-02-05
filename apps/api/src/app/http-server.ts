@@ -17,7 +17,13 @@ const normalizeOrigin = (origin: string): string => {
   return trimmed.toLowerCase().replace(/\/+$/, '');
 };
 
-const defaultCorsOrigins = ['https://leadengine-corban.up.railway.app'].map(normalizeOrigin);
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+const defaultCorsOrigins =
+  nodeEnv === 'production'
+    ? []
+    : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:4173', 'http://127.0.0.1:4173'].map(
+        normalizeOrigin
+      );
 const configuredCorsOrigins = (process.env.FRONTEND_URL ?? '')
   .split(',')
   .map(normalizeOrigin)

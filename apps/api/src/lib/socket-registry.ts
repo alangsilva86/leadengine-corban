@@ -40,6 +40,6 @@ export const emitToTicket = (ticketId: string, event: string, payload: unknown) 
   emitToRoom(`ticket:${ticketId}`, event, payload);
 };
 
-export const emitToAgreement = (agreementId: string, event: string, payload: unknown) => {
-  emitToRoom(`agreement:${agreementId}`, event, payload);
+export const emitToCampaign = (campaignId: string, event: string, payload: unknown) => {
+  emitToRoom(`campaign:${campaignId}`, event, payload);
 };

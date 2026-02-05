@@ -5,6 +5,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
+    "rootDir": "../..",
     "outDir": "./.tsbuild",
     "allowJs": true,
     "types": ["node"],
@@ -28,7 +29,10 @@
     "server.mjs",
     "server.proxy-helpers.mjs",
     "tailwind.config.ts",
-    "tailwind.tokens.js"
+    "tailwind.tokens.js",
+    "../../packages/contracts/src/**/*.ts",
+    "../../packages/shared/src/**/*.ts",
+    "../../packages/wa-contracts/src/**/*.ts"
   ],
   "exclude": ["dist", "node_modules"]
 }

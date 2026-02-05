@@ -1,6 +1,11 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../../lib/prisma';
-import type { NormalizedInstance, PrismaTransactionClient, StoredInstance } from './types';
+import type {
+  InstanceArchiveRecord,
+  NormalizedInstance,
+  PrismaTransactionClient,
+  StoredInstance,
+} from './types';
 import { logWhatsAppStorageError, observeStorageLatency } from './errors';
 
 const WHATSAPP_INSTANCE_ARCHIVE_KEY_PREFIX = 'whatsapp:instance:archive:';

@@ -1,0 +1,5 @@
+export function useSearchUsersQuery({ search, enabled }?: {
+    search?: string | undefined;
+    enabled?: boolean | undefined;
+}): import("@tanstack/react-query").UseQueryResult<any, Error>;
+export default useSearchUsersQuery;

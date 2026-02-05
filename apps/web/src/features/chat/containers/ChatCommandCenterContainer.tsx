@@ -14,16 +14,12 @@ import emitInboxTelemetry from '../utils/telemetry.js';
 import {
   getLegacyStageValue,
   normalizeStage,
-  isSupportedSalesStageKey,
 } from '../components/ConversationArea/utils/stage.js';
 import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import { getTenantId } from '@/lib/auth.js';
 import { apiGet, apiPost } from '@/lib/api.js';
 import LossReasonDialog from '../components/ConversationArea/LossReasonDialog.jsx';
 import { LOSS_REASONS, LOSS_REASON_HELPERS } from '../components/ConversationArea/lossReasons.js';
-import useSalesSimulation from '../api/useSalesSimulation.js';
-import useSalesProposal from '../api/useSalesProposal.js';
-import useSalesDeal from '../api/useSalesDeal.js';
 
 const AI_MODE_VALUES = ['assist', 'auto', 'manual'] as const;
 
@@ -212,19 +208,6 @@ const resolveTicketProductType = (ticket: any): string | null => {
 
 const resolveTicketStrategy = (ticket: any): string | null => {
   return resolveTicketMetadataField(ticket, 'strategy');
-};
-
-const normalizeStageValue = (value: unknown): string | null => {
-  if (!isSupportedSalesStageKey(value)) {
-    return null;
-  }
-
-  const normalizedStage = normalizeStage(value);
-  if (!normalizedStage || normalizedStage === 'DESCONHECIDO') {
-    return null;
-  }
-
-  return getLegacyStageValue(normalizedStage);
 };
 
 const buildFilterOptions = (tickets: any[]) => {
@@ -475,15 +458,6 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     selectedContact,
     selectedLead,
     currentUser: currentUser ?? null,
-  });
-  const salesSimulationMutation = useSalesSimulation({
-    fallbackTicketId: controller.selectedTicketId,
-  });
-  const salesProposalMutation = useSalesProposal({
-    fallbackTicketId: controller.selectedTicketId,
-  });
-  const salesDealMutation = useSalesDeal({
-    fallbackTicketId: controller.selectedTicketId,
   });
 
   const sendMessage = useCallback(
@@ -830,165 +804,12 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       });
     },
     [controller, currentUser?.id]
-  );
+	  );
 
-  const handleCreateSalesSimulation = useCallback(
-    async ({
-      calculationSnapshot,
-      leadId,
-      stage,
-      metadata,
-    }: {
-      calculationSnapshot: Record<string, unknown>;
-      leadId?: string | null;
-      stage?: string | null;
-      metadata?: Record<string, unknown> | null;
-    }) => {
-      const ticketId = controller.selectedTicketId;
-      if (!ticketId) {
-        toast.error('Selecione um ticket para registrar a simulação.');
-        return;
-      }
-
-      try {
-        const result = await salesSimulationMutation.mutateAsync({
-          ticketId,
-          calculationSnapshot,
-          leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
-          stage: normalizeStageValue(stage),
-          metadata: metadata ?? null,
-        });
-        const updatedTicketId = result?.ticket?.id ?? ticketId;
-        if (updatedTicketId) {
-          controller.selectTicket(updatedTicketId);
-        }
-        toast.success('Simulação registrada com sucesso');
-        return result;
-      } catch (error: any) {
-        toast.error('Não foi possível registrar a simulação', {
-          description: error?.message ?? 'Tente novamente em instantes.',
-        });
-        throw error;
-      }
-    },
-    [
-      controller.selectedTicket?.lead?.id,
-      controller.selectedTicketId,
-      controller.selectTicket,
-      salesSimulationMutation,
-    ],
-  );
-
-  const handleCreateSalesProposal = useCallback(
-    async ({
-      calculationSnapshot,
-      leadId,
-      simulationId,
-      stage,
-      metadata,
-    }: {
-      calculationSnapshot: Record<string, unknown>;
-      leadId?: string | null;
-      simulationId?: string | null;
-      stage?: string | null;
-      metadata?: Record<string, unknown> | null;
-    }) => {
-      const ticketId = controller.selectedTicketId;
-      if (!ticketId) {
-        toast.error('Selecione um ticket para registrar a proposta.');
-        return;
-      }
-
-      try {
-        const result = await salesProposalMutation.mutateAsync({
-          ticketId,
-          calculationSnapshot,
-          leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
-          simulationId: simulationId ?? null,
-          stage: normalizeStageValue(stage),
-          metadata: metadata ?? null,
-        });
-        const updatedTicketId = result?.ticket?.id ?? ticketId;
-        if (updatedTicketId) {
-          controller.selectTicket(updatedTicketId);
-        }
-        toast.success('Proposta registrada com sucesso');
-        return result;
-      } catch (error: any) {
-        toast.error('Não foi possível registrar a proposta', {
-          description: error?.message ?? 'Tente novamente em instantes.',
-        });
-        throw error;
-      }
-    },
-    [
-      controller.selectedTicket?.lead?.id,
-      controller.selectedTicketId,
-      controller.selectTicket,
-      salesProposalMutation,
-    ],
-  );
-
-  const handleCreateSalesDeal = useCallback(
-    async ({
-      calculationSnapshot,
-      leadId,
-      simulationId,
-      proposalId,
-      stage,
-      metadata,
-      closedAt,
-    }: {
-      calculationSnapshot: Record<string, unknown>;
-      leadId?: string | null;
-      simulationId?: string | null;
-      proposalId?: string | null;
-      stage?: string | null;
-      metadata?: Record<string, unknown> | null;
-      closedAt?: string | null;
-    }) => {
-      const ticketId = controller.selectedTicketId;
-      if (!ticketId) {
-        toast.error('Selecione um ticket para registrar o negócio.');
-        return;
-      }
-
-      try {
-        const result = await salesDealMutation.mutateAsync({
-          ticketId,
-          calculationSnapshot,
-          leadId: leadId ?? controller.selectedTicket?.lead?.id ?? null,
-          simulationId: simulationId ?? null,
-          proposalId: proposalId ?? null,
-          stage: normalizeStageValue(stage),
-          metadata: metadata ?? null,
-          closedAt: closedAt ?? null,
-        });
-        const updatedTicketId = result?.ticket?.id ?? ticketId;
-        if (updatedTicketId) {
-          controller.selectTicket(updatedTicketId);
-        }
-        toast.success('Negócio registrado com sucesso');
-        return result;
-      } catch (error: any) {
-        toast.error('Não foi possível registrar o negócio', {
-          description: error?.message ?? 'Tente novamente em instantes.',
-        });
-        throw error;
-      }
-    },
-    [
-      controller.selectedTicket?.lead?.id,
-      controller.selectedTicketId,
-      controller.selectTicket,
-      salesDealMutation,
-    ],
-  );
-
-  const handleScheduleFollowUp = useCallback(() => {
-    toast.info('Agendar follow-up', {
-      description: 'Conecte um calendário para programar o próximo contato.',
-    });
+	  const handleScheduleFollowUp = useCallback(() => {
+	    toast.info('Agendar follow-up', {
+	      description: 'Conecte um calendário para programar o próximo contato.',
+	    });
     emitInboxTelemetry('chat.follow_up.requested', {
       ticketId: controller.selectedTicketId,
     });
@@ -1228,19 +1049,10 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     aiMode,
     aiConfidence,
     aiModeChangeDisabled: !isAiModeReady,
-    onTakeOver: selectedTicket && isAiModeReady ? handleAiTakeOver : undefined,
-    onGiveBackToAi: selectedTicket && isAiModeReady ? handleAiGiveBack : undefined,
-    onAiModeChange: selectedTicket && isAiModeReady ? handleAiModeChange : undefined,
-    sales: {
-      onCreateSimulation: handleCreateSalesSimulation,
-      onCreateProposal: handleCreateSalesProposal,
-      onCreateDeal: handleCreateSalesDeal,
-      isCreatingSimulation: salesSimulationMutation.isPending,
-      isCreatingProposal: salesProposalMutation.isPending,
-      isCreatingDeal: salesDealMutation.isPending,
-      queueAlerts: controller.queueAlerts ?? [],
-    },
-  };
+	    onTakeOver: selectedTicket && isAiModeReady ? handleAiTakeOver : undefined,
+	    onGiveBackToAi: selectedTicket && isAiModeReady ? handleAiGiveBack : undefined,
+	    onAiModeChange: selectedTicket && isAiModeReady ? handleAiModeChange : undefined,
+	  };
 
   return (
     <WhatsAppInstancesProvider autoRefresh initialFetch logger={{}}>

@@ -16,7 +16,8 @@ import { createPerformanceTracker } from '../../../../lib/performance-tracker';
 import { sendToFailedMessageDLQ } from '../../../../lib/failed-message-dlq';
 import { sendMessage as sendMessageService } from '../../../../services/ticket-service';
 import { saveWhatsAppMedia } from '../../../../services/whatsapp-media-service';
-import { emitToAgreement, emitToTenant, emitToTicket } from '../../../../lib/socket-registry';
+import { emitToCampaign, emitToTenant, emitToTicket } from '../../../../lib/socket-registry';
+import { getAiRoutingPreferences } from '../../../../config/ai-route';
 import {
   normalizeInboundMessage,
   type NormalizedInboundMessage,
@@ -984,14 +985,6 @@ export const processStandardInboundEvent = async (
     });
 
     // Processar resposta automática da IA se configurado
-    logger.error('🔍 DEBUG: ANTES DA CONDIÇÃO AI AUTO-REPLY', {
-      direction,
-      hasPersistedMessage: !!persistedMessage,
-      hasContent: !!persistedMessage?.content,
-      messageId: persistedMessage?.id,
-      tenantId,
-      ticketId,
-    });
     const messageMetadata =
       persistedMessage &&
       typeof persistedMessage.metadata === 'object' &&
@@ -1016,52 +1009,51 @@ export const processStandardInboundEvent = async (
           messageId: persistedMessage.id,
         });
       } else {
-        logger.warn('🎯 LeadEngine • WhatsApp :: 🤖 ACIONANDO AI AUTO-REPLY', {
-          tenantId,
-          ticketId,
-          messageId: persistedMessage.id,
-          messageContent: persistedMessage.content.substring(0, 50),
-        });
-
-        console.log('DEBUG: ANTES DE CHAMAR processAiAutoReply');
-
-        let aiPromise;
-        try {
-          aiPromise = processAiAutoReply({
+        const { serverAutoReplyEnabled } = getAiRoutingPreferences();
+        if (!serverAutoReplyEnabled) {
+          logger.debug('AI AUTO-REPLY :: skipped before call (server auto-reply disabled)', {
             tenantId,
             ticketId,
             messageId: persistedMessage.id,
-            messageContent: persistedMessage.content,
-            contactId: contactRecord.id,
-            queueId: queueId ?? null,
           });
-          console.log('DEBUG: DEPOIS DE CHAMAR processAiAutoReply, promise:', aiPromise);
-        } catch (syncError) {
-          console.error('DEBUG: ERRO SINCRONO AO CHAMAR processAiAutoReply:', syncError);
-          logger.error('LeadEngine WhatsApp :: ERRO SINCRONO ao chamar AI auto-reply', {
-            error: syncError instanceof Error
-              ? {
-                  name: syncError.name,
-                  message: syncError.message,
-                  stack: syncError.stack,
-                }
-              : String(syncError),
-            tenantId,
-            ticketId,
+          // não chama o serviço para evitar custo/ruído quando flag está off
+        } else {
+          let aiPromise;
+          try {
+            aiPromise = processAiAutoReply({
+              tenantId,
+              ticketId,
+              messageId: persistedMessage.id,
+              messageContent: persistedMessage.content,
+              contactId: contactRecord.id,
+              queueId: queueId ?? null,
+            });
+          } catch (syncError) {
+            logger.error('LeadEngine WhatsApp :: ERRO SINCRONO ao chamar AI auto-reply', {
+              error: syncError instanceof Error
+                ? {
+                    name: syncError.name,
+                    message: syncError.message,
+                    stack: syncError.stack,
+                  }
+                : String(syncError),
+              tenantId,
+              ticketId,
+            });
+            // Não continuar se houve erro síncrono
+            return finalize(false);
+          }
+
+          aiPromise.catch((error) => {
+            logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao processar resposta automática da IA', {
+              error: mapErrorForLog(error),
+              requestId,
+              tenantId,
+              ticketId,
+              messageId: persistedMessage.id,
+            });
           });
-          // Não continuar se houve erro síncrono
-          return finalize(false);
         }
-
-        aiPromise.catch((error) => {
-          logger.error('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao processar resposta automática da IA', {
-            error: mapErrorForLog(error),
-            requestId,
-            tenantId,
-            ticketId,
-            messageId: persistedMessage.id,
-          });
-        });
       }
     }
   }
@@ -1146,8 +1138,8 @@ export const processStandardInboundEvent = async (
         };
 
         emitToTenant(tenantId, 'leadAllocations.new', realtimePayload);
-        if (allocation.agreementId && allocation.agreementId !== 'unknown') {
-          emitToAgreement(allocation.agreementId, 'leadAllocations.new', realtimePayload);
+        if (allocation.campaignId) {
+          emitToCampaign(allocation.campaignId, 'leadAllocations.new', realtimePayload);
         }
       }
     } catch (error) {

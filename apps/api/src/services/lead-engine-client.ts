@@ -1,9 +1,6 @@
 import { fetch, Headers, type HeadersInit, type RequestInit, type Response } from 'undici';
 import {
-  agreementDefinitions,
   leadEngineConfig,
-  type AgreementDefinition,
-  type AgreementSummary as ConfigAgreementSummary,
   type BrokerLeadRecord as ConfigBrokerLeadRecord,
 } from '../config/lead-engine';
 import { getUseRealDataFlag } from '../config/feature-flags';
@@ -75,14 +72,6 @@ export type BrokerLeadRecord = ConfigBrokerLeadRecord & {
   createdAt?: string;
   updatedAt?: string;
 };
-
-export type AgreementSummary = ConfigAgreementSummary;
-
-// ============================================================================
-// Convênios disponíveis baseados na collection Postman
-// ============================================================================
-
-
 // ============================================================================
 // Dados de fallback para desenvolvimento
 // ============================================================================
@@ -142,15 +131,6 @@ class LeadEngineClient {
   private readonly timeoutMs: number;
   private readonly token: string;
   private readonly useRealData: boolean;
-  private readonly summaryConcurrencyLimit = Math.max(
-    2,
-    Number(process.env.LEAD_ENGINE_SUMMARY_CONCURRENCY ?? 4)
-  );
-  private readonly countCacheTtlMs = 5_000;
-  private readonly countCache = new Map<
-    string,
-    { expiresAt: number; promise: Promise<number> }
-  >();
 
   constructor() {
     this.baseUrl = leadEngineConfig.baseUrl.replace(/\/$/, '');
@@ -320,133 +300,6 @@ class LeadEngineClient {
     return this.fallback(agreementId, take);
   }
 
-  private buildFallbackSummary(definition: AgreementDefinition): AgreementSummary {
-    const fallbackLeads = FALLBACK_LEADS.filter((lead) => lead.agreementId === definition.id);
-    return {
-      ...definition,
-      availableLeads: fallbackLeads.length,
-      hotLeads: Math.min(fallbackLeads.length, 5),
-      lastSyncAt: null,
-    } satisfies AgreementSummary;
-  }
-
-  private async countLeads(
-    filters: Record<string, string | number | boolean | undefined>
-  ): Promise<number> {
-    const cacheKey = JSON.stringify(
-      Object.entries(filters)
-        .filter(([, value]) => value !== undefined && value !== null)
-        .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
-    );
-    const now = Date.now();
-    const cached = this.countCache.get(cacheKey);
-
-    if (cached && cached.expiresAt > now) {
-      logger.debug(`${LOG_PREFIX} ♻️ Cache de contagem reutilizado`, {
-        filters,
-        expiresInMs: cached.expiresAt - now,
-      });
-      return cached.promise;
-    }
-
-    if (cached) {
-      this.countCache.delete(cacheKey);
-    }
-
-    const startedAt = Date.now();
-    const computeCount = async (): Promise<number> => {
-      if (!this.useRealData) {
-        const agreementCode = typeof filters.agreementCode === 'string' ? filters.agreementCode : undefined;
-        const definition = agreementCode
-          ? agreementDefinitions.find(
-              (item) => item.slug === agreementCode || item.id === agreementCode
-            )
-          : undefined;
-
-        const scoped = agreementCode
-          ? FALLBACK_LEADS.filter(
-              (lead) =>
-                lead.agreementCode === agreementCode ||
-                lead.agreementId === (definition?.id ?? agreementCode)
-            )
-          : FALLBACK_LEADS;
-
-        const isHotQuery =
-          Object.prototype.hasOwnProperty.call(filters, 'classification') ||
-          Object.prototype.hasOwnProperty.call(filters, 'leadStatus');
-
-        if (isHotQuery) {
-          return Math.min(
-            scoped.length,
-            Math.max(Math.floor(scoped.length * 0.2), scoped.length > 0 ? 1 : 0)
-          );
-        }
-
-        return scoped.length;
-      }
-
-      const params = new URLSearchParams();
-      params.set('_page', '0');
-      params.set('_size', '1');
-      const range = this.applyDefaultRange(params);
-
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          params.set(key, String(value));
-        }
-      });
-
-      type CountResponse =
-        | { value?: { total?: number } }
-        | { total?: number }
-        | { success?: boolean; value?: { total?: number } };
-      const payload = await this.request<CountResponse>(`/api/v1/lead?${params.toString()}`);
-      const total = (payload as any)?.value?.total ?? (payload as any)?.total;
-      const numericTotal =
-        typeof total === 'number'
-          ? total
-          : typeof total === 'string' && total.trim().length > 0
-            ? Number(total)
-            : undefined;
-
-      const safeTotal =
-        typeof numericTotal === 'number' && Number.isFinite(numericTotal) ? numericTotal : 0;
-
-      logger.info(`${LOG_PREFIX} 📊 Contagem concluída`, {
-        filters,
-        range,
-        total: safeTotal,
-        elapsedMs: Date.now() - startedAt,
-      });
-
-      if (safeTotal === 0) {
-        logger.warn(`${LOG_PREFIX} ℹ️ Consulta retornou zero leads`, {
-          filters,
-        });
-      }
-
-      return safeTotal;
-    };
-
-    const trackedPromise = computeCount().then(
-      (value) => value,
-      (error) => {
-        const cachedEntry = this.countCache.get(cacheKey);
-        if (cachedEntry?.promise === trackedPromise) {
-          this.countCache.delete(cacheKey);
-        }
-        throw error;
-      }
-    );
-
-    this.countCache.set(cacheKey, {
-      expiresAt: startedAt + this.countCacheTtlMs,
-      promise: trackedPromise,
-    });
-
-    return trackedPromise;
-  }
-
   private getFallbackLeads(params: {
     agreementCode?: string;
     documentNumber?: string;
@@ -480,140 +333,6 @@ class LeadEngineClient {
         total: leads.length,
       },
     };
-  }
-
-  private async buildAgreementSummary(
-    definition: AgreementDefinition
-  ): Promise<AgreementSummary> {
-    const startedAt = Date.now();
-
-    if (!this.useRealData) {
-      const fallbackSummary = this.buildFallbackSummary(definition);
-      logger.info(`${LOG_PREFIX} 🧪 Estatística de fallback aplicada`, {
-        agreementCode: definition.slug,
-        elapsedMs: Date.now() - startedAt,
-      });
-      return fallbackSummary;
-    }
-
-    const agreementCode = definition.slug;
-
-    const [availableLeads, hotLeads] = await Promise.all([
-      this.countLeads({ agreementCode }),
-      this.countLeads({ agreementCode, classification: 2 }),
-    ]);
-
-    const summary: AgreementSummary = {
-      ...definition,
-      availableLeads,
-      hotLeads,
-      lastSyncAt: new Date().toISOString(),
-    } satisfies AgreementSummary;
-
-    logger.info(`${LOG_PREFIX} 🧮 Estatísticas atualizadas`, {
-      agreementCode,
-      availableLeads,
-      hotLeads,
-      elapsedMs: Date.now() - startedAt,
-    });
-
-    return summary;
-  }
-
-  async getAgreementSummaries(): Promise<{
-    summaries: AgreementSummary[];
-    warnings: Array<{ agreementId: string; reason: string }>;
-  }> {
-    const startedAt = Date.now();
-
-    logger.info(`${LOG_PREFIX} 🚦 Atualizando convênios com limite de concorrência`, {
-      agreements: agreementDefinitions.length,
-      concurrency: this.summaryConcurrencyLimit,
-    });
-
-    const settled = await this.runWithConcurrencyLimit(
-      agreementDefinitions,
-      this.summaryConcurrencyLimit,
-      (definition) => this.buildAgreementSummary(definition)
-    );
-
-    const summaries: AgreementSummary[] = [];
-    const warnings: Array<{ agreementId: string; reason: string }> = [];
-
-    settled.forEach((result, index) => {
-      const definition = agreementDefinitions[index];
-      if (result.status === 'fulfilled') {
-        summaries.push(result.value);
-        return;
-      }
-
-      const reason = result.reason instanceof Error ? result.reason.message : 'Erro desconhecido';
-      warnings.push({ agreementId: definition.id, reason });
-
-      logger.error(`${LOG_PREFIX} 🧨 Falha ao atualizar convênio`, {
-        agreementId: definition.id,
-        agreementCode: definition.slug,
-        message: reason,
-      });
-
-      summaries.push(this.buildFallbackSummary(definition));
-    });
-
-    if (warnings.length > 0) {
-      logger.warn(`${LOG_PREFIX} ⚠️ Estatísticas concluídas com alertas`, {
-        warnings,
-      });
-    }
-
-    const elapsedMs = Date.now() - startedAt;
-    const throughputPerSecond = Number(
-      (agreementDefinitions.length / Math.max(elapsedMs / 1000, 0.001)).toFixed(2)
-    );
-
-    logger.info(`${LOG_PREFIX} 📈 Estatísticas de convênios finalizadas`, {
-      agreements: agreementDefinitions.length,
-      elapsedMs,
-      throughputPerSecond,
-      warnings: warnings.length,
-    });
-
-    return { summaries, warnings };
-  }
-
-  private async runWithConcurrencyLimit<T, R>(
-    items: readonly T[],
-    limit: number,
-    task: (item: T, index: number) => Promise<R>
-  ): Promise<PromiseSettledResult<R>[]> {
-    const boundedLimit = Math.max(1, Math.min(Math.floor(limit), items.length));
-    const results: PromiseSettledResult<R>[] = new Array(items.length);
-    let cursor = 0;
-
-    const worker = async () => {
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const currentIndex = cursor;
-        cursor += 1;
-
-        if (currentIndex >= items.length) {
-          break;
-        }
-
-        const item = items[currentIndex];
-
-        try {
-          const value = await task(item, currentIndex);
-          results[currentIndex] = { status: 'fulfilled', value };
-        } catch (error) {
-          results[currentIndex] = { status: 'rejected', reason: error };
-        }
-      }
-    };
-
-    const workers = Array.from({ length: boundedLimit }, () => worker());
-    await Promise.all(workers);
-
-    return results;
   }
 
   async getLeads(params: {
@@ -705,15 +424,8 @@ class LeadEngineClient {
     agreementId: string,
     take: number = 25
   ): Promise<BrokerLeadRecord[]> {
-    const agreement = agreementDefinitions.find((item) => item.id === agreementId);
-    if (!agreement) {
-      throw createLeadEngineError(`Convênio não encontrado: ${agreementId}`, {
-        status: 400,
-      });
-    }
-
     const response = await this.getLeads({
-      agreementCode: agreement.slug,
+      agreementCode: agreementId,
       size: take,
       page: 0,
     });
@@ -723,7 +435,7 @@ class LeadEngineClient {
     if (!Array.isArray(leads) || leads.length === 0) {
       logger.warn(`${LOG_PREFIX} ⚠️ Broker retornou zero leads`, {
         agreementId,
-        agreementCode: agreement.slug,
+        agreementCode: agreementId,
         take,
       });
       return this.fallback(agreementId, take);
@@ -738,12 +450,8 @@ class LeadEngineClient {
     return (leads as BrokerLeadRecord[]).map((lead) => ({
       ...lead,
       agreementId: lead.agreementId || agreementId,
-      agreementCode: lead.agreementCode || agreement.slug,
+      agreementCode: lead.agreementCode || agreementId,
     }));
-  }
-
-  getAvailableAgreements() {
-    return agreementDefinitions;
   }
 }
 

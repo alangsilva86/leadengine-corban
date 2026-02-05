@@ -1,5 +1,12 @@
 {
   "extends": "./tsconfig.base.json",
+  "files": [],
+  "include": [],
+  "exclude": [
+    "**/dist/**",
+    "**/.tsbuild/**",
+    "**/node_modules/**"
+  ],
   "references": [
     { "path": "./packages/shared" },
     { "path": "./packages/core" },

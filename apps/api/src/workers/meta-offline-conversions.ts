@@ -75,11 +75,18 @@ export const dispatchMetaOfflineConversions = async (
   }
 
   const fetchImpl = options.fetchImpl ?? fetch;
-  const url = buildGraphUrl({
-    baseUrl: options.graphApiBaseUrl ?? process.env.META_GRAPH_API_BASE_URL,
-    version: options.graphApiVersion ?? process.env.META_GRAPH_API_VERSION,
+  const graphConfig: { baseUrl?: string; version?: string; offlineEventSetId: string } = {
     offlineEventSetId: config.offlineEventSetId!,
-  });
+  };
+  const baseUrl = options.graphApiBaseUrl ?? process.env.META_GRAPH_API_BASE_URL;
+  const version = options.graphApiVersion ?? process.env.META_GRAPH_API_VERSION;
+  if (typeof baseUrl === 'string' && baseUrl.trim().length > 0) {
+    graphConfig.baseUrl = baseUrl;
+  }
+  if (typeof version === 'string' && version.trim().length > 0) {
+    graphConfig.version = version;
+  }
+  const url = buildGraphUrl(graphConfig);
 
   const payload = {
     data: events.map((event) => ({

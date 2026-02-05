@@ -38,7 +38,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
-import useAgreements from '@/features/agreements/useAgreements.js';
 import useMediaQuery from '@/hooks/use-media-query.js';
 import {
   WHATSAPP_CAMPAIGN_PRODUCTS,
@@ -210,7 +209,6 @@ const CreateCampaignWizard = ({
   onStepChange,
   onSelectionChange,
 }) => {
-  const { agreements, isLoading: agreementsLoading, error: agreementsError, retry } = useAgreements();
   const [stepIndex, setStepIndex] = useState(0);
   const [formState, setFormState] = useState({
     instanceId: '',
@@ -230,46 +228,15 @@ const CreateCampaignWizard = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingFocusStep, setPendingFocusStep] = useState(null);
   const stepHeadingRefs = useRef({});
-  const [isAgreementPickerOpen, setIsAgreementPickerOpen] = useState(false);
   const isLg = useMediaQuery('(min-width: 1024px)');
-
-  const agreementsList = useMemo(() => {
-    if (!Array.isArray(agreements)) {
-      return [];
-    }
-    return agreements;
-  }, [agreements]);
   const tenantContextLabel = useMemo(
     () => resolveTenantDisplayName(agreement),
     [agreement],
   );
 
-  const agreementErrorMessage = useMemo(() => {
-    if (!agreementsError) {
-      return null;
-    }
-    if (agreementsError instanceof Error) {
-      return agreementsError.message;
-    }
-    if (typeof agreementsError === 'string') {
-      return agreementsError;
-    }
-    return 'Não foi possível carregar os convênios.';
-  }, [agreementsError]);
-
   useEffect(() => {
     onSubmittingChange?.(isSubmitting);
   }, [isSubmitting, onSubmittingChange]);
-
-  useEffect(() => {
-    if (!agreementErrorMessage) {
-      return;
-    }
-    toast.error('Erro ao carregar convênios', {
-      description: agreementErrorMessage,
-      duration: 6000,
-    });
-  }, [agreementErrorMessage]);
 
   const connectedInstances = instances.filter((instance) => Boolean(instance?.connected));
 
@@ -292,9 +259,6 @@ const CreateCampaignWizard = ({
       instances[0] ??
       null;
 
-    const preferredAgreementId = agreement?.id ?? '';
-    const preferredAgreementName = agreement?.name ?? agreement?.displayName ?? '';
-
     const isFirstOpen = !isModalSessionActiveRef.current;
     isModalSessionActiveRef.current = true;
 
@@ -305,22 +269,9 @@ const CreateCampaignWizard = ({
           prev.instanceId && instances.some((item) => item?.id === prev.instanceId)
             ? prev.instanceId
             : preferredInstance?.id ?? '',
-        agreementId:
-          prev.agreementId && prev.agreementId !== preferredAgreementId && !isFirstOpen
-            ? prev.agreementId
-            : preferredAgreementId,
-        agreementName:
-          prev.agreementId && prev.agreementId !== preferredAgreementId && !isFirstOpen
-            ? prev.agreementName
-            : preferredAgreementName,
         leadSource: prev.leadSource ?? (LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound'),
         segments: Array.isArray(prev.segments) ? prev.segments : [],
       };
-
-      if (!nextState.agreementId && preferredAgreementId) {
-        nextState.agreementId = preferredAgreementId;
-        nextState.agreementName = preferredAgreementName;
-      }
 
       return nextState;
     });
@@ -336,36 +287,31 @@ const CreateCampaignWizard = ({
   }, [
     open,
     instances,
-    agreement?.id,
-    agreement?.name,
-    agreement?.displayName,
     defaultInstanceId,
   ]);
 
   const currentStep = STEP_SEQUENCE[stepIndex];
   const selectedInstance = instances.find((item) => item?.id === formState.instanceId) ?? null;
-  const selectedAgreement = agreementsList.find((item) => item?.id === formState.agreementId) ?? null;
   const selectedProduct = findCampaignProduct(formState.product);
   const selectedStrategy = findCampaignStrategy(formState.strategy);
   const selectedStrategyCard = STRATEGY_CARDS.find((card) => card.value === formState.strategy) ?? null;
-  const allowedProducts = useMemo(() => collectAllowedProducts(selectedAgreement), [selectedAgreement]);
 
   useEffect(() => {
     onSelectionChange?.({
       instance: selectedInstance,
-      agreement: selectedAgreement,
+      agreement: null,
       product: selectedProduct,
       strategy: selectedStrategy,
     });
-  }, [onSelectionChange, selectedAgreement, selectedInstance, selectedProduct, selectedStrategy]);
+  }, [onSelectionChange, selectedInstance, selectedProduct, selectedStrategy]);
 
   const suggestedCampaignName = useMemo(() => {
-    const agreementLabel = formatAgreementLabel(selectedAgreement) || formState.agreementName;
+    const agreementLabel = formState.agreementName || formState.agreementId;
     const productLabel = selectedProduct?.label ?? '';
     const instanceLabel = formatInstanceLabel(selectedInstance);
 
     return buildSuggestedName({ agreementLabel, productLabel, instanceLabel });
-  }, [selectedAgreement, selectedProduct, selectedInstance, formState.agreementName]);
+  }, [selectedProduct, selectedInstance, formState.agreementId, formState.agreementName]);
 
   useEffect(() => {
     if (!open || nameDirty || !suggestedCampaignName) {
@@ -448,13 +394,14 @@ const CreateCampaignWizard = ({
     setFormState((prev) => ({ ...prev, instanceId: value }));
   };
 
-  const handleAgreementChange = (value) => {
-    const nextAgreement = agreementsList.find((item) => item?.id === value) ?? null;
-    setFormState((prev) => ({
-      ...prev,
-      agreementId: value,
-      agreementName: formatAgreementLabel(nextAgreement),
-    }));
+  const handleAgreementIdChange = (event) => {
+    const value = event.target.value ?? '';
+    setFormState((prev) => ({ ...prev, agreementId: value }));
+  };
+
+  const handleAgreementNameChange = (event) => {
+    const value = event.target.value ?? '';
+    setFormState((prev) => ({ ...prev, agreementName: value }));
   };
 
   const handleProductChange = (value) => {
@@ -874,154 +821,27 @@ const CreateCampaignWizard = ({
       case 'agreement': {
         return (
           <div className="space-y-6">
-            {renderStepHeading('Defina a origem de leads', 'Convênio e fonte da campanha.')}
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_200px]">
-              <div className="space-y-6">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2 min-w-0">
-                    <Label htmlFor="campaign-agreement">Convênio</Label>
-                    {agreementsLoading ? (
-                      <div className="space-y-3">
-                        <Skeleton className="h-10 w-full" />
-                        <div className="space-y-2 rounded-md border border-dashed border-border p-3">
-                          <Skeleton className="h-4 w-2/3" />
-                          <Skeleton className="h-4 w-1/2" />
-                        </div>
-                      </div>
-                    ) : (
-                      <Popover open={isAgreementPickerOpen} onOpenChange={setIsAgreementPickerOpen}>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            role="combobox"
-                            aria-expanded={isAgreementPickerOpen}
-                            className="w-full justify-between"
-                            id="campaign-agreement"
-                          >
-                            <span className="flex min-w-0 items-center gap-2 truncate">
-                              <Search className="h-4 w-4 text-muted-foreground" aria-hidden />
-                              <span className="truncate">
-                                {formState.agreementId && selectedAgreement
-                                  ? formatAgreementLabel(selectedAgreement)
-                                  : 'Selecione o convênio'}
-                              </span>
-                            </span>
-                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" aria-hidden />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-[360px] p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Buscar convênio..." />
-                            <CommandList>
-                              <CommandEmpty>Nenhum convênio encontrado.</CommandEmpty>
-                              <CommandGroup>
-                                {agreementsList.map((item) => (
-                                  <CommandItem
-                                    key={item.id}
-                                    value={`${formatAgreementLabel(item)} ${item.region ?? ''} ${item.id}`}
-                                    keywords={[item.region, item.id].filter(Boolean)}
-                                    onSelect={() => {
-                                      handleAgreementChange(item.id);
-                                      setIsAgreementPickerOpen(false);
-                                    }}
-                                  >
-                                    <div className="flex min-w-0 flex-col gap-0.5 truncate">
-                                      <span className="truncate text-sm font-medium leading-5">
-                                        {formatAgreementLabel(item)}
-                                      </span>
-                                      {item.region ? (
-                                        <span className="text-xs leading-4 text-muted-foreground">{item.region}</span>
-                                      ) : null}
-                                    </div>
-                                    <Check
-                                      className={cn(
-                                        'ml-auto h-4 w-4',
-                                        formState.agreementId === item.id ? 'text-primary opacity-100' : 'opacity-0',
-                                      )}
-                                    />
-                                  </CommandItem>
-                                ))}
-                              </CommandGroup>
-                            </CommandList>
-                          </Command>
-                        </PopoverContent>
-                      </Popover>
-                    )}
-                  </div>
-                  <div className="space-y-2 min-w-0">
-                    <Label htmlFor="campaign-source">Fonte da campanha</Label>
-                    <Select value={formState.leadSource} onValueChange={handleLeadSourceChange}>
-                      <SelectTrigger id="campaign-source">
-                        <SelectValue placeholder="Escolha a fonte" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LEAD_SOURCE_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Carteira / Segmento</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {SEGMENT_OPTIONS.map((option) => {
-                      const isActive = formState.segments.includes(option.value);
-                      return (
-                        <Button
-                          key={option.value}
-                          type="button"
-                          size="sm"
-                          variant={isActive ? 'secondary' : 'outline'}
-                          onClick={() => toggleSegment(option.value)}
-                        >
-                          {option.label}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-                {renderDependencyBadge('Produtos serão filtrados pela origem')}
-                {agreementErrorMessage ? (
-                  <Alert variant="destructive" className="border-destructive/40 bg-destructive/5">
-                    <AlertCircle className="h-4 w-4" aria-hidden />
-                    <AlertTitle>Falha ao carregar convênios</AlertTitle>
-                    <AlertDescription className="space-y-2">
-                      <p className="leading-5">{agreementErrorMessage}</p>
-                      <Button type="button" size="sm" variant="outline" onClick={retry}>
-                        Tentar novamente
-                      </Button>
-                    </AlertDescription>
-                  </Alert>
-                ) : null}
-                {agreementsList.length === 0 && !agreementsLoading ? (
-                  <div className="space-y-3 rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
-                    <div className="flex items-start gap-3">
-                      <Plug className="h-4 w-4 text-muted-foreground" aria-hidden />
-                      <div className="space-y-1">
-                        <p className="font-medium text-foreground">Nenhum convênio disponível para a instância atual.</p>
-                        <p className="text-xs leading-5 text-muted-foreground">
-                          Configure ou sincronize novos convênios para liberar esta etapa.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button asChild size="sm">
-                        <Link to="/settings">Abrir Configurações</Link>
-                      </Button>
-                      <Button type="button" size="sm" variant="outline" onClick={retry}>
-                        Recarregar convênios
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
+            {renderStepHeading('Defina a origem de leads', 'Informe o identificador usado para buscar leads na fonte.')}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 min-w-0">
+                <Label htmlFor="campaign-source-id">Origem (sourceId)</Label>
+                <Input
+                  id="campaign-source-id"
+                  value={formState.agreementId}
+                  onChange={handleAgreementIdChange}
+                  placeholder="Ex.: inss, siape, fgts (ou o id interno)"
+                  required
+                />
               </div>
-              <aside className="rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
-                A origem filtra os produtos disponíveis no próximo passo.
-              </aside>
+              <div className="space-y-2 min-w-0">
+                <Label htmlFor="campaign-source-name">Origem (nome)</Label>
+                <Input
+                  id="campaign-source-name"
+                  value={formState.agreementName}
+                  onChange={handleAgreementNameChange}
+                  placeholder="Ex.: INSS, SIAPE, FGTS"
+                />
+              </div>
             </div>
           </div>
         );
@@ -1031,31 +851,25 @@ const CreateCampaignWizard = ({
           <div className="space-y-6">
             {renderStepHeading('Escolha o produto e a margem', 'Opções válidas para o convênio.')}
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_200px]">
-              <div className="space-y-6">
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {WHATSAPP_CAMPAIGN_PRODUCTS.map((option) => {
-                    const isSelected = formState.product === option.value;
-                    const isCompatible = allowedProducts ? allowedProducts.has(option.value) : true;
-                    const rules = PRODUCT_RULES[option.value] ?? [];
-                    const card = (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!isCompatible) {
-                            return;
-                          }
-                          handleProductChange(option.value);
-                        }}
-                        aria-pressed={isSelected}
-                        aria-disabled={!isCompatible}
-                        className={cn(
-                          'h-full rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                          isSelected
-                            ? 'border-primary bg-primary/10 shadow-sm'
-                            : 'border-border hover:border-primary/40',
-                          !isCompatible && 'cursor-not-allowed border-dashed bg-muted/40 text-muted-foreground hover:border-border',
-                        )}
-                      >
+	              <div className="space-y-6">
+	                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+	                  {WHATSAPP_CAMPAIGN_PRODUCTS.map((option) => {
+	                    const isSelected = formState.product === option.value;
+	                    const rules = PRODUCT_RULES[option.value] ?? [];
+	                    const card = (
+	                      <button
+	                        type="button"
+	                        onClick={() => {
+	                          handleProductChange(option.value);
+	                        }}
+	                        aria-pressed={isSelected}
+	                        className={cn(
+	                          'h-full rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+	                          isSelected
+	                            ? 'border-primary bg-primary/10 shadow-sm'
+	                            : 'border-border hover:border-primary/40',
+	                        )}
+	                      >
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold leading-5">{option.label}</p>
@@ -1075,29 +889,15 @@ const CreateCampaignWizard = ({
                             </Badge>
                           ))}
                         </div>
-                      </button>
-                    );
-
-                    if (isCompatible) {
-                      return (
-                        <div key={option.value} className="h-full">
-                          {card}
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <Tooltip key={option.value} delayDuration={120}>
-                        <TooltipTrigger asChild>
-                          <span className="block h-full">{card}</span>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="text-xs">
-                          Indisponível para o convênio selecionado
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  })}
-                </div>
+	                      </button>
+	                    );
+	                    return (
+	                      <div key={option.value} className="h-full">
+	                        {card}
+	                      </div>
+	                    );
+	                  })}
+	                </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2 md:col-span-1">
                     <Label htmlFor="campaign-margin">Margem alvo (%)</Label>
@@ -1210,16 +1010,16 @@ const CreateCampaignWizard = ({
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-                  <Plug className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium leading-5">Origem</span>
-                    <span className="text-sm leading-5 text-muted-foreground">
-                      {selectedAgreement ? formatAgreementLabel(selectedAgreement) : '—'}
-                      {formState.leadSource ? ` · Fonte: ${LEAD_SOURCE_LABELS[formState.leadSource] ?? '—'}` : ''}
-                    </span>
-                  </div>
-                </div>
+	                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+	                  <Plug className="h-4 w-4 text-muted-foreground" />
+	                  <div className="flex flex-col">
+	                    <span className="text-sm font-medium leading-5">Origem</span>
+	                    <span className="text-sm leading-5 text-muted-foreground">
+	                      {formState.agreementName || formState.agreementId || '—'}
+	                      {formState.leadSource ? ` · Fonte: ${LEAD_SOURCE_LABELS[formState.leadSource] ?? '—'}` : ''}
+	                    </span>
+	                  </div>
+	                </div>
                 <div className="flex items-center gap-3 rounded-lg border border-border p-3">
                   <Shapes className="h-4 w-4 text-muted-foreground" />
                   <div className="flex flex-col">

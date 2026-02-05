@@ -226,36 +226,42 @@ export const provisionFallbackCampaignForInstance = async (
   instanceId: string
 ) => {
   try {
-    const campaign = await prisma.campaign.upsert({
+    const agreementId = `${DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX}:${instanceId}`;
+    const metadata = {
+      fallback: true,
+      source: 'whatsapp-inbound',
+    } as Prisma.InputJsonValue;
+
+    const existing = await prisma.campaign.findFirst({
       where: {
-        tenantId_agreementId_whatsappInstanceId: {
-          tenantId,
-          agreementId: `${DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX}:${instanceId}`,
-          whatsappInstanceId: instanceId,
-        },
-      },
-      update: {
-        status: 'active',
-        name: DEFAULT_CAMPAIGN_FALLBACK_NAME,
-        agreementName: DEFAULT_CAMPAIGN_FALLBACK_NAME,
-        metadata: {
-          fallback: true,
-          source: 'whatsapp-inbound',
-        } as Prisma.InputJsonValue,
-      },
-      create: {
         tenantId,
-        name: DEFAULT_CAMPAIGN_FALLBACK_NAME,
-        agreementId: `${DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX}:${instanceId}`,
-        agreementName: DEFAULT_CAMPAIGN_FALLBACK_NAME,
         whatsappInstanceId: instanceId,
-        status: 'active',
-        metadata: {
-          fallback: true,
-          source: 'whatsapp-inbound',
-        } as Prisma.InputJsonValue,
+        agreementId,
       },
+      select: { id: true },
     });
+
+    const campaign = existing
+      ? await prisma.campaign.update({
+          where: { id: existing.id },
+          data: {
+            status: 'active',
+            name: DEFAULT_CAMPAIGN_FALLBACK_NAME,
+            agreementName: DEFAULT_CAMPAIGN_FALLBACK_NAME,
+            metadata,
+          },
+        })
+      : await prisma.campaign.create({
+          data: {
+            tenantId,
+            name: DEFAULT_CAMPAIGN_FALLBACK_NAME,
+            agreementId,
+            agreementName: DEFAULT_CAMPAIGN_FALLBACK_NAME,
+            whatsappInstanceId: instanceId,
+            status: 'active',
+            metadata,
+          },
+        });
 
     logger.info('🎯 LeadEngine • WhatsApp :: 🧱 Campanha fallback provisionada automaticamente', {
       tenantId,

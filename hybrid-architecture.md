@@ -14,10 +14,11 @@ leadengine-corban/
 ├── packages/
 │   ├── contracts/            # OpenAPI, zod e tipos gerados
 │   ├── core/                 # Domínio puro (tickets, leads, erros)
-│   ├── integrations/         # Adaptadores Baileys e helpers de sessão
 │   ├── shared/               # Logger/config, métricas e utilitários
-│   └── storage/              # Prisma Client e repositórios
-├── prisma/                   # schema.prisma, migrations, seed
+│   ├── storage/              # Prisma Client e repositórios
+│   │   └── prisma/           # schema.prisma, migrations, seed (PostgreSQL)
+│   ├── wa-contracts/         # Contratos canônicos do transporte WhatsApp
+│   └── wa-status/            # Normalização de status do WhatsApp
 ├── docs/                     # ADRs, decisões e guias operacionais
 ├── scripts/                  # Automação (doctor, deploy, smoke tests)
 └── docker-compose*.yml       # Orquestração local/produção

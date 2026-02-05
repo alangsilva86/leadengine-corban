@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx';
 import type { CreateUserInput, UserRole } from '../types';
-import { normalizePersonName } from '@/features/onboarding/utils/normalizers.ts';
+import { normalizePersonName } from '@/lib/normalizers.ts';
 
 type CreateUserDialogProps = {
   open: boolean;

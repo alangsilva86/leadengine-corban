@@ -1,11 +1,12 @@
 import type { Message, Ticket, TicketStatus } from '../../../types/tickets';
-import { emitToAgreement, emitToTenant, emitToTicket, emitToUser } from '../../../lib/socket-registry';
+import { emitToCampaign, emitToTenant, emitToTicket, emitToUser } from '../../../lib/socket-registry';
 import type { TicketSalesEvent } from '../../../data/ticket-sales-event-store';
 import { resolveWhatsAppInstanceId } from './whatsapp';
 
 export type MessageRealtimeEnvelope = {
   tenantId: string;
   ticketId: string;
+  campaignId: string | null;
   agreementId: string | null;
   instanceId: string | null;
   messageId: string;
@@ -18,6 +19,7 @@ export type MessageRealtimeEnvelope = {
 export type TicketRealtimeEnvelope = {
   tenantId: string;
   ticketId: string;
+  campaignId: string | null;
   agreementId: string | null;
   instanceId: string | null;
   messageId: string | null;
@@ -34,12 +36,12 @@ const emitTicketEvent = (
   event: string,
   payload: unknown,
   userId?: string | null,
-  agreementId?: string | null
+  campaignId?: string | null
 ) => {
   emitToTenant(tenantId, event, payload);
   emitToTicket(ticketId, event, payload);
-  if (agreementId) {
-    emitToAgreement(agreementId, event, payload);
+  if (campaignId) {
+    emitToCampaign(campaignId, event, payload);
   }
   if (userId) {
     emitToUser(userId, event, payload);
@@ -81,6 +83,49 @@ const resolveTicketAgreementId = (ticket: Ticket): string | null => {
   return null;
 };
 
+const resolveTicketCampaignId = (ticket: Ticket): string | null => {
+  const direct = (ticket as Ticket & { campaignId?: string | null }).campaignId;
+  if (typeof direct === 'string' && direct.trim().length > 0) {
+    return direct.trim();
+  }
+
+  if (ticket.metadata && typeof ticket.metadata === 'object') {
+    const metadata = ticket.metadata as Record<string, unknown>;
+    const directMeta = metadata['campaignId'];
+    if (typeof directMeta === 'string' && directMeta.trim().length > 0) {
+      return directMeta.trim();
+    }
+
+    const snakeCase = metadata['campaign_id'];
+    if (typeof snakeCase === 'string' && snakeCase.trim().length > 0) {
+      return snakeCase.trim();
+    }
+
+    const nested = metadata['campaign'];
+    if (nested && typeof nested === 'object') {
+      const nestedId = (nested as Record<string, unknown>)['id'];
+      if (typeof nestedId === 'string' && nestedId.trim().length > 0) {
+        return nestedId.trim();
+      }
+
+      const nestedCampaignId = (nested as Record<string, unknown>)['campaignId'];
+      if (typeof nestedCampaignId === 'string' && nestedCampaignId.trim().length > 0) {
+        return nestedCampaignId.trim();
+      }
+    }
+
+    const lead = metadata['lead'];
+    if (lead && typeof lead === 'object') {
+      const leadCampaign = (lead as Record<string, unknown>)['campaignId'];
+      if (typeof leadCampaign === 'string' && leadCampaign.trim().length > 0) {
+        return leadCampaign.trim();
+      }
+    }
+  }
+
+  return null;
+};
+
 const buildRealtimeEnvelopeBase = ({
   tenantId,
   ticket,
@@ -97,6 +142,7 @@ const buildRealtimeEnvelopeBase = ({
   instanceId?: string | null;
 }): Omit<TicketRealtimeEnvelope, 'ticket'> => {
   const agreementId = resolveTicketAgreementId(ticket);
+  const campaignId = resolveTicketCampaignId(ticket);
   const resolvedMessageId = message?.id ?? messageId ?? null;
   const resolvedProviderMessageId = providerMessageId ?? null;
   const resolvedInstanceId = instanceId ?? message?.instanceId ?? resolveWhatsAppInstanceId(ticket) ?? null;
@@ -106,6 +152,7 @@ const buildRealtimeEnvelopeBase = ({
   return {
     tenantId,
     ticketId: ticket.id,
+    campaignId,
     agreementId,
     instanceId: resolvedInstanceId,
     messageId: resolvedMessageId,
@@ -141,6 +188,7 @@ export const buildMessageRealtimeEnvelope = ({
   return {
     tenantId: base.tenantId,
     ticketId: base.ticketId,
+    campaignId: base.campaignId,
     agreementId: base.agreementId,
     instanceId: base.instanceId,
     messageId: message.id,
@@ -187,8 +235,8 @@ export const emitTicketRealtimeEnvelope = (
   envelope: TicketRealtimeEnvelope,
   userId?: string | null
 ) => {
-  const agreementId = resolveTicketAgreementId(ticket);
-  emitTicketEvent(tenantId, ticket.id, 'tickets.updated', envelope, userId ?? null, agreementId);
+  const campaignId = resolveTicketCampaignId(ticket);
+  emitTicketEvent(tenantId, ticket.id, 'tickets.updated', envelope, userId ?? null, campaignId);
 };
 
 export const emitTicketSalesTimelineEvent = (
@@ -197,8 +245,8 @@ export const emitTicketSalesTimelineEvent = (
   event: TicketSalesEvent,
   actorId: string | null
 ) => {
-  const agreementId = resolveTicketAgreementId(ticket);
-  emitTicketEvent(tenantId, ticket.id, 'tickets.sales.timeline', event, actorId, agreementId);
+  const campaignId = resolveTicketCampaignId(ticket);
+  emitTicketEvent(tenantId, ticket.id, 'tickets.sales.timeline', event, actorId, campaignId);
 };
 
 export const broadcastSalesOperationResult = (

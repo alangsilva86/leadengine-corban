@@ -1,0 +1,177 @@
+import { CalendarClock, ClipboardList, MessageSquare, Paperclip, Pencil, Phone, Sparkles, UserPlus } from 'lucide-react';
+import { toast } from 'sonner';
+import { formatAiSuggestionNote } from '../utils/aiSuggestions.js';
+const isCapabilityEnabled = (value) => value !== false;
+const buildReturnFocusOption = (returnFocus) => returnFocus === undefined ? undefined : { returnFocus };
+export const DEFAULT_QUICK_ACTIONS = [
+    {
+        id: 'assign-owner',
+        label: 'Atribuir',
+        icon: UserPlus,
+        shortcut: 'a',
+        shortcutDisplay: '/a',
+        intent: 'primary',
+        run: ({ ticket, handlers, targetUserId }) => {
+            if (!ticket || !handlers?.onAssign)
+                return;
+            handlers.onAssign(ticket, targetUserId ?? null);
+        },
+        canExecute: ({ ticket, handlers, capabilities }) => Boolean(ticket && handlers?.onAssign && isCapabilityEnabled(capabilities?.canAssign)),
+    },
+    {
+        id: 'register-result',
+        label: 'Registrar resultado',
+        icon: ClipboardList,
+        shortcut: 'r',
+        shortcutDisplay: '/r',
+        intent: 'primary',
+        run: ({ openDialog, returnFocus }) => {
+            openDialog?.('register-result', buildReturnFocusOption(returnFocus));
+        },
+        canExecute: ({ ticket, capabilities }) => Boolean(ticket && isCapabilityEnabled(capabilities?.canRegisterResult)),
+        getState: ({ loadingStates }) => ({
+            loading: Boolean(loadingStates?.registerResult),
+        }),
+    },
+    {
+        id: 'ask-ai-help',
+        label: 'Sugestões com IA',
+        icon: Sparkles,
+        shortcut: 'h',
+        shortcutDisplay: '/h',
+        run: async (context) => {
+            const { ticket, ai, handlers, timeline } = context;
+            if (!ticket) {
+                toast.error('Selecione um atendimento para pedir ajuda da IA.');
+                return;
+            }
+            if (!ai?.requestSuggestions) {
+                toast.error('Assistente de IA indisponível no momento.');
+                return;
+            }
+            if (!handlers?.onCreateNote) {
+                toast.error('Não foi possível registrar a nota sugerida pela IA.');
+                return;
+            }
+            try {
+                const timelineEntries = Array.isArray(timeline) ? timeline : [];
+                const result = await ai.requestSuggestions({ ticket, timeline: timelineEntries });
+                if (!result) {
+                    toast.warning('A IA não retornou recomendações desta vez.');
+                    return;
+                }
+                const note = formatAiSuggestionNote(result);
+                if (note) {
+                    handlers.onCreateNote(note);
+                }
+                else {
+                    toast.warning('A IA retornou um resultado sem detalhes utilizáveis.');
+                }
+            }
+            catch (error) {
+                console.error('AI help action failed', error);
+                const baseMessage = error instanceof Error ? error.message : 'Tente novamente em instantes.';
+                const detailPayload = error?.payload?.error?.details ??
+                    error?.payload?.error?.detail ??
+                    null;
+                const description = (() => {
+                    if (typeof detailPayload === 'string') {
+                        return detailPayload;
+                    }
+                    if (detailPayload && typeof detailPayload === 'object') {
+                        try {
+                            const serialized = JSON.stringify(detailPayload);
+                            return serialized.length > 280 ? `${serialized.slice(0, 277)}...` : serialized;
+                        }
+                        catch {
+                            return baseMessage;
+                        }
+                    }
+                    return baseMessage;
+                })();
+                toast.error('Falha ao pedir ajuda da IA', {
+                    description,
+                });
+            }
+        },
+        canExecute: ({ ticket, ai, handlers }) => Boolean(ticket && ai?.requestSuggestions && handlers?.onCreateNote),
+        getState: ({ ai }) => ({ loading: Boolean(ai?.isLoading) }),
+    },
+    {
+        id: 'phone-call',
+        label: 'Telefonia',
+        icon: Phone,
+        shortcut: 'c',
+        shortcutDisplay: '/c',
+        type: 'menu',
+        menuItems: [
+            {
+                id: 'phone-call-dial',
+                label: 'Ligar agora',
+                run: ({ handlers, phoneNumber }) => {
+                    if (phoneNumber && handlers?.onCall) {
+                        handlers.onCall(phoneNumber);
+                    }
+                },
+                canExecute: ({ handlers, phoneNumber, capabilities }) => Boolean(phoneNumber && handlers?.onCall && isCapabilityEnabled(capabilities?.canCall)),
+            },
+            {
+                id: 'phone-call-register',
+                label: 'Registrar ligação',
+                run: ({ openDialog, returnFocus }) => openDialog?.('call-result', buildReturnFocusOption(returnFocus)),
+            },
+        ],
+        canExecute: ({ ticket }) => Boolean(ticket),
+    },
+    {
+        id: 'send-sms',
+        label: 'Enviar SMS',
+        icon: MessageSquare,
+        shortcut: 's',
+        shortcutDisplay: '/s',
+        run: ({ handlers, phoneNumber }) => {
+            if (phoneNumber && handlers?.onSendSMS) {
+                handlers.onSendSMS(phoneNumber);
+            }
+        },
+        canExecute: ({ phoneNumber, handlers, capabilities }) => Boolean(phoneNumber && handlers?.onSendSMS && isCapabilityEnabled(capabilities?.canSendSms)),
+    },
+    {
+        id: 'quick-followup',
+        label: 'Agendar follow-up',
+        icon: CalendarClock,
+        shortcut: 't',
+        shortcutDisplay: '/t',
+        run: ({ ticket, handlers }) => {
+            if (!ticket || !handlers?.onScheduleFollowUp)
+                return;
+            handlers.onScheduleFollowUp(ticket);
+        },
+        canExecute: ({ ticket, handlers, capabilities }) => Boolean(ticket && handlers?.onScheduleFollowUp && isCapabilityEnabled(capabilities?.canQuickFollowUp)),
+    },
+    {
+        id: 'attach-file',
+        label: 'Anexar arquivo',
+        icon: Paperclip,
+        run: ({ handlers }) => {
+            handlers.onAttachFile?.();
+        },
+        canExecute: ({ handlers, capabilities }) => Boolean(handlers?.onAttachFile && isCapabilityEnabled(capabilities?.canAttachFile)),
+    },
+    {
+        id: 'edit-contact',
+        label: 'Editar contato',
+        icon: Pencil,
+        run: ({ ticket, handlers }) => {
+            if (!handlers?.onEditContact)
+                return;
+            handlers.onEditContact(ticket?.contact?.id ?? null);
+        },
+        canExecute: ({ handlers, capabilities }) => Boolean(handlers?.onEditContact && isCapabilityEnabled(capabilities?.canEditContact)),
+    },
+];
+export const PRIMARY_ACTION_IDS = DEFAULT_QUICK_ACTIONS.filter((action) => action.intent === 'primary').map((action) => action.id);
+export const ACTIONS_BY_ID = DEFAULT_QUICK_ACTIONS.reduce((accumulator, action) => {
+    accumulator[action.id] = action;
+    return accumulator;
+}, {});

@@ -459,36 +459,58 @@ export interface NormalizedMessagePayload {
 
 export const normalizePayload = (input: MessagePayloadInput): NormalizedMessagePayload => {
   switch (input.type) {
-    case 'text':
-      return {
+    case 'text': {
+      const payload: NormalizedMessagePayload = {
         type: input.type,
         content: input.text,
-        previewUrl: input.previewUrl,
-      } satisfies NormalizedMessagePayload;
+      };
+
+      if (typeof input.previewUrl === 'boolean') {
+        payload.previewUrl = input.previewUrl;
+      }
+
+      return payload;
+    }
     case 'image':
     case 'audio':
     case 'video':
     case 'document': {
       const content = input.text ?? input.caption ?? '';
-      return {
+      const payload: NormalizedMessagePayload = {
         type: input.type,
         content,
-        caption: input.caption,
         mediaUrl: input.mediaUrl,
-        mediaMimeType: input.mimeType,
-        mediaFileName: input.fileName,
-        previewUrl: input.previewUrl,
-      } satisfies NormalizedMessagePayload;
+      };
+
+      if (typeof input.caption === 'string') {
+        payload.caption = input.caption;
+      }
+      if (typeof input.mimeType === 'string') {
+        payload.mediaMimeType = input.mimeType;
+      }
+      if (typeof input.fileName === 'string') {
+        payload.mediaFileName = input.fileName;
+      }
+      if (typeof input.previewUrl === 'boolean') {
+        payload.previewUrl = input.previewUrl;
+      }
+
+      return payload;
     }
     case 'location': {
       const content =
         input.text ?? input.location.name ?? input.location.address ?? '';
-      return {
+      const payload: NormalizedMessagePayload = {
         type: input.type,
         content,
-        previewUrl: input.previewUrl,
         location: input.location,
-      } satisfies NormalizedMessagePayload;
+      };
+
+      if (typeof input.previewUrl === 'boolean') {
+        payload.previewUrl = input.previewUrl;
+      }
+
+      return payload;
     }
     case 'contact': {
       const fallbackContent =
@@ -496,21 +518,31 @@ export const normalizePayload = (input: MessagePayloadInput): NormalizedMessageP
         input.contact.fullName ??
         input.contact.vcard ??
         '';
-      return {
+      const payload: NormalizedMessagePayload = {
         type: input.type,
         content: fallbackContent,
-        previewUrl: input.previewUrl,
         contact: input.contact,
-      } satisfies NormalizedMessagePayload;
+      };
+
+      if (typeof input.previewUrl === 'boolean') {
+        payload.previewUrl = input.previewUrl;
+      }
+
+      return payload;
     }
     case 'template': {
       const content = input.text ?? input.template.name ?? '';
-      return {
+      const payload: NormalizedMessagePayload = {
         type: input.type,
         content,
-        previewUrl: input.previewUrl,
         template: input.template,
-      } satisfies NormalizedMessagePayload;
+      };
+
+      if (typeof input.previewUrl === 'boolean') {
+        payload.previewUrl = input.previewUrl;
+      }
+
+      return payload;
     }
     case 'poll': {
       return {
@@ -532,8 +564,16 @@ export type SendMessageByInstanceRequest = SendMessageByInstanceContract;
 export type OutboundMessageResponse = OutboundMessageResponseContract;
 export type OutboundMessageError = OutboundMessageErrorContract;
 
-type EnsureExact<TExpected, TActual extends TExpected> =
-  TExpected extends TActual ? true : never;
+type NormalizeExactOptional<T> = {
+  [K in keyof T]-?: {} extends Pick<T, K> ? T[K] | undefined : T[K];
+};
+
+type EnsureExact<TExpected, TActual> =
+  NormalizeExactOptional<TExpected> extends NormalizeExactOptional<TActual>
+    ? NormalizeExactOptional<TActual> extends NormalizeExactOptional<TExpected>
+      ? true
+      : never
+    : never;
 
 export type _EnsureMessagePayload = EnsureExact<MessagePayloadContract, MessagePayloadInput>;
 export type _EnsureSendByTicket = EnsureExact<SendMessageByTicketContract, SendByTicketInput>;

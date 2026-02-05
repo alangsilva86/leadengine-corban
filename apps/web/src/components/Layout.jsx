@@ -3,12 +3,10 @@ import {
   Menu,
   Home,
   Users,
-  Briefcase,
   Layers,
   QrCode,
   MessageSquare,
   Megaphone,
-  BarChart3,
   Settings,
   Ticket,
   Bell,
@@ -20,7 +18,6 @@ import {
   Sun,
   Moon,
   ScrollText,
-  ShieldCheck,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils.js';
@@ -54,11 +51,8 @@ const NAVIGATION_ICON_MAP = {
   [NAVIGATION_PAGES.inbox.id]: MessageSquare,
   [NAVIGATION_PAGES.contacts.id]: Users,
   [NAVIGATION_PAGES.crm.id]: Layers,
-  [NAVIGATION_PAGES.agreements.id]: Briefcase,
-  [NAVIGATION_PAGES.reports.id]: BarChart3,
   [NAVIGATION_PAGES['baileys-logs'].id]: ScrollText,
   [NAVIGATION_PAGES.settings.id]: Settings,
-  [NAVIGATION_PAGES['tenant-admin'].id]: ShieldCheck,
 };
 
 const NAVIGATION_ITEMS = (() => {
@@ -183,10 +177,6 @@ const LayoutShell = ({
   const { user, logout, status: authStatus } = useAuth();
   const displayName = user?.name ?? 'Operador';
   const displayRole = user?.role ?? 'Sem papel definido';
-  const platformPermissions = Array.isArray(user?.permissions) ? user.permissions : [];
-  const hasPlatformAdminPermission = platformPermissions.includes('platform:admin') ||
-    platformPermissions.includes('platform-admin');
-  const isPlatformAdmin = user?.role === 'admin' || hasPlatformAdminPermission;
   const handleLogout = () => {
     logout?.();
   };
@@ -203,14 +193,7 @@ const LayoutShell = ({
 
   const renderNavigationItems = useCallback(
     (items) =>
-      items
-        .filter((item) => {
-          if (item.id === NAVIGATION_PAGES['tenant-admin'].id && !isPlatformAdmin) {
-            return false;
-          }
-          return true;
-        })
-        .map((item) => (
+      items.map((item) => (
           <SidebarMenuItem key={item.id}>
             <SidebarMenuButton
               type="button"
@@ -224,7 +207,7 @@ const LayoutShell = ({
             </SidebarMenuButton>
           </SidebarMenuItem>
         )),
-    [currentPage, handleNavigate, isPlatformAdmin]
+    [currentPage, handleNavigate]
   );
 
   const handleSidebarCollapseToggle = () => {

@@ -42,7 +42,7 @@ leadengine-corban/
 │   ├── core/                 # Regras de negócio (tickets, leads, erros comuns)
 │   ├── shared/               # Logger Winston, config e helpers cross-app
 │   └── storage/              # Prisma Client e repositórios de dados
-├── prisma/                   # schema.prisma, migrations e seeds
+│       └── prisma/           # schema.prisma, migrations e seeds (PostgreSQL)
 ├── docs/                     # ADRs, design system, troubleshooting e guias
 ├── scripts/                  # Automação (doctor, deploy, smoke tests)
 ├── docker-compose*.yml       # Orquestração local e de produção
@@ -53,7 +53,7 @@ leadengine-corban/
 Cada pasta tem owner claro:
 - **apps/** entrega experiências (API e frontend).
 - **packages/** guarda blocos reutilizáveis – são buildados antes de qualquer app.
-- **prisma/** versiona o modelo de dados PostgreSQL usado pela API.
+- **packages/storage/prisma/** versiona o modelo de dados PostgreSQL usado pela API.
 - **docs/** registra decisões, tokens de design e receitas de operação.
 - **scripts/** automatiza build, deploy, health-check, rastreamento e testes.
 
@@ -127,11 +127,11 @@ Este comando builda workspaces, gera links entre `apps/*` e `packages/*` e garan
 
 ### 5. Banco de dados & Prisma
 ```bash
-pnpm -F @ticketz/api run db:generate   # Gera client
-pnpm -F @ticketz/api run db:push       # Aplica schema no Postgres local
-pnpm -F @ticketz/api run db:seed       # Popular dados iniciais (se necessário)
+pnpm --filter @ticketz/storage run prisma:generate                                # Gera Prisma Client
+pnpm --filter @ticketz/storage exec prisma migrate dev --schema=./prisma/schema.prisma # Aplica migrations (dev)
+pnpm --filter @ticketz/storage exec prisma db seed --schema=./prisma/schema.prisma     # Popular dados iniciais
 ```
-As migrations estão em `prisma/migrations`. Para resetar, use `pnpm -F @ticketz/api run db:reset`.
+As migrations estão em `packages/storage/prisma/migrations`.
 
 ### 6. Execução em desenvolvimento
 ```bash
@@ -264,12 +264,8 @@ curl -X GET "https://ticketzapi-production.up.railway.app/api/lead-engine/alloca
 - Substitua `$ACCESS_TOKEN` pelo JWT do operador autenticado e `$INSTANCE_ID` pelo identificador provisionado na criação da instância WhatsApp. O backend valida sempre `x-api-key`/`x-signature-sha256` antes de processar o filtro, portanto mantenha as credenciais alinhadas com o broker configurado.
 
 ### Campanhas e pipeline comercial
-- `/api/lead-engine/campaigns` – sincronização com upstream, filtros por `agreementId` e `status`.
-- `/api/v1/agreements` – coleção paginada, criação (`POST`), detalhe (`GET /{agreementId}`) e atualização parcial (`PATCH /{agreementId}`) com tabelas, janelas e taxas modeladas em envelopes `data/meta`.
-- `/api/v1/agreements/import` – importação assíncrona de acordos (JSON ou multipart) com retorno do job.
-- `/api/v1/agreements/providers/{providerId}/sync` – agenda a sincronização de acordos com provedores externos.
+- `/api/lead-engine/campaigns` – campanhas (filtros por `status`, produto/estratégia e tags).
 - `/api/campaigns` – gestão interna de campanhas (status, métricas, webhooks).
-- Documentação detalhada dos acordos: [`docs/agreements-api.md`](docs/agreements-api.md).
 
 ### Preferências e filas
 - `/api/preferences` – salva preferências de usuários (tema, filtros, layout).

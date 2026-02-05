@@ -1,0 +1,21 @@
+export default InstanceFiltersBar;
+declare function InstanceFiltersBar({ searchTerm, onSearchChange, statusFilter, onStatusFilterChange, statusOptions, healthFilter, onHealthFilterChange, healthOptions, providerFilter, onProviderFilterChange, providerOptions, sortBy, onSortByChange, sortOptions, activeInstances, totalInstances, filtersApplied, onClearFilters, }: {
+    searchTerm: any;
+    onSearchChange: any;
+    statusFilter: any;
+    onStatusFilterChange: any;
+    statusOptions: any;
+    healthFilter: any;
+    onHealthFilterChange: any;
+    healthOptions: any;
+    providerFilter: any;
+    onProviderFilterChange: any;
+    providerOptions: any;
+    sortBy: any;
+    onSortByChange: any;
+    sortOptions: any;
+    activeInstances: any;
+    totalInstances: any;
+    filtersApplied: any;
+    onClearFilters: any;
+}): import("react/jsx-runtime").JSX.Element;

@@ -91,7 +91,7 @@ export const resolveWhatsappInstanceByIdentifiers = async (
     try {
       const record = await prisma.whatsAppInstance.findFirst({
         where: {
-          tenantId: tenantId ?? undefined,
+          ...(tenantId ? { tenantId } : {}),
           OR: [
             { id: candidate },
             { brokerId: candidate },

@@ -1,4 +1,4 @@
-import type { sendMessage as SendMessageFn } from '../../../../services/ticket-service';
+import type * as TicketService from '../../../../services/ticket-service';
 
 import { Prisma } from '@prisma/client';
 
@@ -8,7 +8,7 @@ import { leadLastContactGauge } from '../../../../lib/metrics';
 import { emitToTenant, emitToTicket } from '../../../../lib/socket-registry';
 import { mapErrorForLog } from '../logging';
 
-type PersistedMessage = Awaited<ReturnType<SendMessageFn>>;
+type PersistedMessage = Awaited<ReturnType<typeof TicketService.sendMessage>>;
 
 export const upsertLeadFromInbound = async ({
   tenantId,

@@ -68,7 +68,16 @@ const buildOptionIndex = (
   const map = new Map<string, { index: number; title: string | null }>();
 
   const allOptions: OptionLike[] = [
-    ...state.options,
+    ...state.options.map((option) => {
+      const record = option as unknown as OptionLike;
+      return {
+        ...record,
+        title: record.title ?? null,
+        optionName: record.optionName ?? null,
+        description: record.description ?? null,
+        index: record.index ?? null,
+      };
+    }),
     ...runtimeOptions.filter((option) => !state.options.some((stateOption) => stateOption.id === option.id)),
   ];
 

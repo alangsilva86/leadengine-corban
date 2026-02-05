@@ -89,9 +89,9 @@ export const translateLegacyAgreementFields = (data: unknown): Record<string, un
   const metadata = applyAgreementMetadataDefaults(
     normalized.metadata,
     {
-      providerName: hasString(source.averbadora) ? source.averbadora : undefined,
-      responsavel: hasString(source.responsavel) ? source.responsavel : undefined,
-      products: productsForMetadata,
+      providerName: hasString(source.averbadora) ? source.averbadora : null,
+      responsavel: hasString(source.responsavel) ? source.responsavel : null,
+      products: productsForMetadata ?? null,
     },
     { overwrite: false }
   );

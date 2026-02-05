@@ -115,42 +115,41 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
   const { tenantId, ticketId, messageId, messageContent, contactId, queueId } = options;
   const fallbackMode = resolveDefaultAiMode();
 
-  // Log de início SEMPRE visível
-  logger.info('🤖 AI AUTO-REPLY :: 🚀 INICIANDO processamento', {
+  logger.debug('AI AUTO-REPLY :: starting', {
     tenantId,
     ticketId,
     messageId,
     messageContentPreview: safePreview(messageContent, 80),
   });
 
-    if (!messageContent || !messageContent.trim()) {
-      logger.info('🤖 AI AUTO-REPLY :: ⏭️ PULADO - conteúdo vazio', { tenantId, ticketId, messageId });
-      return;
-    }
+  if (!messageContent || !messageContent.trim()) {
+    logger.debug('AI AUTO-REPLY :: skipped (empty content)', { tenantId, ticketId, messageId });
+    return;
+  }
 
-    const { mode: routeMode, serverAutoReplyEnabled, forceServerAutoReply } = getAiRoutingPreferences();
-    logger.debug('AI AUTO-REPLY :: route mode check', {
-      routeMode,
-      serverAutoReplyEnabled,
-      forceServerAutoReply,
+  const { mode: routeMode, serverAutoReplyEnabled, forceServerAutoReply } = getAiRoutingPreferences();
+  logger.debug('AI AUTO-REPLY :: route mode check', {
+    routeMode,
+    serverAutoReplyEnabled,
+    forceServerAutoReply,
+  });
+  if (!serverAutoReplyEnabled) {
+    logger.debug('AI AUTO-REPLY :: skipped (server auto-reply disabled)', {
+      tenantId,
+      ticketId,
+      messageId,
+      aiRouteMode: routeMode,
     });
-    if (!serverAutoReplyEnabled) {
-      logger.info('🤖 AI AUTO-REPLY :: ⏭️ PULADO - respostas automáticas desabilitadas para o backend', {
-        tenantId,
-        ticketId,
-        messageId,
-        aiRouteMode: routeMode,
-      });
-      return;
-    }
+    return;
+  }
 
-    if (routeMode === 'front') {
-      logger.debug('AI AUTO-REPLY :: override ativo — enviando resposta server-side mesmo em modo front', {
-        tenantId,
-        ticketId,
-        messageId,
-      });
-    }
+  if (routeMode === 'front') {
+    logger.debug('AI AUTO-REPLY :: server override active while routeMode=front', {
+      tenantId,
+      ticketId,
+      messageId,
+    });
+  }
 
   try {
     const aiEnabled = resolveAiEnabled();
@@ -162,7 +161,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
 
     // Verificar se a IA está habilitada globalmente
     if (!aiEnabled) {
-      logger.info('🤖 AI AUTO-REPLY :: ⚠️ PULADO - IA desabilitada globalmente', {
+      logger.debug('AI AUTO-REPLY :: skipped (AI globally disabled)', {
         tenantId,
         ticketId,
       });
@@ -171,7 +170,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
 
     // Não responder a mensagens OUTBOUND (prevenção de eco/loop)
     if (await isOutboundMessage(tenantId, ticketId, messageId)) {
-      logger.info('🤖 AI AUTO-REPLY :: ⛔ PULADO - mensagem é OUTBOUND (possível eco)', {
+      logger.debug('AI AUTO-REPLY :: skipped (message is outbound)', {
         tenantId,
         ticketId,
         messageId,
@@ -181,7 +180,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
 
     // Idempotência: não responder duas vezes ao mesmo gatilho
     if (await alreadyRepliedToMessage(tenantId, ticketId, messageId)) {
-      logger.info('🤖 AI AUTO-REPLY :: ⏩ PULADO - já respondido para este messageId', {
+      logger.debug('AI AUTO-REPLY :: skipped (already replied)', {
         tenantId,
         ticketId,
         messageId,
@@ -217,7 +216,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       effectiveAiMode = 'IA_AUTO';
     }
 
-    logger.info('🤖 AI AUTO-REPLY :: 🔍 Verificando modo', {
+    logger.debug('AI AUTO-REPLY :: mode resolved', {
       tenantId,
       ticketId,
       aiMode: effectiveAiMode,
@@ -232,7 +231,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
 
     // Apenas responder automaticamente se estiver em modo IA_AUTO
     if (effectiveAiMode !== 'IA_AUTO') {
-      logger.info('🤖 AI AUTO-REPLY :: ⚠️ PULADO - Modo não é IA_AUTO', {
+      logger.debug('AI AUTO-REPLY :: skipped (mode is not IA_AUTO)', {
         tenantId,
         ticketId,
         currentMode: effectiveAiMode,

@@ -11,8 +11,6 @@ import { validateRequest } from '../middleware/validation';
 import { requireTenant } from '../middleware/auth';
 import { leadEngineClient } from '../services/lead-engine-client';
 import { logger } from '../config/logger';
-import { agreementDefinitions } from '../config/lead-engine';
-import type { AgreementSummary } from '../services/lead-engine-client';
 import {
   addAllocations,
   listAllocations as listTenantAllocations,
@@ -91,21 +89,6 @@ const normalizeNumericValue = (value: unknown): number | null => {
 };
 
 const ALLOCATION_STATUSES: LeadAllocationStatus[] = ['allocated', 'contacted', 'won', 'lost'];
-
-const buildAgreementFallbackSummaries = (): AgreementSummary[] => {
-  return agreementDefinitions.map((definition) => {
-    const fallbackLeads = leadEngineClient.getFallbackLeadsForAgreement(definition.id, 100);
-    const availableLeads = fallbackLeads.length;
-    const hotLeads = Math.min(availableLeads, 5);
-
-    return {
-      ...definition,
-      availableLeads,
-      hotLeads,
-      lastSyncAt: null,
-    };
-  });
-};
 
 const toErrorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof Error && typeof error.message === 'string' && error.message.trim().length > 0) {
@@ -227,56 +210,6 @@ const buildAllocationSummary = (
 // ============================================================================
 // Rotas baseadas na API real do Lead Engine
 // ============================================================================
-
-/**
- * GET /api/lead-engine/agreements - Lista convênios com métricas
- */
-router.get(
-  '/agreements',
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req);
-
-    logger.info('[LeadEngine] GET /agreements', { tenantId });
-
-    try {
-      const { summaries, warnings } = await leadEngineClient.getAgreementSummaries();
-
-      res.json({
-        success: true,
-        data: summaries,
-        warnings: warnings.length > 0 ? warnings : undefined,
-      });
-
-    logger.info('[LeadEngine] ✅ Agreements delivered', {
-      tenantId,
-      count: summaries.length,
-      warnings: warnings.length,
-    });
-  } catch (error) {
-    logger.error('[LeadEngine] ❌ Failed to get agreements', { tenantId, error });
-    const fallbackSummaries = buildAgreementFallbackSummaries();
-
-    logger.warn('[LeadEngine] ⚠️ Returning fallback agreements', {
-      tenantId,
-      count: fallbackSummaries.length,
-    });
-
-    res.status(200).json({
-      success: true,
-      data: fallbackSummaries,
-      warnings: [
-        {
-          code: 'LEAD_ENGINE_FALLBACK',
-          message: 'Lead Engine indisponível. Retornando convênios simulados.',
-        },
-      ],
-      meta: {
-        fallback: true,
-      },
-    });
-  }
-})
-);
 
 /**
  * GET /api/lead-engine/campaigns - Lista campanhas com filtros opcionais
@@ -445,57 +378,6 @@ router.get(
         error: {
           code: 'LEADS_FETCH_FAILED',
           message: 'Falha ao buscar leads',
-        },
-      });
-    }
-  })
-);
-
-/**
- * GET /api/lead-engine/leads/by-agreement/:agreementId - Busca leads por convênio
- */
-router.get(
-  '/leads/by-agreement/:agreementId',
-  param('agreementId').isString(),
-  query('take').optional().isInt({ min: 1, max: 100 }),
-  validateRequest,
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req);
-
-    const agreementId = req.params.agreementId as string;
-    const take = parseInt(req.query.take as string) || 25;
-
-    logger.info('[LeadEngine] GET /leads/by-agreement/:agreementId', {
-      tenantId,
-      agreementId,
-      take,
-    });
-
-    try {
-      const leads = await leadEngineClient.fetchLeadsByAgreement(agreementId, take);
-
-      res.json({
-        success: true,
-        data: leads,
-        count: leads.length,
-      });
-
-      logger.info('[LeadEngine] ✅ Leads by agreement retrieved', {
-        tenantId,
-        agreementId,
-        count: leads.length,
-      });
-    } catch (error) {
-      logger.error('[LeadEngine] ❌ Failed to get leads by agreement', {
-        tenantId,
-        agreementId,
-        error,
-      });
-      res.status(500).json({
-        success: false,
-        error: {
-          code: 'LEADS_BY_AGREEMENT_FAILED',
-          message: 'Falha ao buscar leads do convênio',
         },
       });
     }
@@ -732,111 +614,8 @@ router.post(
   })
 );
 
-/**
- * GET /api/lead-engine/agreements/available - Lista convênios disponíveis
- */
-router.get(
-  '/agreements/available',
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req);
-
-    logger.info('[LeadEngine] GET /agreements/available', { tenantId });
-
-    const agreements = leadEngineClient.getAvailableAgreements();
-
-    res.json({
-      success: true,
-      data: agreements,
-      count: agreements.length,
-    });
-
-    logger.info('[LeadEngine] ✅ Available agreements listed', {
-      tenantId,
-      count: agreements.length,
-    });
-  })
-);
-
-/**
- * GET /api/lead-engine/dashboard - Dashboard com métricas gerais
- */
-router.get(
-  '/dashboard',
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = ensureTenantContext(req);
-
-    logger.info('[LeadEngine] GET /dashboard', { tenantId });
-
-    try {
-      const { summaries } = await leadEngineClient.getAgreementSummaries();
-
-      const totalLeads = summaries.reduce((sum, agreement) => sum + agreement.availableLeads, 0);
-      const totalHotLeads = summaries.reduce((sum, agreement) => sum + agreement.hotLeads, 0);
-      const activeAgreements = summaries.filter((agreement) => agreement.availableLeads > 0).length;
-
-      const dashboard = {
-        totalLeads,
-        totalHotLeads,
-        activeAgreements,
-        totalAgreements: summaries.length,
-        conversionRate: totalLeads > 0 ? ((totalHotLeads / totalLeads) * 100).toFixed(2) : '0.00',
-        lastUpdate: new Date().toISOString(),
-        agreements: summaries,
-      };
-
-      res.json({
-        success: true,
-        data: dashboard,
-      });
-
-      logger.info('[LeadEngine] ✅ Dashboard data retrieved', {
-        tenantId,
-        totalLeads,
-        totalHotLeads,
-        activeAgreements,
-      });
-    } catch (error) {
-      logger.error('[LeadEngine] ❌ Failed to get dashboard data', { tenantId, error });
-      const fallbackSummaries = buildAgreementFallbackSummaries();
-      const totalLeads = fallbackSummaries.reduce((sum, agreement) => sum + agreement.availableLeads, 0);
-      const totalHotLeads = fallbackSummaries.reduce((sum, agreement) => sum + agreement.hotLeads, 0);
-      const activeAgreements = fallbackSummaries.filter((agreement) => agreement.availableLeads > 0).length;
-
-      logger.warn('[LeadEngine] ⚠️ Returning fallback dashboard data', {
-        tenantId,
-        totalLeads,
-        totalHotLeads,
-        activeAgreements,
-      });
-
-      res.status(200).json({
-        success: true,
-        data: {
-          totalLeads,
-          totalHotLeads,
-          activeAgreements,
-          totalAgreements: fallbackSummaries.length,
-          conversionRate: totalLeads > 0 ? ((totalHotLeads / totalLeads) * 100).toFixed(2) : '0.00',
-          lastUpdate: new Date().toISOString(),
-          agreements: fallbackSummaries,
-        },
-        warnings: [
-          {
-            code: 'LEAD_ENGINE_FALLBACK',
-            message: 'Lead Engine indisponível. Dashboard em modo demonstrativo.',
-          },
-        ],
-        meta: {
-          fallback: true,
-        },
-      });
-    }
-})
-);
-
 router.get(
   '/allocations',
-  query('agreementId').optional().isString().trim(),
   query('campaignId').optional().isString().trim(),
   query('instanceId').optional().isString().trim(),
   query('status').optional(),
@@ -845,7 +624,6 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = ensureTenantContext(req);
 
-    const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
     const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId : undefined;
     const instanceId = typeof req.query.instanceId === 'string' ? req.query.instanceId : undefined;
     const { statuses, error } = parseStatusFilter(req.query.status ?? req.query.statuses);
@@ -861,12 +639,12 @@ router.get(
       return;
     }
 
-    if (!agreementId && !campaignId && !instanceId) {
+    if (!campaignId && !instanceId) {
       res.status(400).json({
         success: false,
         error: {
           code: 'ALLOCATIONS_FILTER_REQUIRED',
-          message: 'Informe campaignId, agreementId ou instanceId para listar alocações.',
+          message: 'Informe campaignId ou instanceId para listar alocações.',
         },
       });
       return;
@@ -874,7 +652,6 @@ router.get(
 
     logger.info('[LeadEngine] GET /allocations', {
       tenantId,
-      agreementId,
       campaignId,
       instanceId,
       statuses,
@@ -882,7 +659,6 @@ router.get(
 
     try {
       const allocationFilters: Parameters<typeof listTenantAllocations>[1] = {
-        ...(agreementId ? { agreementId } : {}),
         ...(campaignId ? { campaignId } : {}),
         ...(instanceId ? { instanceId } : {}),
         ...(statuses ? { statuses } : {}),
@@ -904,7 +680,6 @@ router.get(
       if (isStorageInitializationError(error)) {
         logger.warn('[LeadEngine] ⚠️ Storage not initialized when listing allocations', {
           tenantId,
-          agreementId,
           campaignId,
           instanceId,
           statuses,
@@ -928,7 +703,6 @@ router.get(
       if (isStorageUnavailableError(error)) {
         logger.error('[LeadEngine] 🚫 Storage unavailable when listing allocations', {
           tenantId,
-          agreementId,
           campaignId,
           instanceId,
           statuses,
@@ -958,7 +732,6 @@ router.get(
 
       logger.error('[LeadEngine] ❌ Failed to list allocations', {
         tenantId,
-        agreementId,
         campaignId,
         instanceId,
         statuses,
@@ -981,15 +754,13 @@ router.get(
 router.post(
   '/allocations',
   body('campaignId').isString().trim().notEmpty(),
-  body('agreementId').isString().trim().notEmpty(),
   body('take').optional().isInt({ min: 1, max: 100 }),
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = ensureTenantContext(req);
 
-    const { campaignId, agreementId } = req.body as {
+    const { campaignId } = req.body as {
       campaignId: string;
-      agreementId: string;
       take?: number;
     };
     const take = typeof req.body.take === 'number' ? req.body.take : Number(req.body.take) || 25;
@@ -997,9 +768,10 @@ router.post(
     logger.info('[LeadEngine] POST /allocations', {
       tenantId,
       campaignId,
-      agreementId,
       take,
     });
+
+    let sourceAgreementId: string | undefined;
 
     try {
       const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
@@ -1010,6 +782,18 @@ router.post(
           error: {
             code: 'CAMPAIGN_NOT_FOUND',
             message: 'Campanha não encontrada.',
+          },
+        });
+        return;
+      }
+
+      sourceAgreementId = campaign.agreementId ?? undefined;
+      if (!sourceAgreementId) {
+        res.status(409).json({
+          success: false,
+          error: {
+            code: 'CAMPAIGN_SOURCE_NOT_CONFIGURED',
+            message: 'A campanha precisa ter uma origem configurada para puxar novos leads.',
           },
         });
         return;
@@ -1026,18 +810,7 @@ router.post(
         return;
       }
 
-      if (campaign.agreementId && campaign.agreementId !== agreementId) {
-        res.status(409).json({
-          success: false,
-          error: {
-            code: 'AGREEMENT_MISMATCH',
-            message: 'O convênio informado não corresponde ao da campanha.',
-          },
-        });
-        return;
-      }
-
-      const leads = await leadEngineClient.fetchLeadsByAgreement(agreementId, take);
+      const leads = await leadEngineClient.fetchLeadsByAgreement(sourceAgreementId, take);
       const { newlyAllocated, summary } = await addAllocations(tenantId, { campaignId }, leads);
 
       res.json({
@@ -1056,22 +829,28 @@ router.post(
 
       const message = toErrorMessage(error, 'Falha ao buscar novos leads');
 
+      if (!sourceAgreementId) {
+        const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+        sourceAgreementId = campaign?.agreementId ?? undefined;
+      }
+
       logger.error('[LeadEngine] ❌ Failed to allocate leads', {
         tenantId,
         campaignId,
-        agreementId,
+        sourceAgreementId,
         take,
         status,
         retryAfter,
         error,
       });
 
-      const fallbackLeads = leadEngineClient.getFallbackLeadsForAgreement(agreementId, take);
+      const fallbackLeads = sourceAgreementId
+        ? leadEngineClient.getFallbackLeadsForAgreement(sourceAgreementId, take)
+        : [];
       if (fallbackLeads.length > 0) {
         logger.warn('[LeadEngine] ⚠️ Using fallback leads after allocation failure', {
           tenantId,
           campaignId,
-          agreementId,
           requested: take,
           fallback: fallbackLeads.length,
         });
@@ -1180,7 +959,6 @@ router.patch(
 
 router.get(
   '/allocations/export',
-  query('agreementId').optional().isString().trim(),
   query('campaignId').optional().isString().trim(),
   query('status').optional(),
   query('statuses').optional(),
@@ -1191,7 +969,6 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = ensureTenantContext(req);
 
-    const agreementId = typeof req.query.agreementId === 'string' ? req.query.agreementId : undefined;
     const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId : undefined;
     const instanceId = typeof req.query.instanceId === 'string' ? req.query.instanceId : undefined;
     const fromDate = typeof req.query.from === 'string' ? new Date(req.query.from) : undefined;
@@ -1211,7 +988,6 @@ router.get(
 
     logger.info('[LeadEngine] GET /allocations/export', {
       tenantId,
-      agreementId,
       campaignId,
       statuses,
       instanceId,
@@ -1221,7 +997,6 @@ router.get(
 
     try {
       const exportFilters: Parameters<typeof listTenantAllocations>[1] = {
-        ...(agreementId ? { agreementId } : {}),
         ...(campaignId ? { campaignId } : {}),
         ...(instanceId ? { instanceId } : {}),
         ...(statuses ? { statuses } : {}),
@@ -1308,7 +1083,6 @@ router.get(
     } catch (error) {
       logger.error('[LeadEngine] ❌ Failed to export allocations', {
         tenantId,
-        agreementId,
         campaignId,
         statuses,
         instanceId,

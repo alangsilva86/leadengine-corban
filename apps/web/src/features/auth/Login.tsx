@@ -18,7 +18,6 @@ const defaultTenantHint = resolveEnvString(getEnvVar('VITE_DEFAULT_TENANT_HINT',
 const initialTenant = storedTenantSlugHint || defaultTenantHint || storedTenantId;
 const prefillEmail = resolveEnvString(getEnvVar('VITE_AUTH_PREFILL_EMAIL', ''));
 const prefillPassword = resolveEnvString(getEnvVar('VITE_AUTH_PREFILL_PASSWORD', ''));
-const authProvider = resolveEnvString(getEnvVar('VITE_AUTH_PROVIDER', 'internal')).toLowerCase();
 
 const normalize = (value: string) => value.trim();
 
@@ -41,8 +40,6 @@ export default function LoginPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const showOnboardingShortcut = authProvider === 'invite';
 
   useEffect(() => {
     if (status === 'authenticated') {
@@ -197,23 +194,13 @@ export default function LoginPage() {
                 Voltar para o login
               </button>
             )}
-            {showOnboardingShortcut ? (
-              <p>
-                Recebeu um convite?{' '}
-                <Link to="/onboarding" className="text-primary underline-offset-2 hover:underline">
-                  Iniciar onboarding guiado
-                </Link>
-                .
-              </p>
-            ) : (
-              <p>
-                Precisa de ajuda? Entre em contato com o suporte ou{' '}
-                <Link to="/" className="text-primary underline-offset-2 hover:underline">
-                  volte para a página inicial
-                </Link>
-                .
-              </p>
-            )}
+            <p>
+              Precisa de ajuda? Entre em contato com o suporte ou{' '}
+              <Link to="/" className="text-primary underline-offset-2 hover:underline">
+                volte para a página inicial
+              </Link>
+              .
+            </p>
           </div>
         </CardContent>
       </Card>

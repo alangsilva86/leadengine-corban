@@ -1,0 +1,53 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { Bot, Brain, Check, UserCheck } from 'lucide-react';
+import { Button } from '@/components/ui/button.jsx';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger, } from '@/components/ui/dropdown-menu.jsx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
+import { cn } from '@/lib/utils.js';
+import { AI_MODE_OPTIONS, DEFAULT_AI_MODE, isValidAiMode } from './aiModes.js';
+import useAiControlPanel from './hooks/useAiControlPanel.js';
+const AiModeMenu = ({ mode, onSelect, disabled = false, onRequestClose }) => {
+    const normalizedMode = isValidAiMode(mode) ? mode : DEFAULT_AI_MODE;
+    return (_jsx("div", { className: "flex w-60 flex-col gap-1", role: "menu", "aria-label": "Selecionar modo da IA", children: AI_MODE_OPTIONS.map((option) => {
+            const isActive = option.value === normalizedMode;
+            return (_jsxs("button", { type: "button", role: "menuitemradio", "aria-checked": isActive, className: cn('flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]', isActive
+                    ? 'bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_14%,transparent)] text-foreground shadow-[0_2px_8px_-6px_rgba(15,23,42,0.45)]'
+                    : 'text-foreground hover:bg-surface-overlay-strong'), onClick: () => {
+                    if (disabled)
+                        return;
+                    onSelect?.(option.value);
+                    onRequestClose?.();
+                }, disabled: disabled, children: [_jsx("span", { className: cn('mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-surface-overlay-glass-border text-xs', isActive
+                            ? 'border-[color:var(--accent-inbox-primary)] bg-[color:var(--accent-inbox-primary)] text-white'
+                            : 'text-foreground-muted'), "aria-hidden": true, children: isActive ? _jsx(Check, { className: "h-3 w-3" }) : null }), _jsxs("span", { className: "flex-1", children: [_jsx("span", { className: "block font-medium leading-tight", children: option.label }), option.description ? (_jsx("span", { className: "mt-1 block text-xs leading-snug text-foreground-muted", children: option.description })) : null] })] }, option.value));
+        }) }));
+};
+const AiModeControlMenu = ({ ticket, aiMode, aiConfidence, onAiModeChange, onTakeOver, onGiveBackToAi, aiModeChangeDisabled = false, className, }) => {
+    const { aiModeOptions, normalizedAiMode, aiModeSelectDisabled, handleAiModeSelect, aiConfidenceLabel, aiConfidenceToneClass, handleTakeOverClick, handleGiveBackClick, takeoverDisabled, giveBackDisabled, takeoverTooltipMessage, giveBackTooltipMessage, } = useAiControlPanel({
+        ticket,
+        aiMode,
+        aiConfidence,
+        onAiModeChange,
+        onTakeOver,
+        onGiveBackToAi,
+        aiModeChangeDisabled,
+    });
+    const activeMode = aiModeOptions.find((option) => option.value === normalizedAiMode) ?? aiModeOptions[0];
+    const triggerLabel = activeMode?.label ?? 'Modo IA';
+    const triggerDisabled = aiModeSelectDisabled && takeoverDisabled && giveBackDisabled;
+    return (_jsxs(DropdownMenu, { children: [_jsxs(Tooltip, { children: [_jsx(TooltipTrigger, { asChild: true, children: _jsx(DropdownMenuTrigger, { asChild: true, children: _jsxs(Button, { type: "button", variant: "outline", size: "sm", "aria-label": `Modo IA: ${triggerLabel}`, "data-testid": "ai-mode-menu-trigger", "data-state": normalizedAiMode, "data-disabled": triggerDisabled ? '' : undefined, className: cn('inline-flex h-9 shrink-0 items-center gap-2 rounded-full border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 text-xs font-semibold text-foreground shadow-none transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]', triggerDisabled && 'cursor-default opacity-60 hover:bg-surface-overlay-quiet', className), children: [_jsx(Brain, { className: "h-4 w-4", "aria-hidden": true }), _jsx("span", { className: "sr-only", children: "Modo IA" }), _jsx("span", { className: "max-w-[140px] truncate text-left font-semibold leading-none text-foreground", children: triggerLabel })] }) }) }), _jsxs(TooltipContent, { sideOffset: 8, children: ["Modo IA: ", triggerLabel] })] }), _jsxs(DropdownMenuContent, { align: "end", sideOffset: 8, className: "w-64", children: [_jsx(DropdownMenuLabel, { children: "Modo de atua\u00E7\u00E3o" }), _jsx(DropdownMenuRadioGroup, { value: normalizedAiMode, onValueChange: handleAiModeSelect, children: aiModeOptions.map((option) => (_jsx(DropdownMenuRadioItem, { value: option.value, disabled: aiModeSelectDisabled, children: option.label }, option.value))) }), _jsx(DropdownMenuSeparator, {}), _jsx(DropdownMenuLabel, { children: "Confian\u00E7a da IA" }), _jsx("div", { className: "px-2 pb-2", children: _jsx("span", { className: cn('inline-flex w-full items-center justify-center rounded-full border px-2 py-1 text-xs font-medium', aiConfidenceToneClass), children: aiConfidenceLabel }) }), _jsx(DropdownMenuSeparator, {}), _jsxs(DropdownMenuItem, { onSelect: (event) => {
+                            if (takeoverDisabled) {
+                                event.preventDefault();
+                                return;
+                            }
+                            handleTakeOverClick();
+                        }, disabled: takeoverDisabled, title: takeoverTooltipMessage, className: "gap-2", children: [_jsx(UserCheck, { className: "h-4 w-4", "aria-hidden": true }), _jsx("span", { children: "Assumir" })] }), _jsxs(DropdownMenuItem, { onSelect: (event) => {
+                            if (giveBackDisabled) {
+                                event.preventDefault();
+                                return;
+                            }
+                            handleGiveBackClick();
+                        }, disabled: giveBackDisabled, title: giveBackTooltipMessage, className: "gap-2", children: [_jsx(Bot, { className: "h-4 w-4", "aria-hidden": true }), _jsx("span", { children: "Devolver \u00E0 IA" })] })] })] }));
+};
+export { AiModeControlMenu };
+export default AiModeMenu;

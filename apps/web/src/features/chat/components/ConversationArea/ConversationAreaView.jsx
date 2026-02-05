@@ -7,8 +7,6 @@ import PrimaryActionBanner from './PrimaryActionBanner.jsx';
 import MessageTimeline from './MessageTimeline.jsx';
 import Composer from './Composer.jsx';
 import ConversationDetailsDrawer from './ConversationDetailsDrawer.jsx';
-import SimulationModal from './SimulationModal.jsx';
-import DealDrawer from './DealDrawer.jsx';
 import useTicketStageInfo from './hooks/useTicketStageInfo.js';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
 
@@ -84,7 +82,7 @@ const ComposerSection = forwardRef(
 
 ComposerSection.displayName = 'ComposerSection';
 
-export const ConversationAreaView = ({ timeline, composer, header, sales }) => {
+export const ConversationAreaView = ({ timeline, composer, header }) => {
   const {
     items: timelineItems,
     hasMore,
@@ -114,15 +112,6 @@ export const ConversationAreaView = ({ timeline, composer, header, sales }) => {
     aiStreaming,
     instanceSelector,
   } = composer ?? {};
-
-  const salesHandlers = sales?.handlers ?? {};
-  const openSimulation = typeof salesHandlers.openSimulation === 'function' ? salesHandlers.openSimulation : null;
-  const openProposal = typeof salesHandlers.openProposal === 'function' ? salesHandlers.openProposal : null;
-  const openDeal = typeof salesHandlers.openDeal === 'function' ? salesHandlers.openDeal : null;
-  const salesDisabled = Boolean(sales?.disabled);
-  const salesDisabledReason = sales?.disabledReason ?? null;
-  const simulationModal = sales?.simulationModal ?? null;
-  const dealDrawer = sales?.dealDrawer ?? null;
 
   const [detailsState, setDetailsState] = useState({ open: false, intent: null });
   const nextStepEditorRef = useRef(null);
@@ -279,16 +268,8 @@ export const ConversationAreaView = ({ timeline, composer, header, sales }) => {
           stageKey={stageKey}
           onDealFieldSave={onDealFieldSave}
           contextSectionRef={contextSectionRef}
-          onOpenSimulation={openSimulation}
-          onOpenProposal={openProposal}
-          onOpenDeal={openDeal}
-          salesActionsDisabled={salesDisabled}
-          salesDisabledReason={salesDisabledReason}
-          salesJourney={sales?.journey ?? null}
         />
       </ConversationDetailsDrawer>
-      {simulationModal ? <SimulationModal {...simulationModal} /> : null}
-      {dealDrawer ? <DealDrawer {...dealDrawer} /> : null}
     </section>
   );
 };

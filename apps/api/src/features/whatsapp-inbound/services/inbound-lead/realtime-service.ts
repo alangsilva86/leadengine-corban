@@ -1,12 +1,12 @@
-import type { sendMessage as SendMessageFn } from '../../../../services/ticket-service';
+import type * as TicketService from '../../../../services/ticket-service';
 
 import { prisma } from '../../../../lib/prisma';
 import { logger } from '../../../../config/logger';
-import { emitToAgreement, emitToTenant, emitToTicket } from '../../../../lib/socket-registry';
+import { emitToCampaign, emitToTenant, emitToTicket } from '../../../../lib/socket-registry';
 import { mapErrorForLog } from '../logging';
-import { resolveTicketAgreementId } from '../ticket-utils';
+import { resolveTicketAgreementId, resolveTicketCampaignId } from '../ticket-utils';
 
-type PersistedMessage = Awaited<ReturnType<SendMessageFn>>;
+type PersistedMessage = Awaited<ReturnType<typeof TicketService.sendMessage>>;
 
 export const emitRealtimeUpdatesForInbound = async ({
   tenantId,
@@ -55,9 +55,10 @@ export const emitRealtimeUpdatesForInbound = async ({
     }
 
     const agreementId = resolveTicketAgreementId(ticket) ?? 'unknown';
+    const campaignId = resolveTicketCampaignId(ticket);
     const realtimeEnvelope = {
       tenantId,
-      ticket: { id: ticketId, agreementId },
+      ticket: { id: ticketId, agreementId, campaignId },
       message,
       providerMessageId,
       instanceId,
@@ -67,7 +68,7 @@ export const emitRealtimeUpdatesForInbound = async ({
     emitToTicket(ticketId, 'ticketMessages.new', realtimeEnvelope);
     emitToTenant(tenantId, 'leadActivities.new', realtimeEnvelope);
     emitToTicket(ticketId, 'leadActivities.new', realtimeEnvelope);
-    if (agreementId) emitToAgreement(agreementId, 'leadActivities.new', realtimeEnvelope);
+    if (campaignId) emitToCampaign(campaignId, 'leadActivities.new', realtimeEnvelope);
 
     logger.info('🎯 LeadEngine • WhatsApp :: 🔔 Eventos realtime propagados', {
       requestId,
@@ -76,6 +77,7 @@ export const emitRealtimeUpdatesForInbound = async ({
       messageId: message?.id,
       providerMessageId,
       agreementId,
+      campaignId,
     });
   } catch (error) {
     logger.error('Failed to emit realtime updates for inbound WhatsApp message', {

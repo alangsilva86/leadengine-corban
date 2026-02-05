@@ -3,10 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
 import type {
   CreateUserInput,
-  InviteUserInput,
   TenantUser,
   UpdateUserInput,
-  UserInvite,
   UsersStatusFilter,
 } from '../types';
 
@@ -16,7 +14,6 @@ const buildUsersQueryKey = (status: UsersStatusFilter) => [...USERS_QUERY_BASE_K
 
 type UsersListResponse = { success: true; data: { users: TenantUser[] } };
 type UserMutationResponse = { success: true; data: TenantUser };
-type InviteResponse = { success: true; data: UserInvite };
 
 const invalidateUsersQueries = (queryClient: ReturnType<typeof useQueryClient>) => {
   queryClient.invalidateQueries({ queryKey: USERS_QUERY_BASE_KEY });
@@ -48,24 +45,6 @@ export const useCreateUserMutation = () => {
     },
   });
 };
-
-export const useInviteUserMutation = () =>
-  useMutation<UserInvite, Error, InviteUserInput>({
-    mutationFn: async ({ tenantSlugHint, ...payload }) => {
-      const body: Record<string, unknown> = {
-        email: payload.email,
-        role: payload.role,
-      };
-      if (payload.expiresInDays) {
-        body.expiresInDays = payload.expiresInDays;
-      }
-      if (tenantSlugHint) {
-        body.tenantSlugHint = tenantSlugHint;
-      }
-      const response = (await apiPost('/api/users/invites', body)) as InviteResponse;
-      return response.data;
-    },
-  });
 
 export const useUpdateUserMutation = () => {
   const queryClient = useQueryClient();

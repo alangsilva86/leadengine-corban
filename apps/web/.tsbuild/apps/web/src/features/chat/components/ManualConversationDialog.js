@@ -1,0 +1,108 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { Button } from '@/components/ui/button.jsx';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, } from '@/components/ui/dialog.jsx';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, } from '@/components/ui/form.jsx';
+import { Input } from '@/components/ui/input.jsx';
+import { Textarea } from '@/components/ui/textarea.jsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from '@/components/ui/select.jsx';
+import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
+import { validateManualPayload } from '../hooks/useManualConversationLauncher.js';
+const ManualConversationDialog = ({ open, onOpenChange, onSubmit, onSuccess, isSubmitting = false, error, }) => {
+    const phoneInputRef = useRef(null);
+    const [validationError, setValidationError] = useState(null);
+    const { instances = [], loadInstances } = useWhatsAppInstances();
+    const availableInstances = useMemo(() => Array.isArray(instances)
+        ? instances.filter((instance) => {
+            if (!instance || typeof instance.id !== 'string' || instance.id.trim().length === 0) {
+                return false;
+            }
+            if (instance.connected === true) {
+                return true;
+            }
+            if (typeof instance.status === 'string') {
+                return instance.status.toLowerCase() === 'connected';
+            }
+            return false;
+        })
+        : [], [instances]);
+    const defaultValues = useMemo(() => ({
+        phone: '',
+        message: '',
+        instanceId: '',
+    }), []);
+    const form = useForm({
+        defaultValues,
+    });
+    const isProcessing = form.formState.isSubmitting || isSubmitting;
+    useEffect(() => {
+        if (open) {
+            if (typeof window !== 'undefined') {
+                window.requestAnimationFrame(() => {
+                    phoneInputRef.current?.focus?.();
+                });
+            }
+            else {
+                phoneInputRef.current?.focus?.();
+            }
+        }
+        else {
+            form.reset(defaultValues);
+            setValidationError(null);
+        }
+    }, [open, form, defaultValues]);
+    useEffect(() => {
+        if (open) {
+            loadInstances({ forceRefresh: true });
+        }
+    }, [loadInstances, open]);
+    const handleSubmit = form.handleSubmit(async (values) => {
+        form.clearErrors();
+        setValidationError(null);
+        const validation = validateManualPayload(values);
+        if (!validation.payload && validation.errors) {
+            const messages = Object.values(validation.errors).filter(Boolean);
+            Object.entries(validation.errors).forEach(([field, message]) => {
+                form.setError(field, { type: 'manual', message });
+            });
+            if (messages.length > 0) {
+                form.setError('root', { type: 'manual', message: messages[0] });
+                setValidationError(messages[0]);
+            }
+            return;
+        }
+        const { phone, message, instanceId } = validation.payload;
+        const payload = { phone, message, instanceId };
+        try {
+            const result = await onSubmit?.(payload);
+            await onSuccess?.(result, payload);
+        }
+        catch (submissionError) {
+            const fallbackMessage = submissionError instanceof Error
+                ? submissionError.message
+                : 'Não foi possível iniciar a conversa. Tente novamente em instantes.';
+            form.setError('root', { type: 'manual', message: fallbackMessage });
+            setValidationError(fallbackMessage);
+        }
+    });
+    const mutationErrorMessage = typeof error === 'string'
+        ? error
+        : error instanceof Error
+            ? error.message
+            : error?.message ?? null;
+    const rootError = validationError ?? form.formState.errors.root?.message ?? mutationErrorMessage;
+    return (_jsx(Dialog, { open: open, onOpenChange: onOpenChange, children: _jsxs(DialogContent, { className: "border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]", children: [_jsxs(DialogHeader, { className: "space-y-1 text-left", children: [_jsx(DialogTitle, { className: "text-lg font-semibold text-[color:var(--color-inbox-foreground)]", children: "Iniciar conversa manual" }), _jsx(DialogDescription, { className: "text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]", children: "Cadastre o contato e envie a mensagem inicial diretamente pelo LeadEngine." })] }), _jsx(Form, { ...form, children: _jsxs("form", { onSubmit: handleSubmit, className: "space-y-4", children: [_jsx(FormField, { control: form.control, name: "phone", render: ({ field }) => (_jsxs(FormItem, { children: [_jsx(FormLabel, { className: "text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]", children: "Telefone" }), _jsx(FormControl, { children: _jsx(Input, { placeholder: "(00) 00000-0000", autoComplete: "tel", inputMode: "tel", disabled: isProcessing, ...field, ref: (node) => {
+                                                    field.ref(node);
+                                                    phoneInputRef.current = node;
+                                                } }) }), _jsx(FormMessage, {})] })) }), _jsx(FormField, { control: form.control, name: "message", render: ({ field }) => (_jsxs(FormItem, { children: [_jsx(FormLabel, { className: "text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]", children: "Mensagem inicial" }), _jsx(FormControl, { children: _jsx(Textarea, { placeholder: "Ol\u00E1! Notei seu interesse e queria continuar a conversa por aqui.", rows: 3, disabled: isProcessing, ...field }) }), _jsx(FormMessage, {})] })) }), _jsx(FormField, { control: form.control, name: "instanceId", render: ({ field }) => (_jsxs(FormItem, { children: [_jsx(FormLabel, { className: "text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]", children: "Inst\u00E2ncia do WhatsApp" }), _jsxs(Select, { disabled: isProcessing || availableInstances.length === 0, onValueChange: field.onChange, value: field.value, children: [_jsx(FormControl, { children: _jsx(SelectTrigger, { className: "h-9 w-full rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)]", children: _jsx(SelectValue, { placeholder: "Selecione a inst\u00E2ncia conectada" }) }) }), _jsx(SelectContent, { className: "border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]", children: availableInstances.map((instance) => {
+                                                        const identifier = instance.id.trim();
+                                                        const label = typeof instance.name === 'string' && instance.name.trim().length > 0
+                                                            ? instance.name.trim()
+                                                            : typeof instance.displayId === 'string' && instance.displayId.trim().length > 0
+                                                                ? instance.displayId.trim()
+                                                                : identifier;
+                                                        return (_jsx(SelectItem, { value: identifier, children: label }, identifier));
+                                                    }) })] }), _jsx(FormMessage, {})] })) }), rootError ? _jsx("p", { className: "text-sm font-medium text-destructive", children: rootError }) : null, _jsxs(DialogFooter, { children: [_jsx(Button, { type: "button", variant: "outline", className: "rounded-xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)]", disabled: isProcessing, onClick: () => onOpenChange?.(false), children: "Cancelar" }), _jsx(Button, { type: "submit", className: "rounded-xl bg-success px-4 text-xs font-semibold uppercase tracking-[0.28em] text-success-foreground shadow-[var(--shadow-md)] transition hover:bg-success/90 disabled:opacity-70", disabled: isProcessing || availableInstances.length === 0, children: "Iniciar conversa" })] })] }) })] }) }));
+};
+export default ManualConversationDialog;

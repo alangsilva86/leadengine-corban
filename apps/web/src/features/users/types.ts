@@ -13,28 +13,11 @@ export type TenantUser = {
   lastLoginAt: string | null;
 };
 
-export type UserInvite = {
-  id: string;
-  token: string;
-  email: string;
-  status: 'pending' | 'accepted' | 'expired' | 'revoked';
-  expiresAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type CreateUserInput = {
   name: string;
   email: string;
   password: string;
   role: UserRole;
-};
-
-export type InviteUserInput = {
-  email: string;
-  role: UserRole;
-  expiresInDays?: number;
-  tenantSlugHint?: string;
 };
 
 export type UpdateUserInput = {

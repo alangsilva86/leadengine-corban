@@ -17,12 +17,11 @@ const buildEntry = (overrides = {}) => ({
 });
 
 describe('EventCard', () => {
-  it('renders sales-specific metadata when available', () => {
+  it('renders advanced details when payload includes snapshot/metadata', () => {
     const entry = buildEntry({
       type: 'deal',
       payload: {
         label: 'Negócio registrado',
-        stageKey: 'APROVADO_LIQUIDACAO',
         calculationSnapshot: {
           type: 'deal',
           bank: { label: 'Banco Teste' },
@@ -37,11 +36,9 @@ describe('EventCard', () => {
     render(<EventCard entry={entry} />);
 
     expect(screen.getByText('Negócio registrado')).toBeInTheDocument();
-    const stageChip = screen.getByText('Aprovado/Liquidação');
-    expect(stageChip.closest('[data-stage-key]')).toHaveAttribute('data-stage-key', 'APROVADO_LIQUIDACAO');
-    expect(screen.getByText(/Banco Teste/)).toBeInTheDocument();
-    expect(screen.getByText(/parcela/)).toBeInTheDocument();
     expect(screen.getByText(/Ver detalhes avançados/)).toBeInTheDocument();
+    expect(screen.getByText('Snapshot')).toBeInTheDocument();
+    expect(screen.getByText('Metadata')).toBeInTheDocument();
   });
 
   it('falls back to a generic rendering for unknown types', () => {
@@ -56,6 +53,6 @@ describe('EventCard', () => {
     render(<EventCard entry={entry} />);
 
     expect(screen.getByText('Atualização especial')).toBeInTheDocument();
-    expect(screen.queryByText('Snapshot de cálculo')).not.toBeInTheDocument();
+    expect(screen.queryByText('Ver detalhes avançados')).not.toBeInTheDocument();
   });
 });

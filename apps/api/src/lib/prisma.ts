@@ -221,7 +221,9 @@ const createPrismaClient = (): PrismaClient => {
 export const prisma = createPrismaClient();
 
 if (isDatabaseEnabled) {
-  await ensureTicketStageSupport(prisma, { logger });
+  void ensureTicketStageSupport(prisma, { logger }).catch((error) => {
+    logger.error('[Prisma] ❌ Failed to ensure ticket stage support', { error });
+  });
 }
 
 if (isDatabaseEnabled && process.env.NODE_ENV !== 'production') {

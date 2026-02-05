@@ -165,7 +165,7 @@ const PRIMARY_ACTION_PRESETS = {
     default: { id: 'qualify', label: 'Registrar próximo passo' },
   },
   proposal: {
-    default: { id: 'sales-simulate', label: 'Simular proposta' },
+    default: { id: 'qualify', label: 'Registrar próximo passo' },
   },
   documentation: {
     default: { id: 'send-steps', label: 'Enviar passo a passo' },

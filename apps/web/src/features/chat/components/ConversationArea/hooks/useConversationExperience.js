@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
 import useAiSuggestions from '../../../hooks/useAiSuggestions.js';
 import { normalizeConfidence } from '../../../utils/aiSuggestions.js';
 import useChatAutoscroll from '../../../hooks/useChatAutoscroll.js';
@@ -12,16 +11,6 @@ import { useSLAClock } from './useSLAClock.js';
 import { useConversationScroll } from './useConversationScroll.js';
 import { useComposerMetrics } from './useComposerMetrics.js';
 import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
-import {
-  STAGE_LABELS,
-  getTicketStage,
-  getStageValue,
-  formatStageLabel,
-  normalizeStage,
-  applyStageSalesHints,
-  getSalesStageOrder,
-  isSupportedSalesStageKey,
-} from '../utils/stage.js';
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
@@ -38,81 +27,6 @@ const describeInstanceStatus = (status, connected) => {
     return map[normalized];
   }
   return connected ? map.connected : { label: 'Indefinido', tone: 'muted' };
-};
-
-const normalizeSalesTimelineEvent = (entry, fallbackIndex = 0) => {
-  if (!entry) {
-    return null;
-  }
-
-  const rawType = typeof entry.type === 'string' ? entry.type : '';
-  const [kind] = rawType.split('.');
-  if (!kind || (kind !== 'simulation' && kind !== 'proposal' && kind !== 'deal')) {
-    return null;
-  }
-
-  const payload = entry.payload && typeof entry.payload === 'object' ? entry.payload : {};
-  const stageSource =
-    payload.stage ?? entry.stage ?? payload.stageValue ?? payload.stage_key ?? null;
-  const normalizedStage = normalizeStage(stageSource);
-  const stageKey = normalizedStage !== 'DESCONHECIDO' ? normalizedStage : null;
-  const stageLabel = stageKey ? formatStageLabel(stageKey) : null;
-  const stageValue = stageKey ? getStageValue(stageKey) : null;
-
-  const resourceIdCandidate =
-    payload.simulationId ??
-    payload.simulation_id ??
-    payload.proposalId ??
-    payload.proposal_id ??
-    payload.dealId ??
-    payload.deal_id ??
-    payload.id ??
-    entry.id ??
-    null;
-
-  return {
-    id: entry.id ?? `${kind}-${fallbackIndex}`,
-    type: kind,
-    stageKey,
-    stageLabel,
-    stageValue,
-    calculationSnapshot: payload.calculationSnapshot ?? payload.snapshot ?? null,
-    metadata: payload.metadata ?? entry.metadata ?? null,
-    resourceId: typeof resourceIdCandidate === 'string' ? resourceIdCandidate : null,
-    createdAt: entry.createdAt ?? entry.timestamp ?? entry.date ?? null,
-    closedAt: payload.closedAt ?? payload.closed_at ?? null,
-    raw: entry,
-  };
-};
-
-const extractLatestSalesEvents = (timeline) => {
-  const result = { simulation: null, proposal: null, deal: null };
-  if (!Array.isArray(timeline)) {
-    return result;
-  }
-
-  for (let index = timeline.length - 1; index >= 0; index -= 1) {
-    const normalized = normalizeSalesTimelineEvent(timeline[index], index);
-    if (!normalized) {
-      continue;
-    }
-
-    if (normalized.type === 'simulation' && !result.simulation) {
-      result.simulation = normalized;
-      continue;
-    }
-
-    if (normalized.type === 'proposal' && !result.proposal) {
-      result.proposal = normalized;
-      continue;
-    }
-
-    if (normalized.type === 'deal' && !result.deal) {
-      result.deal = normalized;
-    }
-  }
-
-  return result;
 };
 
 export const useConversationExperience = ({
@@ -147,7 +61,6 @@ export const useConversationExperience = ({
   onAiModeChange,
   onTakeOver,
   onGiveBackToAi,
-  sales = {},
   composerNotice: composerNoticeProp = null,
 }) => {
   const disabled = Boolean(composerDisabled);
@@ -160,314 +73,6 @@ export const useConversationExperience = ({
   const composerRef = useRef(null);
   const composerApiRef = useRef(null);
   const aiReplyStream = useAiReplyStream();
-  const stageOptions = useMemo(
-    () =>
-      Object.entries(STAGE_LABELS)
-        .filter(([key]) => key !== 'DESCONHECIDO' && isSupportedSalesStageKey(key))
-        .map(([key, label]) => ({
-          key,
-          label,
-          value: getStageValue(key),
-        })),
-    [],
-  );
-  const ticketStageKey = useMemo(() => getTicketStage(ticket), [ticket]);
-  const defaultStageValue =
-    ticketStageKey &&
-    ticketStageKey !== 'DESCONHECIDO' &&
-    isSupportedSalesStageKey(ticketStageKey)
-      ? getStageValue(ticketStageKey)
-      : '';
-  const ticketStageLabel =
-    ticketStageKey && ticketStageKey !== 'DESCONHECIDO'
-      ? formatStageLabel(ticketStageKey)
-      : null;
-  const ticketLeadId =
-    (ticket?.lead && ticket.lead.id) ??
-    ticket?.leadId ??
-    ticket?.metadata?.leadId ??
-    null;
-  const latestSalesEvents = useMemo(
-    () => extractLatestSalesEvents(ticket?.salesTimeline ?? []),
-    [ticket?.salesTimeline],
-  );
-  const lastSimulationEvent = latestSalesEvents.simulation;
-  const lastProposalEvent = latestSalesEvents.proposal;
-  const lastDealEvent = latestSalesEvents.deal;
-  const timelineSalesState = useMemo(
-    () => ({
-      hasSimulation: Boolean(lastSimulationEvent),
-      hasProposal: Boolean(lastProposalEvent),
-      hasDeal: Boolean(lastDealEvent),
-    }),
-    [lastDealEvent, lastProposalEvent, lastSimulationEvent],
-  );
-  const mergedSalesState = useMemo(
-    () => applyStageSalesHints(ticketStageKey, timelineSalesState),
-    [ticketStageKey, timelineSalesState],
-  );
-  const { hasSimulation, hasProposal, hasDeal } = mergedSalesState;
-  const canOpenSimulation = !hasDeal;
-  const canOpenProposal = hasSimulation && !hasDeal;
-  const canOpenDeal = hasProposal && !hasDeal;
-  const contactName = ticket?.contact?.name ?? ticket?.subject ?? '';
-  const shouldForceSimulationAction = ticketStageKey === 'PROPOSTA' && !hasProposal;
-
-  const salesJourney = useMemo(
-    () => ({
-      stageKey: ticketStageKey,
-      stageLabel: ticketStageLabel,
-      nextAction: hasDeal
-        ? { id: 'sales-done', label: 'Contrato concluído', disabled: true }
-        : hasProposal
-          ? { id: 'sales-deal', label: 'Registrar negócio' }
-          : shouldForceSimulationAction
-            ? { id: 'sales-simulate', label: 'Simular proposta' }
-            : hasSimulation
-              ? { id: 'sales-proposal', label: 'Gerar proposta' }
-              : { id: 'sales-simulate', label: 'Simular proposta' },
-      actions: {
-        canSimulate: canOpenSimulation,
-        canPropose: canOpenProposal,
-        canDeal: canOpenDeal,
-      },
-      events: {
-        simulation: lastSimulationEvent,
-        proposal: lastProposalEvent,
-        deal: lastDealEvent,
-      },
-    }),
-    [
-      canOpenDeal,
-      canOpenProposal,
-      canOpenSimulation,
-      hasDeal,
-      hasProposal,
-      hasSimulation,
-      shouldForceSimulationAction,
-      lastDealEvent,
-      lastProposalEvent,
-      lastSimulationEvent,
-      ticketStageKey,
-      ticketStageLabel,
-    ],
-  );
-  const salesConfig = sales ?? {};
-  const createSimulation = salesConfig.onCreateSimulation ?? salesConfig.createSimulation ?? null;
-  const createProposal = salesConfig.onCreateProposal ?? salesConfig.createProposal ?? null;
-  const createDeal = salesConfig.onCreateDeal ?? salesConfig.createDeal ?? null;
-  const isCreatingSimulation = Boolean(
-    salesConfig.isCreatingSimulation ?? salesConfig.simulationPending ?? false,
-  );
-  const isCreatingProposal = Boolean(
-    salesConfig.isCreatingProposal ?? salesConfig.proposalPending ?? false,
-  );
-  const isCreatingDeal = Boolean(salesConfig.isCreatingDeal ?? salesConfig.dealPending ?? false);
-  const queueAlerts = Array.isArray(salesConfig.queueAlerts) ? salesConfig.queueAlerts : [];
-  const resolvedSalesReason =
-    salesConfig.disabledReason ??
-    (queueAlerts.length > 0
-      ? 'Fila padrão indisponível. Configure as filas para registrar operações de vendas.'
-      : null);
-  const salesBlocked = Boolean(salesConfig.disabled) || queueAlerts.length > 0;
-  const [salesDialog, setSalesDialog] = useState({ type: null, defaults: {} });
-  const resolveTargetStageValue = useCallback(
-    (targetStageKey) => {
-      if (!targetStageKey || !isSupportedSalesStageKey(targetStageKey)) {
-        return defaultStageValue;
-      }
-
-      const targetOrder = getSalesStageOrder(targetStageKey);
-      const currentOrder = getSalesStageOrder(ticketStageKey);
-
-      if (
-        ticketStageKey &&
-        ticketStageKey !== 'DESCONHECIDO' &&
-        targetOrder !== null &&
-        currentOrder !== null &&
-        currentOrder >= targetOrder
-      ) {
-        return defaultStageValue;
-      }
-
-      return getStageValue(targetStageKey);
-    },
-    [defaultStageValue, ticketStageKey],
-  );
-  const closeSalesDialog = useCallback(() => setSalesDialog({ type: null, defaults: {} }), []);
-  const ensureSalesAvailable = useCallback(() => {
-    if (salesBlocked) {
-      if (resolvedSalesReason) {
-        toast.warning(resolvedSalesReason);
-      } else {
-        toast.warning('Operações de vendas indisponíveis no momento.');
-      }
-      return false;
-    }
-
-    if (!ticketId) {
-      toast.warning('Selecione um atendimento para registrar operações de vendas.');
-      return false;
-    }
-
-    return true;
-  }, [resolvedSalesReason, salesBlocked, ticketId]);
-  const handleOpenSimulation = useCallback(() => {
-    if (!ensureSalesAvailable() || !canOpenSimulation) {
-      return;
-    }
-
-    setSalesDialog({
-      type: 'simulation',
-      defaults: {
-        stage: resolveTargetStageValue('SIMULADO'),
-        leadId: ticketLeadId ?? '',
-        calculationSnapshot: lastSimulationEvent?.calculationSnapshot ?? null,
-        metadata: lastSimulationEvent?.metadata ?? null,
-        ticketId,
-        contactName,
-      },
-    });
-  }, [
-    canOpenSimulation,
-    contactName,
-    ensureSalesAvailable,
-    lastSimulationEvent?.calculationSnapshot,
-    lastSimulationEvent?.metadata,
-    resolveTargetStageValue,
-    ticketId,
-    ticketLeadId,
-  ]);
-  const handleOpenProposal = useCallback(() => {
-    if (!ensureSalesAvailable() || !canOpenProposal) {
-      return;
-    }
-
-    setSalesDialog({
-      type: 'proposal',
-      defaults: {
-        stage: resolveTargetStageValue('PROPOSTA_ENVIADA'),
-        leadId: ticketLeadId ?? '',
-        simulationId: lastSimulationEvent?.resourceId ?? '',
-        calculationSnapshot: lastProposalEvent?.calculationSnapshot ?? null,
-        simulationSnapshot: lastSimulationEvent?.calculationSnapshot ?? null,
-        metadata: lastProposalEvent?.metadata ?? null,
-        ticketId,
-        contactName,
-      },
-    });
-  }, [
-    canOpenProposal,
-    contactName,
-    ensureSalesAvailable,
-    lastProposalEvent?.calculationSnapshot,
-    lastProposalEvent?.metadata,
-    lastSimulationEvent?.calculationSnapshot,
-    lastSimulationEvent?.resourceId,
-    resolveTargetStageValue,
-    ticketId,
-    ticketLeadId,
-  ]);
-  const handleOpenDeal = useCallback(() => {
-    if (!ensureSalesAvailable() || !canOpenDeal) {
-      return;
-    }
-
-    setSalesDialog({
-      type: 'deal',
-      defaults: {
-        stage: resolveTargetStageValue('CONCLUIDO'),
-        leadId: ticketLeadId ?? '',
-        simulationId: lastSimulationEvent?.resourceId ?? '',
-        proposalId: lastProposalEvent?.resourceId ?? '',
-        calculationSnapshot: lastDealEvent?.calculationSnapshot ?? null,
-        metadata: lastDealEvent?.metadata ?? null,
-        closedAt: lastDealEvent?.closedAt ?? null,
-        proposalSnapshot: lastProposalEvent?.calculationSnapshot ?? null,
-      },
-    });
-  }, [
-    canOpenDeal,
-    ensureSalesAvailable,
-    lastDealEvent?.calculationSnapshot,
-    lastDealEvent?.closedAt,
-    lastDealEvent?.metadata,
-    lastProposalEvent?.calculationSnapshot,
-    lastProposalEvent?.resourceId,
-    lastSimulationEvent?.resourceId,
-    resolveTargetStageValue,
-    ticketLeadId,
-  ]);
-  const handleSubmitSimulation = useCallback(
-    async (input) => {
-      if (!createSimulation || !ticketId) {
-        toast.error('Selecione um ticket para registrar a simulação.');
-        return;
-      }
-
-      try {
-        await createSimulation({
-          ticketId,
-          calculationSnapshot: input.calculationSnapshot,
-          leadId: input.leadId ?? null,
-          stage: input.stage ?? null,
-          metadata: input.metadata ?? null,
-        });
-        closeSalesDialog();
-      } catch {
-        // feedback tratado a montante
-      }
-    },
-    [closeSalesDialog, createSimulation, ticketId],
-  );
-  const handleSubmitProposal = useCallback(
-    async (input) => {
-      if (!createProposal || !ticketId) {
-        toast.error('Selecione um ticket para registrar a proposta.');
-        return;
-      }
-
-      try {
-        await createProposal({
-          ticketId,
-          calculationSnapshot: input.calculationSnapshot,
-          leadId: input.leadId ?? null,
-          simulationId: input.simulationId ?? null,
-          stage: input.stage ?? null,
-          metadata: input.metadata ?? null,
-        });
-        closeSalesDialog();
-      } catch {
-        // feedback tratado a montante
-      }
-    },
-    [closeSalesDialog, createProposal, ticketId],
-  );
-  const handleSubmitDeal = useCallback(
-    async (input) => {
-      if (!createDeal || !ticketId) {
-        toast.error('Selecione um ticket para registrar o negócio.');
-        return;
-      }
-
-      try {
-        await createDeal({
-          ticketId,
-          calculationSnapshot: input.calculationSnapshot,
-          leadId: input.leadId ?? null,
-          simulationId: input.simulationId ?? null,
-          proposalId: input.proposalId ?? null,
-          stage: input.stage ?? null,
-          metadata: input.metadata ?? null,
-          closedAt: input.closedAt ?? null,
-        });
-        closeSalesDialog();
-      } catch {
-        // feedback tratado a montante
-      }
-    },
-    [closeSalesDialog, createDeal, ticketId],
-  );
 
   const {
     timelineItems: messageTimelineItems,
@@ -939,63 +544,6 @@ export const useConversationExperience = ({
     [ticket],
   );
 
-  const simulationModalProps =
-    salesDialog.type === 'simulation' || salesDialog.type === 'proposal'
-      ? {
-          open: true,
-          mode: salesDialog.type === 'proposal' ? 'proposal' : 'simulation',
-          onOpenChange: (open) => {
-            if (!open) {
-              closeSalesDialog();
-            }
-          },
-          onSubmit: salesDialog.type === 'proposal' ? handleSubmitProposal : handleSubmitSimulation,
-          defaultValues: {
-            stage: salesDialog.defaults?.stage ?? '',
-            leadId: salesDialog.defaults?.leadId ?? '',
-            simulationId: salesDialog.defaults?.simulationId ?? '',
-            calculationSnapshot: salesDialog.defaults?.calculationSnapshot ?? null,
-            metadata: salesDialog.defaults?.metadata ?? null,
-            simulationSnapshot: salesDialog.defaults?.simulationSnapshot ?? null,
-            ticketId: salesDialog.defaults?.ticketId ?? null,
-            contactName: salesDialog.defaults?.contactName ?? '',
-          },
-          stageOptions,
-          isSubmitting: salesDialog.type === 'proposal' ? isCreatingProposal : isCreatingSimulation,
-          disabled: salesBlocked,
-          disabledReason: resolvedSalesReason,
-          queueAlerts,
-        }
-      : null;
-
-  const dealDrawerProps =
-    salesDialog.type === 'deal'
-      ? {
-          open: true,
-          onOpenChange: (open) => {
-            if (!open) {
-              closeSalesDialog();
-            }
-          },
-          onSubmit: handleSubmitDeal,
-          defaultValues: {
-            stage: salesDialog.defaults?.stage ?? '',
-            leadId: salesDialog.defaults?.leadId ?? '',
-            simulationId: salesDialog.defaults?.simulationId ?? '',
-            proposalId: salesDialog.defaults?.proposalId ?? '',
-            calculationSnapshot: salesDialog.defaults?.calculationSnapshot ?? null,
-            metadata: salesDialog.defaults?.metadata ?? null,
-            closedAt: salesDialog.defaults?.closedAt ?? null,
-            proposalSnapshot: salesDialog.defaults?.proposalSnapshot ?? null,
-          },
-          stageOptions,
-          isSubmitting: isCreatingDeal,
-          disabled: salesBlocked,
-          disabledReason: resolvedSalesReason,
-          queueAlerts,
-        }
-      : null;
-
   const handleGenerateAiReply = useCallback(() => {
     if (!ticket?.id) {
       return;
@@ -1055,7 +603,7 @@ export const useConversationExperience = ({
       onAssign,
       onSendTemplate,
       onCreateNextStep,
-      onGenerateProposal: handleOpenProposal,
+      onGenerateProposal,
       onScheduleFollowUp,
       onSendSMS,
       onAttachFile: handleAttachFileFromHeader,
@@ -1082,9 +630,6 @@ export const useConversationExperience = ({
       onAiModeChange,
       onTakeOver,
       onGiveBackToAi,
-      onOpenSimulation: canOpenSimulation ? handleOpenSimulation : undefined,
-      onOpenDeal: canOpenDeal ? handleOpenDeal : undefined,
-      primaryActionOverride: salesJourney?.nextAction ?? null,
     }),
     [
       aiAssistant,
@@ -1108,9 +653,7 @@ export const useConversationExperience = ({
       onCreateNextStep,
       onDealFieldSave,
       onEditContact,
-      handleOpenProposal,
-      handleOpenSimulation,
-      handleOpenDeal,
+      onGenerateProposal,
       onNextStepSave,
       onRegisterCallResult,
       onRegisterResult,
@@ -1121,7 +664,6 @@ export const useConversationExperience = ({
       ticket,
       queueId,
       augmentedTypingAgents,
-      salesJourney,
     ],
   );
 
@@ -1163,18 +705,6 @@ export const useConversationExperience = ({
     },
     header: {
       props: headerProps,
-    },
-    sales: {
-      disabled: salesBlocked,
-      disabledReason: resolvedSalesReason,
-      handlers: {
-        openSimulation: canOpenSimulation ? handleOpenSimulation : null,
-        openProposal: canOpenProposal ? handleOpenProposal : null,
-        openDeal: canOpenDeal ? handleOpenDeal : null,
-      },
-      simulationModal: simulationModalProps,
-      dealDrawer: dealDrawerProps,
-      journey: salesJourney,
     },
   };
 };

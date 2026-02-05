@@ -36,7 +36,6 @@ const args = [
   'prisma',
   'migrate',
   'deploy',
-  '--schema=./prisma/schema.prisma',
 ];
 
 const shouldRetry = (stderr, stdout) => {

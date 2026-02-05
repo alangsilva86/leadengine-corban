@@ -12,10 +12,6 @@ type PrismaMock = {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
-  onboardingInvite: {
-    findUnique: ReturnType<typeof vi.fn>;
-    create: ReturnType<typeof vi.fn>;
-  };
 };
 
 const prismaMock: PrismaMock = {
@@ -24,10 +20,6 @@ const prismaMock: PrismaMock = {
     findFirst: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
-  },
-  onboardingInvite: {
-    findUnique: vi.fn(),
-    create: vi.fn(),
   },
 };
 
@@ -133,40 +125,6 @@ describe('users router', () => {
     const metrics = await renderMetrics();
     expect(metrics).toContain('user_mutations_total');
     expect(metrics).toContain('operation="create_user"');
-  });
-
-  it('creates onboarding invites with dedicated counters', async () => {
-    prismaMock.user.findFirst.mockResolvedValueOnce(null);
-    prismaMock.onboardingInvite.findUnique.mockResolvedValue(null);
-    prismaMock.onboardingInvite.create.mockResolvedValueOnce({
-      id: 'invite-1',
-      token: 'token-abc',
-      email: 'guest@example.com',
-      organization: 'Tenant One',
-      channel: 'email',
-      tenantSlugHint: 'tenant-one',
-      expiresAt: new Date('2024-02-01T00:00:00Z'),
-      acceptedAt: null,
-      acceptedTenantId: null,
-      acceptedUserId: null,
-      metadata: {},
-      createdAt: new Date('2024-01-01T00:00:00Z'),
-      updatedAt: new Date('2024-01-01T00:00:00Z'),
-    });
-
-    const response = await request(buildApp())
-      .post('/api/users/invites')
-      .send({ email: 'guest@example.com', role: 'AGENT', expiresInDays: 5 });
-
-    expect(response.status).toBe(201);
-    const auditEntry = infoSpy.mock.calls.find(([message]) => message === '[Users] Convite criado');
-    expect(auditEntry?.[1]).toMatchObject({
-      operation: 'invite_user',
-      metrics: expect.arrayContaining(['user_invite_created_total']),
-    });
-
-    const metrics = await renderMetrics();
-    expect(metrics).toContain('user_invite_created_total');
   });
 
   it('updates user role and increases the RBAC-specific counter', async () => {

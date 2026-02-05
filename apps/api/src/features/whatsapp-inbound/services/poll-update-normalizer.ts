@@ -4,6 +4,31 @@ import { getPollMetadata } from './poll-metadata-service';
 import { decryptPollVote } from '@whiskeysockets/baileys';
 import { logger } from '../../../config/logger';
 
+const readFirstString = (...values: unknown[]): string | null => {
+  for (const value of values) {
+    const candidate = readString(value);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return null;
+};
+
+const readNumber = (value: unknown): number | null => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
 const toRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? { ...(value as Record<string, unknown>) }
@@ -297,9 +322,11 @@ const buildOptionLookupFromMetadata = (options: unknown[]): Map<string, { id: st
     if (!record) {
       return;
     }
-    const id = readString(record.id, record.optionId, record.optionName, record.name, record.title) ?? `option_${index}`;
+    const id =
+      readFirstString(record.id, record.optionId, record.optionName, record.name, record.title) ??
+      `option_${index}`;
     const title =
-      readString(record.title, record.name, record.optionName, record.text, record.description) ?? id;
+      readFirstString(record.title, record.name, record.optionName, record.text, record.description) ?? id;
     map.set(id, { id, title });
   });
 
@@ -461,12 +488,16 @@ export const normalizePollUpdate = async (
   }
 
   const storedOptionsNormalized = metadataOptions.map((entry, index) => {
-    const record = entry && typeof entry === 'object' ? (entry as Record<string, unknown>) : null;
+    const record = entry && typeof entry === 'object' ? (entry as unknown as Record<string, unknown>) : null;
     if (!record) {
       return null;
     }
-    const id = readString(record.id, record.optionId, record.optionName, record.name, record.title) ?? `option_${index}`;
-    const title = readString(record.title, record.name, record.optionName, record.text, record.description) ?? id;
+    const id =
+      readFirstString(record.id, record.optionId, record.optionName, record.name, record.title) ??
+      `option_${index}`;
+    const title =
+      readFirstString(record.title, record.name, record.optionName, record.text, record.description) ??
+      id;
     return {
       id,
       title,

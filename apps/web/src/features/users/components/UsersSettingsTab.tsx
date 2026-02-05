@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Loader2, MailPlus, Plus, RefreshCw } from 'lucide-react';
+import { Loader2, Plus, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
@@ -8,18 +8,15 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
-import { useAuth } from '@/features/auth/AuthProvider.jsx';
 import {
   useCreateUserMutation,
   useDeactivateUserMutation,
-  useInviteUserMutation,
   useUpdateUserMutation,
   useUsersQuery,
 } from '../hooks/useUsersApi';
-import type { CreateUserInput, InviteUserInput, UsersStatusFilter, UserRole } from '../types';
+import type { CreateUserInput, UsersStatusFilter, UserRole } from '../types';
 import UsersTable from './UsersTable';
 import CreateUserDialog from './CreateUserDialog';
-import UserInviteDialog from './UserInviteDialog';
 
 const filterOptions: Array<{ label: string; value: UsersStatusFilter }> = [
   { label: 'Ativos', value: 'active' },
@@ -46,12 +43,9 @@ const readErrorMessage = (error: unknown, fallback = 'Não foi possível complet
 const UsersSettingsTab = () => {
   const [statusFilter, setStatusFilter] = useState<UsersStatusFilter>('active');
   const [createOpen, setCreateOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const { user: currentUser } = useAuth();
 
   const usersQuery = useUsersQuery(statusFilter);
   const createMutation = useCreateUserMutation();
-  const inviteMutation = useInviteUserMutation();
   const updateMutation = useUpdateUserMutation();
   const deactivateMutation = useDeactivateUserMutation();
 
@@ -126,28 +120,8 @@ const UsersSettingsTab = () => {
     });
   };
 
-  const handleInviteSubmit = (payload: InviteUserInput) => {
-    inviteMutation.mutate(payload, {
-      onSuccess: (invite) => {
-        toast.success('Convite enviado por e-mail.');
-        if (invite?.token) {
-          console.info('Token de convite gerado', invite.token);
-        }
-        setInviteOpen(false);
-      },
-      onError: (error) => {
-        toast.error(readErrorMessage(error, 'Não foi possível enviar o convite.'));
-      },
-    });
-  };
-
   const pending = usersQuery.isLoading;
   const isFetching = usersQuery.isFetching && !usersQuery.isLoading;
-
-  const tenantSlug =
-    currentUser?.tenant?.slug ??
-    (typeof currentUser?.tenantSlug === 'string' ? currentUser?.tenantSlug : '') ??
-    '';
 
   return (
     <div className="space-y-4">
@@ -160,9 +134,6 @@ const UsersSettingsTab = () => {
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => usersQuery.refetch()} disabled={usersQuery.isFetching}>
               <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
-            </Button>
-            <Button variant="outline" onClick={() => setInviteOpen(true)}>
-              <MailPlus className="mr-2 h-4 w-4" /> Convidar
             </Button>
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> Novo usuário
@@ -210,13 +181,6 @@ const UsersSettingsTab = () => {
         </CardContent>
       </Card>
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreateSubmit} submitting={createMutation.isPending} />
-      <UserInviteDialog
-        open={inviteOpen}
-        onOpenChange={setInviteOpen}
-        onSubmit={handleInviteSubmit}
-        submitting={inviteMutation.isPending}
-        defaultSlug={tenantSlug}
-      />
     </div>
   );
 };

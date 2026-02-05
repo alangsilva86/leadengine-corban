@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import { toast } from 'sonner';
 
 import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
-import useOnboardingStepLabel from '../../onboarding/useOnboardingStepLabel.js';
+import useStepLabel from '@/lib/useStepLabel.ts';
 import { getStatusInfo, resolveInstancePhone } from '../lib/instances';
 import { formatPhoneNumber, formatTimestampLabel } from '../lib/formatting';
 import { getInstanceMetrics } from '../lib/metrics';
@@ -407,7 +407,7 @@ const useWhatsAppConnect = ({
     void selectInstance(null, { skipAutoQr: true });
   }, [instance, selectInstance, selectedInstanceBelongsToTenant, tenantFilterId]);
 
-  const { stepLabel, nextStage } = useOnboardingStepLabel({
+  const { stepLabel, nextStage } = useStepLabel({
     stages: onboarding?.stages,
     targetStageId: 'channels',
     fallbackStep: { number: 2, label: 'Passo 2', nextStage: 'Inbox' },

@@ -175,12 +175,17 @@ const resolveOptionLabel = (
     return normalizedLabel;
   }
 
-  if (typeof (fallback as { index?: unknown })?.index === 'number') {
-    return `Opção ${((fallback as { index: number }).index ?? 0) + 1}`;
+  const fallbackRecord =
+    fallback && typeof fallback === 'object' ? (fallback as Record<string, unknown>) : null;
+  const indexCandidate = fallbackRecord?.index;
+  const positionCandidate = fallbackRecord?.position;
+
+  if (typeof indexCandidate === 'number' && Number.isFinite(indexCandidate)) {
+    return `Opção ${indexCandidate + 1}`;
   }
 
-  if (typeof (fallback as { position?: unknown })?.position === 'number') {
-    return `Opção ${((fallback as { position: number }).position ?? 0) + 1}`;
+  if (typeof positionCandidate === 'number' && Number.isFinite(positionCandidate)) {
+    return `Opção ${positionCandidate + 1}`;
   }
 
   if (indexFallback !== null) {
@@ -237,22 +242,24 @@ const buildOptionsFromIds = (
     }
   });
 
-  return optionIds
-    .map((optionId, index) => {
-      const normalizedId = sanitizeOptionText(optionId) ?? normalizeTextValue(optionId) ?? null;
-      if (!normalizedId) {
-        return null;
-      }
+  const result: PollChoiceSelectedOptionPayload[] = [];
 
-      const fallback = catalogById.get(normalizedId) ?? null;
-      const label = resolveOptionLabel(null, fallback, index, normalizedId);
+  optionIds.forEach((optionId, index) => {
+    const normalizedId = sanitizeOptionText(optionId) ?? normalizeTextValue(optionId) ?? null;
+    if (!normalizedId) {
+      return;
+    }
 
-      return {
-        id: normalizedId,
-        title: label,
-      } satisfies PollChoiceSelectedOptionPayload;
-    })
-    .filter((entry): entry is PollChoiceSelectedOptionPayload => Boolean(entry));
+    const fallback = catalogById.get(normalizedId) ?? null;
+    const label = resolveOptionLabel(null, fallback, index, normalizedId);
+
+    result.push({
+      id: normalizedId,
+      title: label,
+    });
+  });
+
+  return result;
 };
 
 const resolveCandidateMessage = async (
@@ -381,9 +388,9 @@ const preparePollVoteRewrite = (
       ? resolvedSelectedOptions
       : buildOptionsFromIds(
           Array.isArray(params.vote?.selectedOptions)
-            ? params.vote?.selectedOptions?.map((entry) => (entry ? (entry as { id?: string }).id ?? null : null)).filter(
-                Boolean
-              )
+            ? params.vote.selectedOptions
+                .map((entry) => normalizeTextValue((entry as { id?: unknown } | null | undefined)?.id))
+                .filter((id): id is string => Boolean(id))
             : [],
           fallbackOptions
         );
@@ -570,7 +577,18 @@ const applyPollVoteUpdate = async (
   preparation: Extract<RewritePreparation, { status: 'ready' }>,
   deps: PersistenceDeps
 ): Promise<PersistenceResult> => {
-  const storageMessageId = (preparation.message as { id?: unknown })?.id;
+  const storageMessageId = normalizeTextValue((preparation.message as { id?: unknown })?.id);
+
+  if (!storageMessageId) {
+    return {
+      status: 'failed',
+      state: PollVoteUpdateState.Failed,
+      tenantId,
+      candidates: preparation.candidates,
+      storageMessageId: null,
+      error: new Error('Missing storage message id for poll rewrite'),
+    };
+  }
 
   try {
     const updatedMessage = await deps.storageUpdateMessage(tenantId, storageMessageId, preparation.payload);
@@ -581,6 +599,15 @@ const applyPollVoteUpdate = async (
       'tenantId' in updatedMessage &&
       'ticketId' in updatedMessage
     ) {
+      const pollVoteMetadata =
+        preparation.payload.metadata && typeof preparation.payload.metadata === 'object'
+          ? (preparation.payload.metadata as Record<string, unknown>)['pollVote']
+          : null;
+      const selectedOptionsForLog =
+        pollVoteMetadata && typeof pollVoteMetadata === 'object'
+          ? (pollVoteMetadata as Record<string, unknown>)['selectedOptions'] ?? null
+          : null;
+
       logger.info('rewrite.poll_vote.updated', {
         tenantId,
         chatId: normalizeTextValue(params.chatId) ?? null,
@@ -589,7 +616,7 @@ const applyPollVoteUpdate = async (
           storageMessageId,
         storageMessageId,
         pollId: params.pollId,
-        selectedOptions: preparation.payload.metadata?.pollVote?.selectedOptions ?? null,
+        selectedOptions: selectedOptionsForLog,
         captionTouched: preparation.captionUpdated,
         typeAdjusted: (preparation.payload as { type?: unknown })?.type === 'TEXT',
         updatedAt: (updatedMessage as { updatedAt?: unknown }).updatedAt ?? null,
@@ -675,7 +702,8 @@ export const updatePollVoteMessage = async (
       state: preparation.state,
       tenantId,
       candidates: preparation.candidates,
-      storageMessageId: (preparation.message as { id?: string })?.id ?? null,
+      storageMessageId:
+        normalizeTextValue((preparation.message as { id?: unknown })?.id) ?? 'unknown',
     };
   }
 

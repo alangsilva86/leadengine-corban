@@ -1,6 +1,5 @@
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
 import { logger } from '../config/logger';
 import { processInboundMediaRetryJobs } from '../workers/media-retry';
@@ -93,8 +92,7 @@ const isDirectExecution = (): boolean => {
     return false;
   }
 
-  const currentFilePath = fileURLToPath(import.meta.url);
-  return path.resolve(currentFilePath) === path.resolve(process.argv[1]);
+  return path.resolve(__filename) === path.resolve(process.argv[1]);
 };
 
 if (isDirectExecution()) {

@@ -1,0 +1,26 @@
+export default InstanceGrid;
+declare function InstanceGrid({ instancesReady, filteredInstances, statusCodeMeta, isBusy, isAuthenticated, deletingInstanceId, hasRenderableInstances, hasHiddenInstances, zeroInstances, onShowAll, onCreateInstance, createInstanceDisabled, createInstanceWarning, onSelectInstance, onViewQr, onRequestDelete, onOpenStatusDrawer, onOpenHealthDrawer, onRenameInstance, onViewLogs, highQueue, allDisconnected, onClearFilters, }: {
+    instancesReady: any;
+    filteredInstances: any;
+    statusCodeMeta: any;
+    isBusy: any;
+    isAuthenticated: any;
+    deletingInstanceId: any;
+    hasRenderableInstances: any;
+    hasHiddenInstances: any;
+    zeroInstances: any;
+    onShowAll: any;
+    onCreateInstance: any;
+    createInstanceDisabled?: boolean | undefined;
+    createInstanceWarning?: null | undefined;
+    onSelectInstance: any;
+    onViewQr: any;
+    onRequestDelete: any;
+    onOpenStatusDrawer: any;
+    onOpenHealthDrawer: any;
+    onRenameInstance: any;
+    onViewLogs: any;
+    highQueue: any;
+    allDisconnected: any;
+    onClearFilters: any;
+}): import("react/jsx-runtime").JSX.Element;

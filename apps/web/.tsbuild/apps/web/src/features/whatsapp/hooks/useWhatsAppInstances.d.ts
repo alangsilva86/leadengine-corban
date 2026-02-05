@@ -1,0 +1,47 @@
+export default function useWhatsAppInstances(options?: {}): {
+    instances: import("../lib/instances").NormalizedInstance[];
+    instancesReady: boolean;
+    loadStatus: "loading" | "error" | "success" | "idle";
+    currentInstance: import("../state/store").Nullable<import("../lib/instances").NormalizedInstance>;
+    status: string;
+    qrData: unknown;
+    secondsLeft: import("../state/store").Nullable<number>;
+    loadingInstances: boolean;
+    loadingQr: boolean;
+    isAuthenticated: boolean;
+    sessionActive: boolean;
+    authDeferred: boolean;
+    authTokenState: import("../state/store").Nullable<string>;
+    deletingInstanceId: import("../state/store").Nullable<string>;
+    liveEvents: import("../state/store").RealtimeEventEntry[];
+    realtimeConnected: boolean;
+    selectedInstanceStatus: string;
+    setQrData: (value: any) => void;
+    setSecondsLeft: (value: any) => void;
+    loadInstances: (loadOptions?: {}) => Promise<any>;
+    selectInstance: (id: any, options?: {}) => void;
+    generateQr: (instanceId: any, options?: {}) => Promise<void>;
+    connectInstance: (instanceId: any, pairingOptions?: {}) => Promise<any>;
+    createInstance: ({ name, id }: {
+        name: any;
+        id: any;
+    }) => Promise<boolean>;
+    deleteInstance: (instance: any) => Promise<void>;
+    markConnected: () => Promise<any>;
+    handleAuthFallback: (fallbackOptions?: {}) => void;
+    setSessionActive: (value: any) => void;
+    setAuthDeferred: (value: any) => void;
+    setGeneratingQrState: (value: any) => void;
+    setStatus: (nextStatus: any) => void;
+};
+export function WhatsAppInstancesProvider({ children, logger: loggerProp, ...providerConfigProps }: {
+    [x: string]: any;
+    children: any;
+    logger: any;
+}): import("react/jsx-runtime").JSX.Element;
+export const RATE_LIMIT_COOLDOWN_MS: 60000;
+import { readInstancesCache } from '../lib/cache';
+import { persistInstancesCache } from '../lib/cache';
+import { clearInstancesCache } from '../lib/cache';
+import { parseInstancesPayload } from '../lib/instances';
+export { readInstancesCache, persistInstancesCache, clearInstancesCache, parseInstancesPayload };

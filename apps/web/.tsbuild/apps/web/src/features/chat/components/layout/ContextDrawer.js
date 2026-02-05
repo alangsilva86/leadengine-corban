@@ -1,0 +1,20 @@
+import { jsx as _jsx } from "react/jsx-runtime";
+import { useMemo } from 'react';
+import { cn } from '@/lib/utils.js';
+import { useIsMobile } from '@/hooks/use-media-query.js';
+import { Drawer, DrawerContent } from '@/components/ui/drawer.jsx';
+import { ScrollArea } from '@/components/ui/scroll-area.jsx';
+const ContextDrawer = ({ open, onOpenChange, children, desktopClassName, desktopContentClassName }) => {
+    const isMobile = useIsMobile();
+    const content = useMemo(() => {
+        return (_jsx(ScrollArea, { className: "flex-1 min-h-0 min-w-0", viewportClassName: "min-h-0 min-w-0 overscroll-contain", children: _jsx("div", { className: cn('px-4 py-6 sm:px-5 w-full min-w-0 max-w-full', desktopContentClassName), children: children }) }));
+    }, [children, desktopContentClassName]);
+    if (isMobile) {
+        return (_jsx(Drawer, { open: open, onOpenChange: onOpenChange, children: _jsx(DrawerContent, { side: "right", className: cn('border-[color:var(--border-shell)] bg-surface-shell-muted text-foreground shadow-xl backdrop-blur-xl', desktopClassName), children: content }) }));
+    }
+    if (!open) {
+        return null;
+    }
+    return (_jsx("aside", { className: "hidden h-full min-h-0 min-w-0 flex-shrink-0 lg:flex", children: _jsx("div", { className: cn('flex h-full min-h-0 w-[360px] flex-col overflow-hidden rounded-3xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] shadow-[var(--shadow-lg)]', desktopClassName), children: content }) }));
+};
+export default ContextDrawer;
