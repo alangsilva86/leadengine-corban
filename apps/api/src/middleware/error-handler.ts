@@ -278,19 +278,11 @@ export const errorHandler = (
       error: {
         status: apiError.status,
         code: apiError.code,
-        message: apiError.message,
-        details: apiError.details,
-        stack: error.stack,
+        name: error.name,
       },
       request: {
         method: req.method,
-        url: req.url,
-        headers: req.headers,
-        body: req.body,
-        params: req.params,
-        query: req.query,
-        ip: req.ip,
-        userAgent: req.get('User-Agent'),
+        route: req.route?.path,
       },
     };
   })();
@@ -304,9 +296,7 @@ export const errorHandler = (
     status: apiError.status,
     code: apiError.code,
     method: req.method,
-    path: req.originalUrl ?? req.path,
-    details: apiError.details,
-    stack: apiError.status >= 500 ? error.stack : undefined,
+    route: req.route?.path,
   };
 
   try {

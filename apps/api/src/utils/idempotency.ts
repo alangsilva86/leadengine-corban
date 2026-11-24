@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export interface IdempotencyEntry<T> {
   value: T;
   payloadHash: string;
@@ -57,4 +59,5 @@ const stableStringify = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
-export const hashIdempotentPayload = (raw: unknown): string => stableStringify(raw);
+export const hashIdempotentPayload = (raw: unknown): string =>
+  createHash('sha256').update(stableStringify(raw) ?? 'null').digest('hex');

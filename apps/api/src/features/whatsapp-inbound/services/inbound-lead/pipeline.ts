@@ -47,7 +47,6 @@ import {
   isUniqueViolation,
   isInboundAutoProvisionAllowed,
   provisionDefaultQueueForTenant,
-  provisionFallbackCampaignForInstance,
   queueCacheByTenant,
   type WhatsAppInstanceRecord,
 } from '../provisioning';
@@ -59,14 +58,11 @@ import {
 import { isHttpUrl, MEDIA_MESSAGE_TYPES, toRecord } from './helpers';
 import { extractMediaDownloadDetails } from './media-utils';
 import { ensureContact } from './contact-service';
-import { getCampaignCache } from './state';
 import { emitRealtimeUpdatesForInbound } from './realtime-service';
 import { upsertLeadFromInbound } from './lead-service';
 import { ensureTicketForContact } from './ticket-service';
 import type { MessageType } from '../../../../types/tickets';
 import { processAiAutoReply } from '../../../../services/ai-auto-reply-service';
-
-const campaignCache = getCampaignCache();
 
 const resolveTimelineMessageType = (message: NormalizedInboundMessage): MessageType => {
   switch ((message as any).type) {
@@ -409,48 +405,18 @@ export const processStandardInboundEvent = async (
 
   const tenantId = instance.tenantId;
 
-  const cacheKey = `${tenantId}:${instance.id}`;
-  const campaigns = await campaignCache.getOrSet(cacheKey, async () =>
-    prisma.campaign.findMany({
-      where: { tenantId, whatsappInstanceId: instance.id, status: 'active' },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        whatsappInstanceId: true,
-        tenantId: true,
-        agreementId: true,
-      },
-    })
-  );
-
-  if (!campaigns.length) {
-    const fallbackCampaign = await provisionFallbackCampaignForInstance(tenantId, instance.id);
-    if (fallbackCampaign) {
-      campaigns.push({
-        id: fallbackCampaign.id,
-        name: fallbackCampaign.name,
-        status: fallbackCampaign.status,
-        whatsappInstanceId: fallbackCampaign.whatsappInstanceId,
-        tenantId: fallbackCampaign.tenantId,
-        agreementId: fallbackCampaign.agreementId,
-      });
-      logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa — fallback provisionado', {
-        requestId,
-        tenantId,
-        instanceId: instance.id,
-        fallbackCampaignId: fallbackCampaign.id,
-        messageId: (message as any).id ?? null,
-      });
-    } else {
-      logger.warn('🎯 LeadEngine • WhatsApp :: 💤 Nenhuma campanha ativa para a instância — seguindo mesmo assim', {
-        requestId,
-        tenantId,
-        instanceId: instance.id,
-        messageId: (message as any).id ?? null,
-      });
-    }
-  }
+  const campaigns = await prisma.campaign.findMany({
+    where: {
+      tenantId,
+      whatsappInstanceId: instance.id,
+      status: 'active',
+      allocations: { some: { tenantId, lead: { tenantId, ...(document ? { document } : { phone: normalizedPhone ?? undefined }) } } },
+    },
+    select: { id: true, name: true, status: true, whatsappInstanceId: true, tenantId: true, agreementId: true },
+    take: 2,
+  });
+  // Only an unambiguous existing allocation establishes a campaign origin.
+  if (campaigns.length !== 1 || (!document && !normalizedPhone)) campaigns.length = 0;
 
   const leadName = resolvedName ?? normalizedPhone ?? 'Contato WhatsApp';
   const registrations = uniqueStringList((contact as any).registrations || null);
@@ -587,7 +553,7 @@ export const processStandardInboundEvent = async (
     return null;
   })();
 
-  const dedupeKeyMessage = `${tenantId}:${messageExternalId ?? (normalizedMessage as any).id}`;
+  const dedupeKeyMessage = `${tenantId}:${resolvedInstanceId}:${messageExternalId ?? (normalizedMessage as any).id}`;
   if (direction === 'INBOUND' && (await shouldSkipByDedupe(dedupeKeyMessage, now))) {
     logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Mensagem ignorada (janela de dedupe em ação)', {
       requestId,
@@ -1058,24 +1024,7 @@ export const processStandardInboundEvent = async (
     }
   }
 
-  const allocationTargets: Array<{
-    campaign: (typeof campaigns)[number] | null;
-    target: { campaignId?: string; instanceId?: string };
-  }> =
-    campaigns.length
-      ? campaigns.map((campaign) => ({ campaign, target: { campaignId: campaign.id } }))
-      : resolvedInstanceId
-      ? [{ campaign: null, target: { instanceId: resolvedInstanceId } }]
-      : [];
-
-  if (!campaigns.length && !resolvedInstanceId) {
-    logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Instância sem identificador para alocação fallback', {
-      requestId,
-      tenantId,
-      instanceId: resolvedInstanceId ?? instanceId ?? null,
-      messageId: (message as any).id ?? null,
-    });
-  }
+  const allocationTargets = campaigns.map((campaign) => ({ campaign, target: { campaignId: campaign.id } }));
 
   for (const { campaign, target } of allocationTargets) {
     const campaignId = campaign?.id ?? null;

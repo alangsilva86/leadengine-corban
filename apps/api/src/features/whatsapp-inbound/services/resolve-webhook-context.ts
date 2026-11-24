@@ -2,93 +2,36 @@ import { prisma } from '../../../lib/prisma';
 import type { RawBaileysUpsertEvent } from './baileys-raw-normalizer';
 import { readString } from '../utils/webhook-parsers';
 
-export type ResolveWebhookContextOptions = {
+type ResolveWebhookContextOptions = {
   eventRecord: RawBaileysUpsertEvent;
   envelopeRecord: Record<string, unknown>;
   defaultInstanceId?: string | null;
-};
-
-export type ResolvedWebhookContext = {
-  instanceId: string | undefined;
-  brokerId: string | undefined;
-  tenantId: string | undefined;
-  rawInstanceId: string | undefined;
-};
-
-const normalizeBrokerId = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  expectedTenantId?: string | null;
 };
 
 export const resolveWebhookContext = async ({
   eventRecord,
   envelopeRecord,
   defaultInstanceId,
-}: ResolveWebhookContextOptions): Promise<ResolvedWebhookContext> => {
-  const resolvedDefaultInstanceId = defaultInstanceId ?? null;
+  expectedTenantId,
+}: ResolveWebhookContextOptions) => {
+  const rawInstanceId = readString(eventRecord.instanceId, envelopeRecord.instanceId, defaultInstanceId) ?? undefined;
+  const unresolved = { rawInstanceId, instanceId: undefined, brokerId: undefined, tenantId: undefined };
+  if (!rawInstanceId) return unresolved;
 
-  const rawInstanceId =
-    readString((eventRecord as { instanceId?: unknown }).instanceId, envelopeRecord.instanceId) ??
-    resolvedDefaultInstanceId ??
-    undefined;
-
-  let instanceId = rawInstanceId;
-  let brokerId: string | undefined;
-  let tenantId =
-    readString((eventRecord as { tenantId?: unknown }).tenantId, envelopeRecord.tenantId) ?? undefined;
-
-  if (!rawInstanceId) {
-    return { instanceId, brokerId, tenantId, rawInstanceId: undefined };
-  }
-
-  const directMatch = await prisma.whatsAppInstance.findFirst({
-    where: {
-      OR: [{ id: rawInstanceId }, { brokerId: rawInstanceId }],
-    },
-    select: {
-      id: true,
-      brokerId: true,
-      tenantId: true,
-    },
+  const tenantHints = [expectedTenantId, readString(eventRecord.tenantId), readString(envelopeRecord.tenantId)];
+  const instances = await prisma.whatsAppInstance.findMany({
+    where: { OR: [{ id: rawInstanceId }, { brokerId: rawInstanceId }] },
+    select: { id: true, brokerId: true, tenantId: true },
+    take: 2,
   });
-
-  let resolvedInstance = directMatch;
-
-  if (!resolvedInstance && resolvedDefaultInstanceId && resolvedDefaultInstanceId !== rawInstanceId) {
-    resolvedInstance = await prisma.whatsAppInstance.findUnique({
-      where: { id: resolvedDefaultInstanceId },
-      select: {
-        id: true,
-        brokerId: true,
-        tenantId: true,
-      },
-    });
+  const [instance] = instances;
+  if (instances.length !== 1 || !instance || tenantHints.some((hint) => hint && hint !== instance.tenantId)) {
+    return unresolved;
   }
 
-  if (!resolvedInstance) {
-    return { instanceId, brokerId, tenantId, rawInstanceId };
-  }
+  const tenant = await prisma.tenant.findFirst({ where: { id: instance.tenantId, isActive: true }, select: { id: true } });
+  if (!tenant) return unresolved;
 
-  instanceId = resolvedInstance.id;
-
-  const storedBrokerId = normalizeBrokerId(resolvedInstance.brokerId);
-
-  if (rawInstanceId && storedBrokerId !== rawInstanceId) {
-    await prisma.whatsAppInstance.update({
-      where: { id: resolvedInstance.id },
-      data: { brokerId: rawInstanceId },
-    });
-  }
-
-  brokerId = rawInstanceId ?? storedBrokerId ?? undefined;
-
-  if (!tenantId && resolvedInstance.tenantId) {
-    tenantId = resolvedInstance.tenantId;
-  }
-
-  return { instanceId, brokerId, tenantId, rawInstanceId };
+  return { rawInstanceId, instanceId: instance.id, brokerId: instance.brokerId ?? undefined, tenantId: instance.tenantId };
 };
-

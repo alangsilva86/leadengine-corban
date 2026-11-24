@@ -9,9 +9,8 @@ import {
   formatNumberValue,
   formatPercentValue,
   type ChannelDistributionEntry,
-  type DashboardLeadsResponse,
   type DashboardMetricsResult,
-  type DashboardOverviewMetrics,
+  channelPresentation,
   type DashboardTicketsResponse,
   type LeadSeriesEntry,
   type RecentTicketEntry,
@@ -37,10 +36,21 @@ export interface DashboardLoadingState {
   recentTickets: boolean;
 }
 
+type DashboardOverview = {
+  activeTickets: number;
+  totalLeads: number;
+  messagesToday: number;
+  messagesYesterday: number;
+  conversionRate: number | null;
+  ticketsSeries: TicketSeriesEntry[];
+  leadsSeries: Pick<LeadSeriesEntry, 'name' | 'leads'>[];
+  channels: { channel: string; total: number }[];
+};
+
 export interface DashboardDataHookResult {
   stats: DashboardStat[];
   ticketsSeries: TicketSeriesEntry[];
-  leadsSeries: LeadSeriesEntry[];
+  leadsSeries: DashboardOverview['leadsSeries'];
   channelDistribution: ChannelDistributionEntry[];
   recentTickets: RecentTicketEntry[];
   loading: DashboardLoadingState;
@@ -58,105 +68,78 @@ export const useDashboardData = (): DashboardDataHookResult => {
     },
   });
 
-  const leadsQuery = useQuery<DashboardLeadsResponse | null>({
-    queryKey: ['leads', 'dashboard'],
-    queryFn: async () => {
-      const payload = await apiGet('/api/leads?size=200');
-      return (payload?.data ?? null) as DashboardLeadsResponse | null;
-    },
+  const overviewQuery = useQuery<DashboardOverview>({
+    queryKey: ['crm', 'dashboard'],
+    queryFn: async () => (await apiGet('/api/crm/dashboard')).data,
   });
-
-  const leadMetricsQuery = useQuery<DashboardOverviewMetrics | null>({
-    queryKey: ['lead-engine', 'dashboard'],
-    queryFn: async () => {
-      const payload = await apiGet('/api/lead-engine/dashboard');
-      return (payload?.data ?? null) as DashboardOverviewMetrics | null;
-    },
-  });
-
-  const { refetch: refetchTickets } = ticketsQuery;
-  const { refetch: refetchLeads } = leadsQuery;
-  const { refetch: refetchLeadMetrics } = leadMetricsQuery;
-
-  const metrics = useMemo(
-    () => buildDashboardMetrics(ticketsQuery.data, leadsQuery.data, leadMetricsQuery.data),
-    [ticketsQuery.data, leadsQuery.data, leadMetricsQuery.data]
-  );
+  const overview = overviewQuery.data;
+  const metrics = useMemo(() => buildDashboardMetrics(ticketsQuery.data, null, null), [ticketsQuery.data]);
+  const channels = overview?.channels.map(({ channel, total }) => ({ ...channelPresentation(channel), value: total })) ?? [];
 
   const stats = useMemo<DashboardStat[]>(() => {
-    const { ticketInsights, leadInsights } = metrics;
+    const messageChange = overview && overview.messagesYesterday > 0
+      ? `${(((overview.messagesToday - overview.messagesYesterday) / overview.messagesYesterday) * 100).toFixed(0)}%`
+      : '—';
 
     return [
       {
         id: 'activeTickets',
         title: 'Tickets Ativos',
-        value: formatNumberValue(ticketInsights.activeTickets),
-        change: ticketInsights.activeChange,
-        trend: deriveTrend(ticketInsights.activeChange),
+        value: formatNumberValue(overview?.activeTickets),
+        change: '—',
+        trend: 'neutral',
         icon: Ticket,
         color: 'blue',
       },
       {
         id: 'newLeads',
-        title: 'Leads Novos',
-        value: formatNumberValue(leadInsights.totalLeads),
-        change: leadInsights.leadsChange,
-        trend: deriveTrend(leadInsights.leadsChange),
+        title: 'Leads cadastrados',
+        value: formatNumberValue(overview?.totalLeads),
+        change: '—',
+        trend: 'neutral',
         icon: Users,
         color: 'green',
       },
       {
         id: 'messagesToday',
         title: 'Mensagens Hoje',
-        value: formatNumberValue(ticketInsights.messagesToday),
-        change: ticketInsights.messageChange,
-        trend: deriveTrend(ticketInsights.messageChange),
+        value: formatNumberValue(overview?.messagesToday),
+        change: messageChange,
+        trend: deriveTrend(messageChange),
         icon: MessageSquare,
         color: 'purple',
       },
       {
         id: 'conversionRate',
         title: 'Taxa de Conversão',
-        value: formatPercentValue(leadInsights.conversionRate),
-        change: leadInsights.conversionChange,
-        trend: deriveTrend(leadInsights.conversionChange),
+        value: formatPercentValue(overview?.conversionRate),
+        change: '—',
+        trend: 'neutral',
         icon: TrendingUp,
         color: 'orange',
       },
     ];
-  }, [metrics]);
+  }, [overview]);
 
-  const errorMessages = useMemo(
-    () =>
-      [
-        ticketsQuery.error instanceof Error ? `Tickets: ${ticketsQuery.error.message}` : null,
-        leadsQuery.error instanceof Error ? `Leads: ${leadsQuery.error.message}` : null,
-        leadMetricsQuery.error instanceof Error
-          ? `Métricas do Lead Engine: ${leadMetricsQuery.error.message}`
-          : null,
-      ].filter((message): message is string => Boolean(message)),
-    [ticketsQuery.error, leadsQuery.error, leadMetricsQuery.error]
-  );
-
+  const errorMessages = [ticketsQuery.error, overviewQuery.error]
+    .flatMap(error => error instanceof Error ? [error.message] : []);
   const loading: DashboardLoadingState = {
-    stats: ticketsQuery.isLoading || leadsQuery.isLoading || leadMetricsQuery.isLoading,
-    ticketsChart: ticketsQuery.isLoading,
-    leadsChart: leadsQuery.isLoading || leadMetricsQuery.isLoading,
-    channelDistribution: ticketsQuery.isLoading,
+    stats: overviewQuery.isLoading, ticketsChart: overviewQuery.isLoading,
+    leadsChart: overviewQuery.isLoading, channelDistribution: overviewQuery.isLoading,
     recentTickets: ticketsQuery.isLoading,
   };
-
+  const { refetch: refetchTickets } = ticketsQuery;
+  const { refetch: refetchOverview } = overviewQuery;
   const refetchAll = useCallback(() => {
     void refetchTickets();
-    void refetchLeads();
-    void refetchLeadMetrics();
-  }, [refetchTickets, refetchLeads, refetchLeadMetrics]);
+    void refetchOverview();
+  }, [refetchTickets, refetchOverview]);
 
   return {
     stats,
-    ticketsSeries: metrics.ticketsSeries,
-    leadsSeries: metrics.leadsSeries,
-    channelDistribution: metrics.channelDistribution,
+    ticketsSeries: overview?.ticketsSeries ?? [],
+    leadsSeries: overview?.leadsSeries ?? [],
+    channelDistribution: channels,
     recentTickets: metrics.recentTickets,
     loading,
     errors: errorMessages,

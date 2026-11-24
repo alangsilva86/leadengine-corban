@@ -1,3 +1,4 @@
+import { requireRoles } from '../middleware/policies';
 import { Router, type Request, type Response } from 'express';
 import { body, param, query } from 'express-validator';
 
@@ -55,6 +56,7 @@ router.get(
 
 router.post(
   '/',
+  requireRoles('ADMIN', 'SUPERVISOR'),
   createQueueValidation,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
@@ -68,7 +70,34 @@ router.post(
 );
 
 router.patch(
+  '/reorder',
+  requireRoles('ADMIN', 'SUPERVISOR'),
+  reorderValidation,
+  validateRequest,
+  asyncHandler(async (req: Request, res: Response) => {
+    const tenantId = req.tenantContext!.tenantId;
+    const includeItems = (req.query.includeItems as boolean | undefined) ?? true;
+    const items = queueSerializer.buildReorderItems(req.body as Record<string, unknown>);
+
+    const reordered = await queueService.reorderQueues(tenantId, items, includeItems);
+
+    if (!reordered.updated) {
+      queueHttpSerializer.respondNotFound(res, 'Nenhuma fila válida encontrada para reordenar.');
+      return;
+    }
+
+    if (!includeItems) {
+      queueHttpSerializer.respondWithSuccess(res);
+      return;
+    }
+
+    queueHttpSerializer.respondWithQueueList(res, reordered.queues ?? []);
+  })
+);
+
+router.patch(
   '/:queueId',
+  requireRoles('ADMIN', 'SUPERVISOR'),
   updateQueueValidation,
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
@@ -93,42 +122,18 @@ router.patch(
   })
 );
 
-router.patch(
-  '/reorder',
-  reorderValidation,
-  validateRequest,
-  asyncHandler(async (req: Request, res: Response) => {
-    const tenantId = req.tenantContext!.tenantId;
-    const includeItems = (req.query.includeItems as boolean | undefined) ?? true;
-    const items = queueSerializer.buildReorderItems(req.body as Record<string, unknown>);
-
-    const reordered = await queueService.reorderQueues(tenantId, items, includeItems);
-
-    if (!reordered.updated) {
-      queueHttpSerializer.respondNotFound(res, 'Nenhuma fila válida encontrada para reordenar.');
-      return;
-    }
-
-    if (!includeItems) {
-      queueHttpSerializer.respondWithSuccess(res);
-      return;
-    }
-
-    queueHttpSerializer.respondWithQueueList(res, reordered.queues ?? []);
-  })
-);
-
 router.delete(
   '/:queueId',
+  requireRoles('ADMIN'),
   [param('queueId').isString().trim().isLength({ min: 1 })],
   validateRequest,
   asyncHandler(async (req: Request, res: Response) => {
     const tenantId = req.tenantContext!.tenantId;
     const { queueId } = req.params;
 
-    const deleted = await queueService.deleteQueue(tenantId, queueId);
+    const archived = await queueService.archiveQueue(tenantId, queueId);
 
-    if (!deleted) {
+    if (!archived) {
       queueHttpSerializer.respondNotFound(res);
       return;
     }

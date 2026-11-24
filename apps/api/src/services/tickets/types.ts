@@ -96,6 +96,7 @@ export type TicketNoteAuthor = {
 };
 
 export type ListTicketsOptions = {
+  actorId?: string;
   include?: TicketIncludeOption[];
   includeMetrics?: boolean;
 };

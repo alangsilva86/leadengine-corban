@@ -1,11 +1,10 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button.jsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
-import { Separator } from '@/components/ui/separator.jsx';
 import { useAuth } from './AuthProvider.jsx';
 import { getTenantId, getTenantSlugHint } from '@/lib/auth.js';
 import { getEnvVar } from '@/lib/runtime-env.js';
@@ -30,8 +29,7 @@ const resolveErrorMessage = (error: unknown) => {
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { status, loading, login, recoverPassword } = useAuth();
-  const [mode, setMode] = useState<'login' | 'recover'>('login');
+  const { status, loading, login } = useAuth();
   const [form, setForm] = useState({
     email: prefillEmail,
     password: prefillPassword,
@@ -51,12 +49,7 @@ export default function LoginPage() {
 
   const formDisabled = submitting || isChecking;
 
-  const canSubmit = useMemo(() => {
-    if (mode === 'login') {
-      return Boolean(form.email && form.password && form.tenantSlug);
-    }
-    return Boolean(form.email);
-  }, [form.email, form.password, form.tenantSlug, mode]);
+  const canSubmit = Boolean(form.email && form.password && form.tenantSlug);
 
   const handleChange = (field: keyof typeof form) => (event: ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
@@ -72,21 +65,8 @@ export default function LoginPage() {
     setSubmitting(true);
 
     try {
-      if (mode === 'login') {
-        await login({
-          email: normalize(form.email),
-          password: form.password,
-          tenantSlug: normalize(form.tenantSlug),
-          remember: Boolean(form.remember),
-        });
-        navigate('/', { replace: true });
-      } else {
-        await recoverPassword({
-          email: normalize(form.email),
-          tenantSlug: form.tenantSlug ? normalize(form.tenantSlug) : undefined,
-        });
-        setMode('login');
-      }
+      await login({ email: normalize(form.email), password: form.password, tenantSlug: normalize(form.tenantSlug), remember: form.remember });
+      navigate('/', { replace: true });
     } catch (err) {
       setError(resolveErrorMessage(err));
     } finally {
@@ -94,22 +74,15 @@ export default function LoginPage() {
     }
   };
 
-  const toggleMode = () => {
-    setMode((current) => (current === 'login' ? 'recover' : 'login'));
-    setError(null);
-  };
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-muted/50 px-4 py-12">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl font-semibold">
-            {mode === 'login' ? 'Acesse sua conta' : 'Recuperar acesso'}
+            Acesse sua conta
           </CardTitle>
           <CardDescription>
-            {mode === 'login'
-              ? 'Informe suas credenciais e o tenant para iniciar uma nova sessão segura.'
-              : 'Enviaremos um link de redefinição para o e-mail cadastrado.'}
+            Informe suas credenciais e a organização.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -138,7 +111,6 @@ export default function LoginPage() {
                 required
               />
             </div>
-            {mode === 'login' ? (
               <div className="space-y-2">
                 <Label htmlFor="password">Senha</Label>
                 <Input
@@ -152,13 +124,13 @@ export default function LoginPage() {
                   required
                 />
               </div>
-            ) : null}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="remember"
+                  className=""
                   checked={form.remember}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean | 'indeterminate') =>
                     setForm((prev) => ({ ...prev, remember: Boolean(checked) }))
                   }
                   disabled={formDisabled}
@@ -170,38 +142,12 @@ export default function LoginPage() {
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button type="submit" className="w-full" disabled={!canSubmit || formDisabled}>
-              {mode === 'login' ? 'Entrar' : 'Enviar instruções'}
+              Entrar
             </Button>
           </form>
-          <Separator className="my-6" />
-          <div className="space-y-2 text-center text-sm text-muted-foreground">
-            {mode === 'login' ? (
-              <button
-                type="button"
-                className="text-primary underline-offset-2 hover:underline"
-                onClick={toggleMode}
-                disabled={formDisabled}
-              >
-                Esqueci minha senha
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="text-primary underline-offset-2 hover:underline"
-                onClick={toggleMode}
-                disabled={formDisabled}
-              >
-                Voltar para o login
-              </button>
-            )}
-            <p>
-              Precisa de ajuda? Entre em contato com o suporte ou{' '}
-              <Link to="/" className="text-primary underline-offset-2 hover:underline">
-                volte para a página inicial
-              </Link>
-              .
-            </p>
-          </div>
+          <p className="mt-5 text-center text-sm text-muted-foreground">
+            Para recuperar o acesso, fale com o administrador da sua organização.
+          </p>
         </CardContent>
       </Card>
     </div>

@@ -1,9 +1,9 @@
-import { setImmediate as scheduleImmediate } from 'node:timers';
-
+import { createHash } from 'node:crypto';
+import { Prisma, type InboundWebhookJob } from '@prisma/client';
+import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../config/logger';
 import { whatsappWebhookEventsCounter } from '../../../lib/metrics';
 import { ingestInboundWhatsAppMessage } from './inbound-lead-service';
-import { getAiRoutingPreferences } from '../../../config/ai-route';
 
 interface InboundQueueJob {
   requestId: string;
@@ -13,209 +13,97 @@ interface InboundQueueJob {
   normalizedIndex: number | null;
   envelope: Parameters<typeof ingestInboundWhatsAppMessage>[0];
   route?: 'front' | 'server';
-  flags?: { skipServerAi?: boolean } | null;
 }
 
-const queue: InboundQueueJob[] = [];
+const MAX_ATTEMPTS = 5;
 
-let processing = false;
-
-const idleResolvers: Array<() => void> = [];
-
-const notifyIdle = () => {
-  if (processing || queue.length > 0) {
-    return;
-  }
-
-  while (idleResolvers.length > 0) {
-    const resolve = idleResolvers.shift();
-    resolve?.();
-  }
+const resolveMessageIdentity = (envelope: InboundQueueJob['envelope']) => {
+  const message = envelope.message;
+  return message?.kind === 'message'
+    ? { externalId: message.externalId ?? message.id, direction: message.direction }
+    : { externalId: message?.id, direction: undefined };
 };
 
-const nextTick = (callback: () => void) => {
-  scheduleImmediate(callback);
-};
+export const enqueueInboundWebhookJob = async (job: InboundQueueJob): Promise<void> => {
+  const { tenantId, instanceId, chatId, envelope } = job;
+  if (!tenantId || !instanceId || !chatId) throw new Error('Webhook scope incomplete');
+  const { externalId: messageId } = resolveMessageIdentity(envelope);
+  if (!messageId) throw new Error('Webhook message identifier missing');
+  const eventKey = createHash('sha256').update(JSON.stringify([tenantId, instanceId, messageId])).digest('hex');
+  const payload = JSON.parse(JSON.stringify(job)) as Prisma.InputJsonValue;
 
-const processQueue = async (): Promise<void> => {
-  if (processing) {
-    logger.warn('📥 INBOUND QUEUE :: ⏸️ Já processando, aguardando...');
-    return;
-  }
-
-  processing = true;
-  
-  logger.warn('📥 INBOUND QUEUE :: 🚀 INICIANDO processamento da fila', {
-    queueLength: queue.length,
+  await prisma.inboundWebhookJob.createMany({
+    data: [{ tenantId, instanceId, conversationId: chatId, eventKey, payload }],
+    skipDuplicates: true,
   });
+};
 
-  while (queue.length > 0) {
-    const job = queue.shift();
-    if (!job) {
-      continue;
-    }
+export const processInboundWebhookJobs = async (limit = 20): Promise<void> => {
+  for (let index = 0; index < limit; index += 1) {
+    const [claimed] = await prisma.$queryRaw<InboundWebhookJob[]>`
+      WITH candidate AS (
+        SELECT j."sequence" FROM "inbound_webhook_jobs" j
+        WHERE j."completedAt" IS NULL AND j."failedAt" IS NULL
+          AND j."nextAttemptAt" <= CURRENT_TIMESTAMP
+          AND (j."leaseUntil" IS NULL OR j."leaseUntil" <= CURRENT_TIMESTAMP)
+          AND NOT EXISTS (
+            SELECT 1 FROM "inbound_webhook_jobs" p
+            WHERE p."tenantId" = j."tenantId" AND p."instanceId" = j."instanceId"
+              AND p."conversationId" = j."conversationId" AND p."sequence" < j."sequence"
+              AND p."completedAt" IS NULL AND p."failedAt" IS NULL
+          )
+        ORDER BY j."sequence"
+        LIMIT 1 FOR UPDATE SKIP LOCKED
+      )
+      UPDATE "inbound_webhook_jobs" j SET
+        "attempts" = j."attempts" + 1, "leaseUntil" = CURRENT_TIMESTAMP + INTERVAL '2 minutes'
+      FROM candidate WHERE j."sequence" = candidate."sequence" RETURNING j.*
+    `;
+    if (!claimed) return;
 
-    // Narrow `job` and destructure once to keep TS happy across awaits
-    const currentJob = job;
-    const {
-      requestId,
-      tenantId,
-      instanceId,
-      chatId,
-      normalizedIndex,
-      envelope,
-      route,
-      flags,
-    } = currentJob;
-
-    // Enforce route/flags into envelope metadata before ingestion (no optional-assignment on ?. paths)
+    const scope = { sequence: claimed.sequence, attempts: claimed.attempts };
+    const tags = { origin: 'webhook', tenantId: claimed.tenantId, instanceId: claimed.instanceId };
     try {
-      const envAny = envelope as any;
-      const msg: any = (envAny && envAny.message) || (envAny && envAny.envelope && envAny.envelope.message) || undefined;
-
-      let metadata: any;
-      if (msg && typeof msg === 'object') {
-        if (!msg.metadata || typeof msg.metadata !== 'object') {
-          msg.metadata = {};
-        }
-        metadata = msg.metadata;
-      } else {
-        metadata = {};
+      const job = claimed.payload as unknown as InboundQueueJob;
+      if (!job) throw new Error('Missing webhook job payload');
+      const accepted = await ingestInboundWhatsAppMessage(job.envelope);
+      if (!accepted) {
+        const { externalId, direction } = resolveMessageIdentity(job.envelope);
+        const existing = externalId && (direction === 'INBOUND' || direction === 'OUTBOUND') && await prisma.message.findFirst({
+          where: { tenantId: claimed.tenantId, instanceId: claimed.instanceId, externalId, direction },
+          select: { id: true },
+        });
+        if (!existing) throw new Error('Inbound message could not be persisted');
       }
-
-      if (!metadata.flags || typeof metadata.flags !== 'object') {
-        metadata.flags = {};
-      }
-
-      const aiRouting = getAiRoutingPreferences();
-      const preferredRoute = route ?? aiRouting.mode;
-      const shouldSkipServerAi = !aiRouting.serverAutoReplyEnabled;
-
-      if (shouldSkipServerAi) {
-        metadata.flags.skipServerAi = true;
-      } else if (metadata.flags.skipServerAi) {
-        delete metadata.flags.skipServerAi;
-      }
-
-      if (metadata.aiRouteMode == null) {
-        metadata.aiRouteMode = preferredRoute;
-      }
-    } catch (_) {
-      // best-effort; do not break ingestion if envelope structure differs
-    }
-
-    logger.warn('📥 INBOUND QUEUE :: ⚙️ PROCESSANDO job', {
-      requestId,
-      tenantId,
-      instanceId,
-      chatId,
-      remainingInQueue: queue.length,
-      route: route ?? 'server',
-      flags: flags ?? null,
-    });
-
-    try {
-      const startedAt = Date.now();
-      const processed = await ingestInboundWhatsAppMessage(envelope);
-      const durationMs = Date.now() - startedAt;
-      
-      logger.warn('📥 INBOUND QUEUE :: 📊 Resultado do ingest', {
-        requestId,
-        processed,
-        tenantId,
-        instanceId,
-        durationMs,
+      await prisma.inboundWebhookJob.updateMany({
+        where: scope, data: { completedAt: new Date(), leaseUntil: null, payload: Prisma.DbNull },
       });
-
-      if (processed) {
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: tenantId ?? 'unknown',
-          instanceId: instanceId ?? 'unknown',
-          result: 'accepted',
-          reason: job.route === 'front' ? 'ok_front' : 'ok_server',
-        });
-
-        logger.info('🎯 LeadEngine • WhatsApp :: 🎉 Webhook ingestão concluída', {
-          requestId,
-          tenantId,
-          instanceId,
-          chatId,
-          normalizedIndex,
-        });
-      } else {
-        whatsappWebhookEventsCounter.inc({
-          origin: 'webhook',
-          tenantId: tenantId ?? 'unknown',
-          instanceId: instanceId ?? 'unknown',
-          result: 'failed',
-          reason: job.route === 'front' ? 'ingest_failed_front' : 'ingest_failed_server',
-        });
-
-        logger.warn('🎯 LeadEngine • WhatsApp :: 🎭 Webhook ingestão não persistiu mensagem', {
-          requestId,
-          tenantId,
-          instanceId,
-          chatId,
-          normalizedIndex,
-        });
-      }
-    } catch (error) {
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: tenantId ?? 'unknown',
-        instanceId: instanceId ?? 'unknown',
-        result: 'failed',
-        reason: 'persist_error',
+      whatsappWebhookEventsCounter.inc({ ...tags, result: 'accepted', reason: 'processed' });
+    } catch {
+      const exhausted = claimed.attempts >= MAX_ATTEMPTS;
+      await prisma.inboundWebhookJob.updateMany({
+        where: scope,
+        data: {
+          leaseUntil: null,
+          failedAt: exhausted ? new Date() : null,
+          nextAttemptAt: new Date(Date.now() + 5000 * 2 ** (claimed.attempts - 1)),
+        },
       });
-
-      logger.error('Failed to persist inbound WhatsApp message', {
-        requestId,
-        tenantId,
-        chatId,
-        error,
-      });
+      whatsappWebhookEventsCounter.inc({ ...tags, result: 'failed', reason: exhausted ? 'exhausted' : 'retry' });
+      logger.warn('Falha ao processar evento WhatsApp', { eventKey: claimed.eventKey, attempt: claimed.attempts, exhausted });
     }
   }
-
-  processing = false;
-  notifyIdle();
 };
 
-export const enqueueInboundWebhookJob = (job: InboundQueueJob): void => {
-  logger.warn('📥 INBOUND QUEUE :: ➡️ ENFILEIRANDO mensagem', {
-    requestId: job.requestId,
-    tenantId: job.tenantId,
-    instanceId: job.instanceId,
-    chatId: job.chatId,
-    queueLength: queue.length + 1,
-    route: job.route ?? 'server',
-    flags: job.flags ?? null,
-  });
-  
-  queue.push(job);
-  nextTick(processQueue);
+export const startInboundWebhookWorker = () => {
+  let running = false;
+  const timer = setInterval(() => {
+    if (running) return;
+    running = true;
+    void processInboundWebhookJobs().catch(() => {
+      logger.warn('Fila de entrada WhatsApp indisponível.');
+    }).finally(() => { running = false; });
+  }, 1000);
+  timer.unref();
+  return () => clearInterval(timer);
 };
-
-const waitForIdle = async (): Promise<void> => {
-  if (!processing && queue.length === 0) {
-    return;
-  }
-
-  await new Promise<void>((resolve) => {
-    idleResolvers.push(resolve);
-  });
-};
-
-const resetQueue = (): void => {
-  queue.splice(0, queue.length);
-  processing = false;
-  notifyIdle();
-};
-
-export const __testing = {
-  waitForIdle,
-  resetQueue,
-};
-
-export type { InboundQueueJob };

@@ -15,7 +15,7 @@ import { AlertTriangle, Filter, Loader2, RefreshCw, Search, X } from 'lucide-rea
 const DEFAULT_FILTERS = {
   scope: 'team',
   state: 'open',
-  window: 'in_window',
+  window: 'all',
   outcome: 'all',
   instanceId: null,
   campaignId: null,
@@ -38,6 +38,7 @@ const STATE_OPTIONS = [
 ];
 
 const WINDOW_OPTIONS = [
+  { value: 'all', label: 'Todas as janelas' },
   { value: 'in_window', label: 'Janela 24h' },
   { value: 'expired', label: 'Expirados' },
 ];

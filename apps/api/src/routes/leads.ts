@@ -123,6 +123,8 @@ router.get(
 
     const where = {
       tenantId,
+      contact: { tenantId },
+      AND: [{ OR: [{ campaignId: null }, { campaign: { tenantId } }] }, { OR: [{ userId: null }, { assignee: { tenantId } }] }],
       ...(statusFilter ? { status: { in: statusFilter } } : {}),
     };
 
@@ -135,7 +137,7 @@ router.get(
         include: {
           contact: true,
           campaign: true,
-          assignee: true,
+          assignee: { select: { id: true, name: true, role: true } },
         },
       }),
       prisma.lead.count({ where }),
@@ -158,11 +160,16 @@ router.post(
     const tenantId = resolveRequestTenantId(req);
     const contactId = req.body.contactId as string;
 
-    const contact = await prisma.contact.findUnique({ where: { id: contactId } });
-
-    if (!contact) {
-      throw new NotFoundError('Contact', contactId);
-    }
+    const campaignId = typeof req.body.campaignId === 'string' ? req.body.campaignId : undefined;
+    const userId = typeof req.body.userId === 'string' ? req.body.userId : undefined;
+    const [contact, campaign, assignee] = await Promise.all([
+      prisma.contact.findFirst({ where: { id: contactId, tenantId }, select: { id: true } }),
+      campaignId ? prisma.campaign.findFirst({ where: { id: campaignId, tenantId }, select: { id: true } }) : null,
+      userId ? prisma.user.findFirst({ where: { id: userId, tenantId, isActive: true }, select: { id: true } }) : null,
+    ]);
+    if (!contact) throw new NotFoundError('Contact', contactId);
+    if (campaignId && !campaign) throw new NotFoundError('Campaign', campaignId);
+    if (userId && !assignee) throw new NotFoundError('User', userId);
 
     const status = isValidLeadStatus(req.body.status) ? req.body.status : LeadStatus.NEW;
     const source = isValidLeadSource(req.body.source) ? req.body.source : undefined;
@@ -175,8 +182,8 @@ router.post(
       data: {
         tenantId,
         contactId,
-        campaignId: typeof req.body.campaignId === 'string' ? req.body.campaignId : undefined,
-        userId: typeof req.body.userId === 'string' ? req.body.userId : undefined,
+        campaignId,
+        userId,
         status,
         source,
         score: typeof req.body.score === 'object' && req.body.score !== null ? req.body.score : undefined,
@@ -195,7 +202,7 @@ router.post(
       include: {
         contact: true,
         campaign: true,
-        assignee: true,
+        assignee: { select: { id: true, name: true, role: true } },
       },
     });
 

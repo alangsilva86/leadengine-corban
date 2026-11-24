@@ -8,6 +8,7 @@ export default defineConfig({
   reporter: [['list']],
   use: {
     actionTimeout: 0,
+    ...(process.env.CORBAN_CHROME_CHANNEL ? { channel: process.env.CORBAN_CHROME_CHANNEL } : {}),
     trace: 'on-first-retry',
     baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL,
   },

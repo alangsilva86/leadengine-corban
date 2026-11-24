@@ -1,3 +1,4 @@
+import { NotFoundError } from '@ticketz/core';
 import {
   Prisma,
   $Enums,
@@ -989,6 +990,12 @@ export const findTicketsByContact = async (tenantId: string, contactId: string):
 
 export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
   const prisma = getPrismaClient();
+  const [contact, queue] = await Promise.all([
+    prisma.contact.findFirst({ where: { id: input.contactId, tenantId: input.tenantId }, select: { id: true } }),
+    prisma.queue.findFirst({ where: { id: input.queueId, tenantId: input.tenantId, isActive: true }, select: { id: true } }),
+  ]);
+  if (!contact) throw new NotFoundError('Contact', input.contactId);
+  if (!queue) throw new NotFoundError('Queue', input.queueId);
   const metadataRecord = normalizeMetadataForWrite(input.metadata);
   const record = await prisma.ticket.create({
     data: {
@@ -1026,6 +1033,15 @@ export const updateTicket = async (
   if (!existing) {
     return null;
   }
+
+  const [assignee, queue] = await Promise.all([
+    input.userId ? prisma.user.findFirst({ where: { id: input.userId, tenantId, isActive: true }, select: { id: true } }) : null,
+    input.queueId && input.queueId !== existing.queueId
+      ? prisma.queue.findFirst({ where: { id: input.queueId, tenantId, isActive: true }, select: { id: true } })
+      : null,
+  ]);
+  if (input.userId && !assignee) throw new NotFoundError('User', input.userId);
+  if (input.queueId && input.queueId !== existing.queueId && !queue) throw new NotFoundError('Queue', input.queueId);
 
   const data: Prisma.TicketUncheckedUpdateInput = {};
 
@@ -1082,7 +1098,7 @@ export const updateTicket = async (
   }
 
   await prisma.ticket.update({
-    where: { id: existing.id },
+    where: { id: existing.id, tenantId },
     data,
   });
 
@@ -1376,6 +1392,11 @@ export const updateMessage = async (
   });
 
   return mapMessage(updated);
+};
+
+export const findMessageByIdempotencyKey = async (tenantId: string, key: string): Promise<Message | null> => {
+  const record = await getPrismaClient().message.findFirst({ where: { tenantId, idempotencyKey: key } });
+  return record ? mapMessage(record) : null;
 };
 
 export const findMessageByExternalId = async (

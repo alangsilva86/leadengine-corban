@@ -22,7 +22,7 @@ export const listTickets = async (
   const baseResult = (await storageListTickets(tenantId, filters, pagination)) as PaginatedResult<Ticket>;
   const rawItems = baseResult.items;
 
-  const { conversations, contacts, leads, notes } = await resolveTicketHydrations(tenantId, rawItems, include);
+  const { conversations, contacts, leads, notes } = await resolveTicketHydrations(tenantId, rawItems, include, options.actorId);
   const salesTimelineMap = await listTicketSalesEventsByTickets(
     tenantId,
     rawItems.map((ticket: Ticket) => ticket.id)

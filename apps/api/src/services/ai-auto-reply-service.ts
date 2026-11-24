@@ -206,15 +206,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
     const normalizedAiMode =
       aiMode === 'IA_AUTO' ? 'IA_AUTO' : aiMode === 'HUMANO' ? 'HUMANO' : 'COPILOTO';
 
-    let effectiveAiMode = normalizedAiMode;
-    if (effectiveAiMode !== 'HUMANO' && effectiveAiMode !== 'IA_AUTO' && forceServerAutoReply) {
-      logger.info('🤖 AI AUTO-REPLY :: ✅ override front-mode → IA_AUTO (assistência permitida)', {
-        tenantId,
-        ticketId,
-        originalMode: normalizedAiMode,
-      });
-      effectiveAiMode = 'IA_AUTO';
-    }
+    const effectiveAiMode = normalizedAiMode;
 
     logger.debug('AI AUTO-REPLY :: mode resolved', {
       tenantId,
@@ -315,7 +307,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
       replyPreview: safePreview(aiResponse?.message ?? ''),
     });
 
-    if (aiResponse.status === 'success' || aiResponse.status === 'stubbed') {
+    if (aiResponse.status === 'success') {
       const reply = (aiResponse.message || '').trim();
       if (!reply) {
         logger.warn('AI auto-reply: resposta vazia, nada será enviado', { tenantId, ticketId });
@@ -338,6 +330,7 @@ export async function processAiAutoReply(options: ProcessAiReplyOptions): Promis
             content: reply,
             direction: 'OUTBOUND',
             status: 'PENDING',
+            idempotencyKey: `ai:${messageId}`,
             metadata: {
               aiGenerated: true,
               aiModel: aiResponse.model,

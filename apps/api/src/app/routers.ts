@@ -1,6 +1,7 @@
 import type { Application, RequestHandler, Router } from 'express';
 
 import type { Logger } from '../types/logger';
+import { isDatabaseEnabled, prisma } from '../lib/prisma';
 import { renderMetrics } from '../lib/metrics';
 import { buildHealthPayload } from '../health';
 import { authMiddleware, requireTenant } from '../middleware/auth';
@@ -140,14 +141,28 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
     });
   });
 
-  app.get(['/ready', '/readiness'], (_req, res) => {
+  app.get(['/ready', '/readiness'], async (_req, res) => {
     const readiness = getReadinessState();
-    const statusCode = readiness.ready ? 200 : 503;
+    let databaseReady = false;
+    if (readiness.ready && isDatabaseEnabled) {
+      try {
+        await prisma.$queryRaw`SELECT "stage" FROM "tickets" LIMIT 0`;
+        await prisma.authSession.findFirst({ select: { id: true } });
+        await prisma.inboundWebhookJob.findFirst({ select: { sequence: true } });
+        await prisma.opportunity.findFirst({ select: { id: true } });
+        await prisma.ticketNote.findFirst({ select: { id: true } });
+        databaseReady = true;
+      } catch {
+        databaseReady = false;
+      }
+    }
+    const ready = readiness.ready && databaseReady;
+    const statusCode = ready ? 200 : 503;
 
     res.status(statusCode).json({
-      ok: readiness.ready,
-      status: readiness.status,
-      reason: readiness.reason,
+      ok: ready,
+      status: ready || !readiness.ready ? readiness.status : 'starting',
+      reason: readiness.ready && !databaseReady ? 'database or schema unavailable' : readiness.reason,
       since: readiness.since,
       lastReadyAt: readiness.lastReadyAt,
       lastNotReadyAt: readiness.lastNotReadyAt,
@@ -255,6 +270,8 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
       }
       next();
     },
+    authMiddleware,
+    requirePlatformAdmin,
     whatsappDebugRouter,
   );
   if (debugRoutesEnabled) {

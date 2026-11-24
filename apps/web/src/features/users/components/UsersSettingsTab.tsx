@@ -40,7 +40,7 @@ const readErrorMessage = (error: unknown, fallback = 'Não foi possível complet
   return fallback;
 };
 
-const UsersSettingsTab = () => {
+const UsersSettingsTab = ({ currentUserId, canManage = true }: { currentUserId?: string; canManage?: boolean }) => {
   const [statusFilter, setStatusFilter] = useState<UsersStatusFilter>('active');
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -129,15 +129,15 @@ const UsersSettingsTab = () => {
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div className="space-y-1">
             <CardTitle>Equipe do workspace</CardTitle>
-            <CardDescription>Gerencie usuários internos, roles e convites com poucos cliques.</CardDescription>
+            <CardDescription>Consulte os usuários e suas permissões na organização.</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => usersQuery.refetch()} disabled={usersQuery.isFetching}>
               <RefreshCw className="mr-2 h-4 w-4" /> Atualizar
             </Button>
-            <Button onClick={() => setCreateOpen(true)}>
+            {canManage && <Button onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> Novo usuário
-            </Button>
+            </Button>}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -170,7 +170,8 @@ const UsersSettingsTab = () => {
               onToggleActive={handleToggleStatus}
               onRemove={handleDeactivate}
               busyUserIds={busyUserIds}
-              currentUserId={currentUser?.id}
+              currentUserId={currentUserId ?? null}
+              canManage={canManage}
             />
           )}
           {isFetching && !pending ? (

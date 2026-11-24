@@ -136,11 +136,12 @@ export class QueueService {
     return { updated: true, queues };
   }
 
-  async deleteQueue(tenantId: string, queueId: string): Promise<boolean> {
-    const deleted = await this.prisma.queue.deleteMany({
+  async archiveQueue(tenantId: string, queueId: string): Promise<boolean> {
+    const archived = await this.prisma.queue.updateMany({
       where: { id: queueId, tenantId },
+      data: { isActive: false },
     });
 
-    return deleted.count > 0;
+    return archived.count > 0;
   }
 }

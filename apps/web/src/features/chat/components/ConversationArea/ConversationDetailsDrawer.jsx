@@ -1,4 +1,4 @@
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { cn } from '@/lib/utils.js';
@@ -14,6 +14,7 @@ const ConversationDetailsDrawer = ({
   <Sheet open={open} onOpenChange={onOpenChange}>
     <SheetContent
       side="right"
+      {...(!description ? { 'aria-describedby': undefined } : {})}
       className={cn(
         'border-l border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-strong)] p-0 sm:max-w-md',
         className,
@@ -24,11 +25,11 @@ const ConversationDetailsDrawer = ({
           {title}
         </SheetTitle>
         {description ? (
-          <p className="text-sm text-[color:var(--color-inbox-muted)]">{description}</p>
+          <SheetDescription>{description}</SheetDescription>
         ) : null}
       </SheetHeader>
       <Separator className="border-[color:var(--color-inbox-border)]" />
-      <ScrollArea className="h-full max-h-full px-6 py-6">
+      <ScrollArea className="min-h-0 flex-1 px-6 py-6">
         <div className="space-y-6">{children}</div>
       </ScrollArea>
     </SheetContent>

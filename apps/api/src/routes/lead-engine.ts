@@ -8,6 +8,7 @@ import {
 } from '@ticketz/storage';
 import { asyncHandler } from '../middleware/error-handler';
 import { validateRequest } from '../middleware/validation';
+import { requireRoles } from '../middleware/policies';
 import { requireTenant } from '../middleware/auth';
 import { leadEngineClient } from '../services/lead-engine-client';
 import { logger } from '../config/logger';
@@ -348,7 +349,6 @@ router.get(
       page,
       size,
       agreementCode,
-      documentNumber,
     });
 
     try {
@@ -514,6 +514,11 @@ router.post(
     });
 
     try {
+      const instance = await prisma.whatsAppInstance.findFirst({ where: { tenantId, id: instanceId }, select: { id: true } });
+      if (!instance) {
+        res.status(404).json({ success: false, error: { code: 'INSTANCE_NOT_FOUND', message: 'Instância não encontrada.' } });
+        return;
+      }
       const payload: Parameters<typeof createOrActivateCampaign>[0] = {
         tenantId,
         agreementId,
@@ -774,7 +779,7 @@ router.post(
     let sourceAgreementId: string | undefined;
 
     try {
-      const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+      const campaign = await prisma.campaign.findFirst({ where: { id: campaignId, tenantId } });
 
       if (!campaign) {
         res.status(404).json({
@@ -829,11 +834,6 @@ router.post(
 
       const message = toErrorMessage(error, 'Falha ao buscar novos leads');
 
-      if (!sourceAgreementId) {
-        const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
-        sourceAgreementId = campaign?.agreementId ?? undefined;
-      }
-
       logger.error('[LeadEngine] ❌ Failed to allocate leads', {
         tenantId,
         campaignId,
@@ -843,37 +843,6 @@ router.post(
         retryAfter,
         error,
       });
-
-      const fallbackLeads = sourceAgreementId
-        ? leadEngineClient.getFallbackLeadsForAgreement(sourceAgreementId, take)
-        : [];
-      if (fallbackLeads.length > 0) {
-        logger.warn('[LeadEngine] ⚠️ Using fallback leads after allocation failure', {
-          tenantId,
-          campaignId,
-          requested: take,
-          fallback: fallbackLeads.length,
-        });
-
-        const { newlyAllocated, summary } = await addAllocations(tenantId, { campaignId }, fallbackLeads);
-
-        res.json({
-          success: true,
-          data: newlyAllocated,
-          meta: {
-            pulled: fallbackLeads.length,
-            allocated: newlyAllocated.length,
-            summary,
-            warnings: [
-              'Broker indisponível: entregando lote de demonstração. Tente novamente em instantes para dados reais.',
-            ],
-            error: message,
-            status,
-            retryAfter,
-          },
-        });
-        return;
-      }
 
       if (retryAfter) {
         res.setHeader('Retry-After', retryAfter);
@@ -959,6 +928,7 @@ router.patch(
 
 router.get(
   '/allocations/export',
+  requireRoles('ADMIN'),
   query('campaignId').optional().isString().trim(),
   query('status').optional(),
   query('statuses').optional(),
@@ -1047,7 +1017,9 @@ router.get(
         if (value === null || value === undefined) {
           return '';
         }
-        const text = String(value).replace(/"/g, '""');
+        const raw = String(value);
+        const safe = typeof value === 'string' && /^[\s]*[=+@-]/.test(raw) ? `'${raw}` : raw;
+        const text = safe.replace(/"/g, '""');
         return `"${text}"`;
       };
 
@@ -1077,6 +1049,8 @@ router.get(
       const csvContent = [header.map(escape).join(','), ...rows].join('\n');
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
+      logger.info('Exportação de alocações', { tenantId, actorId: req.user!.id, count: filtered.length, requestId: req.rid });
+      res.setHeader('Cache-Control', 'no-store');
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="lead-allocations-${timestamp}.csv"`);
       res.send(`\ufeff${csvContent}`);

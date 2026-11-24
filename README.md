@@ -89,6 +89,31 @@ Cada pasta tem owner claro:
 
 ## Capítulo 3 – Jornada cronológica de setup
 
+### Execução local para validar o piloto
+
+Com Node 20.19, pnpm 9.12.3 e Docker, use PostgreSQL e Redis locais. Se as portas estiverem livres, inicie os serviços com `docker compose up -d postgres redis`. Para usar serviços já iniciados, ajuste as portas no arquivo de ambiente.
+
+```bash
+corepack enable
+corepack prepare pnpm@9.12.3 --activate
+pnpm install --frozen-lockfile
+cp -n apps/api/.env.example apps/api/.env.local
+```
+
+Configure `DATABASE_URL`, `DATABASE_DIRECT_URL` e `REDIS_URL` em `apps/api/.env.local`. Gere valores diferentes para `JWT_SECRET` e `POLL_METADATA_ENCRYPTION_KEY` com `openssl rand -hex 32`. Exporte as duas URLs de banco no terminal para aplicar as migrations. O seed prepara usuários e dados para um ambiente descartável.
+
+```bash
+pnpm run db:migrate:deploy
+pnpm exec tsx packages/storage/prisma/seed.ts
+VITE_API_URL=http://localhost:4000 VITE_WS_URL=ws://localhost:4000 pnpm run build
+```
+
+Inicie a API com `pnpm start:api` e o frontend em outro terminal com `pnpm --filter web preview --host 127.0.0.1 --port 5173 --strictPort`. Confirme `http://localhost:4000/ready` e acesse `http://localhost:5173/login` com a organização `demo-tenant`, o usuário de seed `admin@ticketz.com` e a senha local `admin123`. Use o mesmo hostname para API e frontend para validar a renovação de sessão via cookie.
+
+O teste `tests/playwright/corban-pilot.spec.ts` usa uma base descartável com o seed. Configure `CORBAN_ACCEPTANCE_ENABLED=1` e forneça em `CORBAN_ACCEPTANCE_WEBHOOK_KEY` e `CORBAN_ACCEPTANCE_WEBHOOK_SECRET` os mesmos valores configurados na API. O job `corban-pilot` em `.github/workflows/ci.yml` documenta a configuração completa do teste.
+
+O ambiente local valida a entrada assinada de WhatsApp e o CRM. O envio com número oficial, a formalização bancária e a telefonia dependem de ambientes de homologação próprios.
+
 ### 0. Requisitos de bordo
 - Node.js `>=20.19 <21` (use Volta/nvm/asdf). `corepack enable` habilita pnpm.
 - pnpm `9.12.3` (já travado via `packageManager`).

@@ -1,214 +1,223 @@
 import { Router, type Request, type Response } from 'express';
+import { LeadSource, LeadStatus, type Prisma } from '@prisma/client';
+import { NotFoundError, ValidationError } from '@ticketz/core';
+import { z } from 'zod';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
+import { prisma } from '../lib/prisma';
+import { getDashboardSummary } from '../services/dashboard-summary';
+import { opportunitiesRouter } from './opportunities';
 
-const crmRouter: Router = Router();
+const crmRouter = Router();
+crmRouter.use(requireTenant);
+crmRouter.use('/opportunities', opportunitiesRouter);
+crmRouter.get('/dashboard', asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, tenant } = req.user!;
+  const data = await getDashboardSummary(tenantId, tenant?.settings.timezone);
+  res.json({ success: true, data });
+}));
 
-const parseFilters = (raw: unknown): Record<string, unknown> => {
-  if (typeof raw !== 'string') {
-    return {};
-  }
+const DAY = 86_400_000;
+const PAGE_SIZE = 50;
+const stages = {
+  qualification: ['NEW', 'CONTACTED', 'ENGAGED', 'QUALIFIED', 'NURTURING'],
+  proposal: ['PROPOSAL'],
+  negotiation: ['NEGOTIATION'],
+  'closed-won': ['CONVERTED'],
+  'closed-lost': ['LOST'],
+} as const satisfies Record<string, readonly LeadStatus[]>;
+type Stage = keyof typeof stages;
+const stageNames: Record<Stage, string> = {
+  qualification: 'Qualificação', proposal: 'Proposta', negotiation: 'Negociação',
+  'closed-won': 'Ganho', 'closed-lost': 'Perdido',
+};
+const stageForStatus = (status: LeadStatus) => (Object.keys(stages) as Stage[])
+  .find((key) => (stages[key] as readonly LeadStatus[]).includes(status)) ?? 'qualification';
+
+const filterSchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  stages: z.array(z.string()).max(20).optional(),
+  owners: z.array(z.string()).max(30).optional(),
+  origins: z.array(z.string()).max(30).optional(),
+  channels: z.array(z.string()).max(30).optional(),
+  inactivityDays: z.number().finite().min(0).max(3650).nullish(),
+  score: z.object({ min: z.number().finite().nullish(), max: z.number().finite().nullish() }).nullish(),
+  dateRange: z.object({ from: z.string().nullish(), to: z.string().nullish() }).nullish(),
+});
+const parseFilters = (raw: unknown) => {
   try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed ? (parsed as Record<string, unknown>) : {};
+    return filterSchema.parse(typeof raw === 'string' ? JSON.parse(raw) : {});
   } catch {
-    return {};
+    throw new ValidationError('Filtros de CRM inválidos.');
   }
 };
+const toDate = (value: unknown) => {
+  if (value == null) return undefined;
+  const date = new Date(typeof value === 'string' ? value : Number.NaN);
+  if (!Number.isFinite(date.getTime())) throw new ValidationError('Data inválida.');
+  return date;
+};
 
-crmRouter.get(
-  '/metrics',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const filters = parseFilters(req.query.filters);
+const leadScope = (tenantId: string): Prisma.LeadWhereInput => ({
+  tenantId,
+  contact: { tenantId },
+  AND: [
+    { OR: [{ userId: null }, { assignee: { tenantId } }] },
+    { OR: [{ campaignId: null }, { campaign: { tenantId } }] },
+  ],
+});
 
-    const summary = [
-      {
-        id: 'activeLeads',
-        label: 'Leads ativos',
-        unit: 'count',
-        value: 128,
-        delta: 6,
-        deltaUnit: 'count',
-        trend: 'up',
-      },
-      {
-        id: 'newLeads',
-        label: 'Novos (7d)',
-        unit: 'count',
-        value: 42,
-        delta: 8,
-        deltaUnit: 'count',
-        trend: 'up',
-      },
-      {
-        id: 'slaCompliance',
-        label: 'Dentro do SLA',
-        unit: 'percentage',
-        value: 86,
-        delta: -4,
-        deltaUnit: 'percentage',
-        trend: 'down',
-      },
-      {
-        id: 'avgResponseTime',
-        label: '1ª resposta média (min)',
-        unit: 'duration',
-        value: 68,
-        delta: -12,
-        deltaUnit: 'duration',
-        trend: 'up',
-      },
-      {
-        id: 'stalledLeads',
-        label: 'Sem atividade (7d)',
-        unit: 'count',
-        value: 17,
-        delta: 2,
-        deltaUnit: 'count',
-        trend: 'down',
-      },
-      {
-        id: 'conversionRate',
-        label: 'Taxa de conversão',
-        unit: 'percentage',
-        value: 28,
-        delta: 3,
-        deltaUnit: 'percentage',
-        trend: 'up',
-      },
-    ];
+const filteredLeads = (tenantId: string, userId: string, raw: unknown): Prisma.LeadWhereInput => {
+  const filters = parseFilters(raw);
+  const status = filters.stages?.flatMap((stage) => stages[stage as Stage] ?? []);
+  const from = toDate(filters.dateRange?.from);
+  const to = toDate(filters.dateRange?.to);
+  const sourceMap = { web: 'WEBSITE', ads: 'PAID_ADS', organic: 'ORGANIC', social: 'SOCIAL_MEDIA' } as const;
+  const validSources = new Set<string>(Object.values(LeadSource));
+  const expandSources = (values?: string[]) => (values ?? []).map((entry) =>
+    sourceMap[entry as keyof typeof sourceMap] ?? entry.toUpperCase()
+  ).filter((entry) => validSources.has(entry)) as LeadSource[];
+  const and: Prisma.LeadWhereInput[] = [leadScope(tenantId)];
+  if (filters.stages?.length) and.push({ status: { in: status ?? [] } });
+  if (filters.search) and.push({ contact: { fullName: { contains: filters.search, mode: 'insensitive' } } });
+  if (filters.owners?.length) and.push({ userId: { in: filters.owners.map(id => id === 'owner:me' ? userId : id) } });
+  if (filters.origins?.length) and.push({ source: { in: expandSources(filters.origins) } });
+  if (filters.channels?.length) and.push({ source: { in: expandSources(filters.channels) } });
+  if (filters.score?.min != null) and.push({ score: { path: ['value'], gte: filters.score.min } });
+  if (filters.score?.max != null) and.push({ score: { path: ['value'], lte: filters.score.max } });
+  if (from || to) and.push({ createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } });
+  if (filters.inactivityDays != null) and.push({ updatedAt: { lte: new Date(Date.now() - filters.inactivityDays * DAY) } });
+  return { AND: and };
+};
 
-    res.json({
-      success: true,
-      data: {
-        summary,
-        retrievedAt: new Date().toISOString(),
-        source: 'fallback',
-        filters,
-      },
+const leadSelect = {
+  id: true, status: true, value: true, source: true, updatedAt: true,
+  contact: { select: { id: true, fullName: true } },
+  assignee: { select: { id: true, name: true } },
+} satisfies Prisma.LeadSelect;
+const summarize = (lead: Prisma.LeadGetPayload<{ select: typeof leadSelect }>) => ({
+  id: lead.id, name: lead.contact.fullName, contactId: lead.contact.id, stage: stageForStatus(lead.status),
+  ownerId: lead.assignee?.id ?? null, ownerName: lead.assignee?.name ?? null, lastActivityAt: lead.updatedAt,
+  source: lead.source.toLowerCase(), channel: ['WHATSAPP', 'EMAIL', 'PHONE', 'WEBSITE'].includes(lead.source) ? lead.source.toLowerCase() : null,
+  potentialValue: lead.value,
+  status: lead.status === 'CONVERTED' ? 'won' : lead.status === 'LOST' ? 'lost' :
+    lead.status === 'NEW' ? 'new' : lead.status === 'ENGAGED' ? 'engaged' : 'in_progress',
+});
+
+crmRouter.get('/leads', asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, id } = req.user!;
+  const where = filteredLeads(tenantId, id, req.query.filters);
+  const cursor = typeof req.query.cursor === 'string' && req.query.cursor.length < 120 ? req.query.cursor : undefined;
+  const [records, total] = await Promise.all([
+    prisma.lead.findMany({ where: { AND: [where, ...(cursor ? [{ id: { lt: cursor } }] : [])] },
+      orderBy: { id: 'desc' }, take: PAGE_SIZE + 1, select: leadSelect }),
+    prisma.lead.count({ where }),
+  ]);
+  const page = records.slice(0, PAGE_SIZE);
+  res.json({ success: true, data: { items: page.map(summarize), total,
+    nextCursor: records.length > PAGE_SIZE ? page.at(-1)?.id : null } });
+}));
+
+crmRouter.get('/leads/:leadId', asyncHandler(async (req: Request, res: Response) => {
+  const lead = await prisma.lead.findFirst({
+    where: { AND: [{ id: req.params.leadId ?? '' }, leadScope(req.user!.tenantId)] },
+    select: { ...leadSelect, notes: true, score: true },
+  });
+  if (!lead) throw new NotFoundError('Lead', req.params.leadId ?? '');
+  res.json({ success: true, data: { ...summarize(lead), notes: lead.notes } });
+}));
+
+crmRouter.get('/metrics', asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, id } = req.user!;
+  const filters = filteredLeads(tenantId, id, req.query.filters);
+  const now = new Date();
+  const since = new Date(now.getTime() - 7 * DAY);
+  const open: Prisma.LeadWhereInput = { status: { notIn: ['CONVERTED', 'LOST'] } };
+  const [active, newLeads, stalled] = await Promise.all([
+    prisma.lead.count({ where: { AND: [filters, open] } }),
+    prisma.lead.count({ where: { AND: [filters, { createdAt: { gte: since, lte: now } }] } }),
+    prisma.lead.count({ where: { AND: [filters, open, { updatedAt: { lt: since } }] } }),
+  ]);
+  const summary = [
+    { id: 'activeLeads', label: 'Leads ativos', value: active },
+    { id: 'newLeads', label: 'Novos nos últimos 7 dias', value: newLeads },
+    { id: 'stalledLeads', label: 'Sem atualização há 7 dias', value: stalled },
+  ].map((metric) => ({ ...metric, unit: 'count' }));
+  res.json({ success: true, data: { summary, retrievedAt: now, source: 'api' } });
+}));
+
+crmRouter.get('/aging', asyncHandler(async (req: Request, res: Response) => {
+  const now = Date.now();
+  const where = filteredLeads(req.user!.tenantId, req.user!.id, req.query.filters);
+  const ages = [
+    { id: '0-1', label: '0–1 dia', min: 0, max: 2 },
+    { id: '2-3', label: '2–3 dias', min: 2, max: 4 },
+    { id: '4-7', label: '4–7 dias', min: 4, max: 8 },
+    { id: '8-14', label: '8–14 dias', min: 8, max: 15 },
+    { id: '15+', label: '15+ dias', min: 15, max: null },
+  ];
+  const groups = await Promise.all(ages.map(({ min, max }) => prisma.lead.groupBy({
+    by: ['status'], where: { AND: [where, { updatedAt: {
+      lte: new Date(now - min * DAY), ...(max !== null ? { gt: new Date(now - max * DAY) } : {}),
+    } }] }, _count: { _all: true },
+  })));
+  const buckets = ages.flatMap((age, i) => (Object.keys(stages) as Stage[]).map(stage => ({
+    stageId: stage, stageName: stageNames[stage], bucketId: age.id, bucketLabel: age.label,
+    leadCount: (groups[i] ?? []).filter(row => stageForStatus(row.status) === stage).reduce((total, row) => total + row._count._all, 0),
+  })));
+  res.json({ success: true, data: { buckets, generatedAt: new Date(now) } });
+}));
+
+const eventTypes = new Map<string, string>([
+  ['CALL_MADE', 'call'], ['CALL_ANSWERED', 'call'], ['MEETING_SCHEDULED', 'meeting'],
+  ['MEETING_COMPLETED', 'meeting'], ['STATUS_CHANGED', 'status_change'],
+  ['WHATSAPP_SENT', 'message'], ['WHATSAPP_REPLIED', 'message'], ['EMAIL_SENT', 'message'],
+]);
+
+for (const route of ['/timeline', '/leads/:leadId/timeline']) {
+  crmRouter.get(route, asyncHandler(async (req: Request, res: Response) => {
+    const { tenantId, id } = req.user!;
+    const types = typeof req.query.types === 'string' ? req.query.types.split(',') : null;
+    const leadId = req.params.leadId;
+    const events = await prisma.leadActivity.findMany({
+      where: { tenantId, ...(leadId ? { leadId } : {}), lead: filteredLeads(tenantId, id, req.query.filters) },
+      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: 100,
+      select: { id: true, type: true, title: true, description: true, occurredAt: true },
     });
-  })
-);
+    const items = events.map(({ type, occurredAt, ...event }) => ({
+      ...event, type: eventTypes.get(type) ?? 'note', timestamp: occurredAt,
+    })).filter(event => !types || types.includes(event.type));
+    res.json({ success: true, data: leadId ? items : { items } });
+  }));
+}
 
-crmRouter.get(
-  '/aging',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const filters = parseFilters(req.query.filters);
-
-    const stages = [
-      { id: 'qualification', name: 'Qualificação' },
-      { id: 'proposal', name: 'Proposta' },
-      { id: 'negotiation', name: 'Negociação' },
-      { id: 'closed-won', name: 'Ganho' },
-      { id: 'closed-lost', name: 'Perdido' },
-    ];
-
-    const bucketDefinitions = [
-      { id: '0-1', label: '0-1 dia' },
-      { id: '2-3', label: '2-3 dias' },
-      { id: '4-7', label: '4-7 dias' },
-      { id: '8-14', label: '8-14 dias' },
-      { id: '15+', label: '15+ dias' },
-    ];
-
-    const buckets = stages.flatMap((stage, stageIndex) =>
-      bucketDefinitions.map((bucket, bucketIndex) => ({
-        stageId: stage.id,
-        stageName: stage.name,
-        bucketId: bucket.id,
-        bucketLabel: bucket.label,
-        leadCount: Math.max(0, 6 - stageIndex - bucketIndex),
-        potentialValue: 5000 + stageIndex * 1200 + bucketIndex * 800,
-        sampleLeadId: `lead-${stage.id}-${bucket.id}`,
-        sampleLeadName: `Lead ${stageIndex + 1}-${bucketIndex + 1}`,
-      }))
-    );
-
-    res.json({
-      success: true,
-      data: {
-        buckets,
-        generatedAt: new Date().toISOString(),
-        filters,
+for (const route of ['/tasks', '/leads/:leadId/tasks']) {
+  crmRouter.get(route, asyncHandler(async (req: Request, res: Response) => {
+    const { tenantId, id } = req.user!;
+    const leadId = req.params.leadId;
+    const where = { AND: [filteredLeads(tenantId, id, req.query.filters), ...(leadId ? [{ id: leadId }] : [])] };
+    const from = toDate(req.query.from);
+    const to = toDate(req.query.to);
+    const tasks = await prisma.contactTask.findMany({
+      where: {
+        tenantId,
+        dueAt: { not: null, ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) },
+        status: { not: 'CANCELLED' }, contact: { tenantId, leads: { some: where } },
+        OR: [{ assigneeId: null }, { assignee: { tenantId } }],
       },
+      orderBy: [{ dueAt: 'asc' }, { id: 'asc' }], take: 100,
+      select: { id: true, title: true, dueAt: true, status: true, assigneeId: true,
+        assignee: { select: { name: true } },
+        contact: { select: { fullName: true, leads: { where, select: { id: true }, take: 1 } } } },
     });
-  })
-);
-
-crmRouter.get(
-  '/timeline',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const filters = parseFilters(req.query.filters);
-    const types = typeof req.query.types === 'string' ? req.query.types.split(',') : undefined;
-
-    const items = [
-      {
-        id: 'evt-1',
-        type: 'note',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-        author: 'Você',
-        title: 'Contato registrado',
-        description: 'Lead adicionado manualmente ao CRM.',
-      },
-      {
-        id: 'evt-2',
-        type: 'call',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-        author: 'Você',
-        title: 'Chamada de qualificação',
-        description: 'Cliente interessado no plano Plus. Retorno agendado.',
-      },
-      {
-        id: 'evt-3',
-        type: 'status_change',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 90).toISOString(),
-        author: 'Equipe',
-        title: 'Status atualizado',
-        description: 'Lead movido para negociação.',
-      },
-      {
-        id: 'evt-4',
-        type: 'message',
-        timestamp: new Date(Date.now() - 1000 * 60 * 60 * 120).toISOString(),
-        author: 'WhatsApp',
-        title: 'Mensagem recebida',
-        description: 'Cliente solicitou detalhes adicionais sobre integração.',
-      },
-    ].filter((item) => (types && types.length > 0 ? types.includes(item.type) : true));
-
-    res.json({ success: true, data: { items, filters } });
-  })
-);
-
-crmRouter.get(
-  '/tasks',
-  requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const filters = parseFilters(req.query.filters);
-    const range = {
-      from: req.query.from ? new Date(req.query.from as string) : new Date(),
-      to: req.query.to ? new Date(req.query.to as string) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    };
-
-    const items = Array.from({ length: 6 }).map((_, index) => {
-      const dueDate = new Date(range.from.getTime() + index * 24 * 60 * 60 * 1000);
-      return {
-        id: `task-${index + 1}`,
-        title: index % 2 === 0 ? 'Agendar call de alinhamento' : 'Enviar follow-up',
-        dueDate: dueDate.toISOString(),
-        status: index === 0 ? 'overdue' : index % 3 === 0 ? 'completed' : 'pending',
-        ownerId: 'owner:me',
-        ownerName: 'Você',
-        leadId: `lead-${index + 1}`,
-        leadName: `Lead exemplo ${index + 1}`,
-      };
-    });
-
-    res.json({ success: true, data: { items, filters, range } });
-  })
-);
+    const items = tasks.map((task) => ({
+      id: task.id, title: task.title, dueDate: task.dueAt,
+      status: task.status === 'COMPLETED' ? 'completed' : task.dueAt! < new Date() ? 'overdue' : 'pending',
+      ownerId: task.assigneeId, ownerName: task.assignee?.name ?? null,
+      leadId: task.contact.leads[0]?.id ?? null, leadName: task.contact.fullName,
+    }));
+    res.json({ success: true, data: leadId ? items : { items } });
+  }));
+}
 
 export { crmRouter };

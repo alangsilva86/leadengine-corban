@@ -11,7 +11,6 @@ import {
 import { emitMessageUpdatedEvents } from '../../../../services/ticket-service';
 import { normalizeBaileysMessageStatus } from '../../services/baileys-status-normalizer';
 import type { RawBaileysUpsertEvent } from '../../services/baileys-raw-normalizer';
-import { buildIdempotencyKey, registerIdempotency } from '../../utils/webhook-idempotency';
 import { normalizeChatId } from '../../utils/poll-helpers';
 import { asRecord, readString } from '../../utils/webhook-parsers';
 import { parseTimestampToDate, sanitizeMetadataValue } from './helpers';
@@ -171,23 +170,6 @@ export const processMessagesUpdate = async (
       continue;
     }
 
-    const ackIdemKey = buildIdempotencyKey(
-      tenantCandidate ?? 'unknown',
-      context.instanceId ?? null,
-      messageId,
-      0
-    );
-    if (!registerIdempotency(ackIdemKey)) {
-      whatsappWebhookEventsCounter.inc({
-        origin: 'webhook',
-        tenantId: tenantCandidate ?? 'unknown',
-        instanceId: context.instanceId ?? 'unknown',
-        result: 'ignored',
-        reason: 'ack_duplicate',
-      });
-      continue;
-    }
-
     const statusValue =
       updateDetails?.status ?? updateRecord.status ?? (updateDetails as { ack?: unknown })?.ack;
     const normalizedStatus = normalizeBaileysMessageStatus(statusValue);
@@ -214,7 +196,7 @@ export const processMessagesUpdate = async (
         ticketId: readString(updateRecord.ticketId, ticketCandidate),
       });
 
-      if (!lookup) {
+      if (!lookup || (context.instanceId && lookup.instanceId !== context.instanceId)) {
         whatsappWebhookEventsCounter.inc({
           origin: 'webhook',
           tenantId: tenantCandidate ?? 'unknown',

@@ -3,6 +3,7 @@ import type { Message, SendMessageDTO, Ticket } from '../../../types/tickets';
 import {
   createMessage as storageCreateMessage,
   findMessageByExternalId as storageFindMessageByExternalId,
+  findMessageByIdempotencyKey,
   findTicketById as storageFindTicketById,
   updateMessage as storageUpdateMessage,
 } from '@ticketz/storage';
@@ -15,6 +16,8 @@ import {
 import { resolveTicketAgreementId } from '../shared/realtime';
 import { resolveProviderMessageId, resolveWhatsAppInstanceId, normalizeBrokerStatus } from '../shared/whatsapp';
 import { mergeEnrichmentMetadata } from '../enrichment';
+import { assertWhatsAppSendAllowed } from '../whatsapp-policy';
+import { hashIdempotentPayload } from '../../../utils/idempotency';
 import { logger } from '../../../config/logger';
 import { prisma } from '../../../lib/prisma';
 import { whatsappSocketReconnectsCounter } from '../../../lib/metrics';
@@ -193,10 +196,36 @@ export const sendMessage = async (
   let messageRecord: Message | null = null;
   let wasDuplicate = false;
   const direction = input.direction;
-  const inferredStatus = direction === 'INBOUND' ? 'SENT' : userId ? 'PENDING' : 'SENT';
+  const providerEcho = direction === 'OUTBOUND' && !userId && Boolean(input.externalId);
+  const shouldDispatch = ticket.channel === 'WHATSAPP' && direction === 'OUTBOUND' && !providerEcho;
+  const inferredStatus = shouldDispatch ? 'PENDING' : 'SENT';
   const messageMetadata = {
     ...(input.metadata ?? {}),
   } as Record<string, unknown>;
+  const idempotencyKey = input.idempotencyKey;
+  const intentHash = idempotencyKey ? hashIdempotentPayload({
+    tenantId, ticketId: input.ticketId, instanceId: effectiveInstanceId,
+    direction, content: input.content, type: input.type, caption: input.caption,
+    mediaUrl: input.mediaUrl, mediaFileName: input.mediaFileName, mediaMimeType: input.mediaMimeType,
+    quotedMessageId: input.quotedMessageId,
+    template: messageMetadata.template, location: messageMetadata.location, poll: messageMetadata.poll,
+    contact: messageMetadata.contact, contacts: messageMetadata.contacts,
+    previewUrl: messageMetadata.previewUrl, attachments: messageMetadata.attachments,
+  }) : null;
+  const findPriorSend = async () => {
+    if (!idempotencyKey) return null;
+    const prior = await findMessageByIdempotencyKey(tenantId, idempotencyKey);
+    if (prior && (prior.ticketId !== input.ticketId || prior.metadata?.outboundIntentHash !== intentHash)) {
+      throw new ConflictError('Esta chave de envio já foi usada com outro conteúdo.');
+    }
+    return prior;
+  };
+  if (idempotencyKey) {
+    const prior = await findPriorSend();
+    if (prior) return prior;
+    messageMetadata.outboundIntentHash = intentHash;
+  }
+  if (shouldDispatch) await assertWhatsAppSendAllowed({ tenantId, ticketId: ticket.id, contactId: ticket.contactId, instanceId: effectiveInstanceId });
   mergeEnrichmentMetadata(messageMetadata, input.metadata ?? null, ticket.metadata ?? null);
 
   if (effectiveInstanceId) {
@@ -275,9 +304,14 @@ export const sendMessage = async (
 
     messageRecord = await storageCreateMessage(tenantId, input.ticketId, createPayload);
   } catch (error) {
+    if (isUniqueViolation(error) && idempotencyKey) {
+      const prior = await findPriorSend();
+      if (prior) return prior;
+      throw error;
+    }
     if (isUniqueViolation(error) && input.externalId) {
       const existing = await storageFindMessageByExternalId(tenantId, input.externalId);
-      if (existing) {
+      if (existing && existing.ticketId === input.ticketId && (!existing.instanceId || existing.instanceId === effectiveInstanceId)) {
         const merged = await storageUpdateMessage(tenantId, existing.id, {
           metadata: messageMetadata,
           ...(effectiveInstanceId ? { instanceId: effectiveInstanceId } : {}),
@@ -410,7 +444,7 @@ export const sendMessage = async (
     return failed;
   };
 
-  if (ticket.channel === 'WHATSAPP' && direction === 'OUTBOUND') {
+  if (shouldDispatch) {
     const instanceId = effectiveInstanceId;
 
     if (!instanceId) {
@@ -420,7 +454,7 @@ export const sendMessage = async (
       });
       await markAsFailed({ message: 'whatsapp_instance_missing' });
     } else {
-      const contact = await prisma.contact.findUnique({ where: { id: ticket.contactId } });
+      const contact = await prisma.contact.findFirst({ where: { id: ticket.contactId, tenantId } });
       const phone = (contact?.primaryPhone ?? '').trim();
 
       if (!phone) {
@@ -435,6 +469,7 @@ export const sendMessage = async (
         const requestedInstanceId = instanceId;
         let dispatchInstanceId: string | null = null;
         let dispatchBrokerId: string | null = null;
+        let attemptedDispatch = false;
         try {
           const dispatchResolution = await resolveDispatchInstanceId(instanceId, overrideRecord ?? undefined);
           dispatchInstanceId = dispatchResolution.dispatchInstanceId;
@@ -496,6 +531,9 @@ export const sendMessage = async (
             transportPayload.contacts = contactsMetadata;
           }
 
+          // Recheck just before the network call to respect suppression changes during preparation.
+          await assertWhatsAppSendAllowed({ tenantId, ticketId: ticket.id, contactId: ticket.contactId, instanceId });
+          attemptedDispatch = true;
           const dispatchResult = await transport.sendMessage(
             dispatchInstanceId,
             transportPayload,
@@ -573,6 +611,10 @@ export const sendMessage = async (
               : typeof brokerError?.brokerStatus === 'number'
               ? brokerError.brokerStatus
               : undefined;
+          if (attemptedDispatch && (status === undefined || status >= 500)) {
+            logger.warn('Envio WhatsApp aguarda conciliação', { tenantId, ticketId: ticket.id, messageId: message.id, status });
+            return message;
+          }
           const rawErrorCode = transportError?.code ?? brokerError?.code;
           const canonicalCode =
             normalizedTransportError?.code ??

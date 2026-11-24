@@ -1,3 +1,4 @@
+import { getAuthToken } from '@/lib/auth.js';
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '@/lib/api.js';
 
@@ -66,6 +67,7 @@ const useInstanceLiveUpdates = ({ tenantId, enabled = true, onEvent }) => {
         // Garante nova instância e backoff razoável
         const socket = io(url, {
           path: '/socket.io',
+          auth: (callback) => callback({ token: getAuthToken() }),
           transports: ['websocket', 'polling'],
           withCredentials: true,
           reconnection: true,

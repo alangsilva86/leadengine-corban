@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Copy as CopyIcon, Edit3, Phone as PhoneIcon, MessageCircle, Mail, AlertTriangle } from 'lucide-react';
+import { Copy as CopyIcon, Phone as PhoneIcon, MessageCircle, Mail, AlertTriangle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
@@ -295,7 +295,6 @@ const ContactSummary = ({ ticket }) => {
 const ContactDetailsPanel = ({
   ticket,
   onContactFieldSave,
-  onEditContact,
   onCall,
   onSendSms,
   nextStepValue,
@@ -308,6 +307,7 @@ const ContactDetailsPanel = ({
   const email = ticket?.contact?.email ?? ticket?.metadata?.contactEmail ?? null;
   const rawPhone = identity.rawPhone ?? ticket?.contact?.phone ?? ticket?.metadata?.contactPhone ?? null;
   const displayName = ticket?.contact?.name ?? identity.displayName ?? '';
+  const contactId = ticket?.contact?.id ?? ticket?.contactId;
 
   const attachments = useMemo(() => {
     const source = ticket?.metadata?.attachments ?? ticket?.attachments ?? null;
@@ -317,7 +317,15 @@ const ContactDetailsPanel = ({
   }, [ticket?.attachments, ticket?.metadata?.attachments]);
 
   const contextSectionTitleId = useId();
-  const contextItems = useMemo(() => resolveTicketContext(ticket), [ticket]);
+  const contextItems = useMemo(() => {
+    const { instance, campaignId, campaignName, productType, strategy } = resolveTicketContext(ticket);
+    return [
+      { id: 'instance', label: 'Instância', value: instance },
+      { id: 'campaign', label: 'Campanha', value: campaignName ?? campaignId },
+      { id: 'product', label: 'Produto', value: productType },
+      { id: 'strategy', label: 'Estratégia', value: strategy },
+    ].filter(({ value }) => value);
+  }, [ticket]);
 
   return (
     <div className="flex w-full flex-col gap-4">
@@ -363,15 +371,16 @@ const ContactDetailsPanel = ({
               <Button type="button" variant="outline" size="sm" onClick={onSendSms}>
                 Enviar SMS
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onEditContact?.(ticket?.contact?.id ?? null)}
-              >
-                <Edit3 className="mr-2 h-3.5 w-3.5" aria-hidden />
-                Editar contato
-              </Button>
+              {contactId ? (
+                <>
+                  <Button asChild variant="outline" size="sm">
+                    <a href={`/contacts/${encodeURIComponent(contactId)}`}>Abrir contato</a>
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <a href={`/crm/opportunities?contactId=${encodeURIComponent(contactId)}`}>Ver oportunidades</a>
+                  </Button>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -390,6 +399,7 @@ const ContactDetailsPanel = ({
           Contexto do lead
         </h4>
         <div className="grid gap-3 sm:grid-cols-2">
+          {contextItems.length === 0 && <p className="text-sm text-muted-foreground">Sem dados vinculados.</p>}
           {contextItems.map((item) => (
             <div key={item.id} className="flex flex-col gap-1">
               <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">{item.label}</span>

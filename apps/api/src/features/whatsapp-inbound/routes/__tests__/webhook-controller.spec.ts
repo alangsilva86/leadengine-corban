@@ -13,7 +13,7 @@ import { PollVoteUpdateState } from '../../services/poll-vote-updater';
 import type { RawBaileysUpsertEvent } from '../../services/baileys-raw-normalizer';
 import { resetMetrics, renderMetrics } from '../../../../lib/metrics';
 import { refreshWhatsAppEnv } from '../../../../config/whatsapp';
-import { __testing as inboundQueueTesting } from '../../services/inbound-queue';
+import type { enqueueInboundWebhookJob } from '../../services/inbound-queue';
 import { asyncHandler } from '../../../../middleware/error-handler';
 import {
   createPollChoiceEventEnvelope,
@@ -29,6 +29,9 @@ const hoistedMocks = vi.hoisted(() => {
   const whatsAppInstanceUpdateMock = vi.fn();
   const ingestInboundWhatsAppMessageMock = vi.fn();
   const normalizeUpsertEventMock = vi.fn();
+  const findInstances = vi.fn();
+  const findActiveTenant = vi.fn();
+  const enqueueMock = vi.fn();
   const recordPollChoiceVoteMock = vi.fn();
   const recordEncryptedPollVoteMock = vi.fn();
   const syncPollChoiceStateMock = vi.fn();
@@ -47,7 +50,9 @@ const hoistedMocks = vi.hoisted(() => {
       findUnique: processedIntegrationEventFindUniqueMock,
       upsert: processedIntegrationEventUpsertMock,
     },
+    tenant: { findFirst: findActiveTenant },
     whatsAppInstance: {
+      findMany: findInstances,
       findFirst: whatsAppInstanceFindFirstMock,
       findUnique: whatsAppInstanceFindUniqueMock,
       update: whatsAppInstanceUpdateMock,
@@ -58,7 +63,7 @@ const hoistedMocks = vi.hoisted(() => {
   };
 
   return {
-    prisma,
+    prisma, findInstances, findActiveTenant, enqueueMock,
     processedIntegrationEventCreateMock,
     processedIntegrationEventFindUniqueMock,
     processedIntegrationEventUpsertMock,
@@ -86,6 +91,8 @@ vi.mock('../../../../lib/prisma', () => ({ prisma: hoistedMocks.prisma }));
 vi.mock('../../services/inbound-lead-service', () => ({
   ingestInboundWhatsAppMessage: hoistedMocks.ingestInboundWhatsAppMessageMock,
 }));
+
+vi.mock('../../services/inbound-queue', () => ({ enqueueInboundWebhookJob: hoistedMocks.enqueueMock }));
 
 vi.mock('../../services/baileys-raw-normalizer', () => ({
   normalizeUpsertEvent: hoistedMocks.normalizeUpsertEventMock,
@@ -148,12 +155,15 @@ const {
 
 
 const ORIGINAL_ENV = {
+  apiKey: process.env.WHATSAPP_WEBHOOK_API_KEY,
   enforce: process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE,
   secret: process.env.WHATSAPP_WEBHOOK_HMAC_SECRET,
   defaultInstanceId: process.env.WHATSAPP_DEFAULT_INSTANCE_ID,
 };
 
 const buildApp = () => {
+  process.env.WHATSAPP_WEBHOOK_API_KEY = 'unit-api-key';
+  refreshWhatsAppEnv();
   const app = express();
   app.use(
     express.json({
@@ -192,10 +202,36 @@ describe('buildPollVoteMessageContent', () => {
   });
 });
 
-afterEach(async () => {
-  await inboundQueueTesting.waitForIdle();
+const pendingJobs: Parameters<typeof enqueueInboundWebhookJob>[0][] = [];
+const consumeQueuedEvents = async () => {
+  for (const job of pendingJobs.splice(0)) {
+    await ingestInboundWhatsAppMessageMock(job.envelope);
+  }
+};
+
+beforeEach(() => {
+  hoistedMocks.enqueueMock.mockReset().mockImplementation(async (job) => { pendingJobs.push(job); });
+  hoistedMocks.findInstances.mockReset().mockImplementation(async ({ where }) => {
+    const id = where.OR[0].id;
+    if (id !== 'instance-1' && id !== 'instance-2') return [];
+    return [{ id, brokerId: null, tenantId: 'tenant-42' }];
+  });
+  hoistedMocks.findActiveTenant.mockReset().mockImplementation(async ({ where }) => ({ id: where.id }));
+});
+
+afterEach(() => {
+  pendingJobs.length = 0;
   vi.clearAllMocks();
-  inboundQueueTesting.resetQueue();
+  for (const [key, value] of [
+    ['WHATSAPP_WEBHOOK_API_KEY', ORIGINAL_ENV.apiKey],
+    ['WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE', ORIGINAL_ENV.enforce],
+    ['WHATSAPP_WEBHOOK_HMAC_SECRET', ORIGINAL_ENV.secret],
+    ['WHATSAPP_DEFAULT_INSTANCE_ID', ORIGINAL_ENV.defaultInstanceId],
+  ] as const) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  refreshWhatsAppEnv();
 });
 
 describe('WhatsApp webhook HMAC signature enforcement', () => {
@@ -238,7 +274,7 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
 
   it('rejects requests without signature when enforcement is enabled', async () => {
     const app = buildApp();
-    const response = await request(app).post('/api/webhooks/whatsapp').send({ event: 'ping' });
+    const response = await request(app).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send({ event: 'ping' });
 
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({ ok: false, code: 'INVALID_SIGNATURE' });
@@ -252,7 +288,7 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
     it('rejects requests with mismatching signature', async () => {
       const app = buildApp();
       const response = await request(app)
-        .post('/api/webhooks/whatsapp')
+        .post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key')
         .set(headerName, 'deadbeef')
         .send({ event: 'pong' });
 
@@ -266,13 +302,13 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
 
     it('accepts requests with valid signature', async () => {
       const app = buildApp();
-      const payload = { event: 'ok' };
+      const payload = { event: 'ok', instanceId: 'instance-1' };
       const raw = JSON.stringify(payload);
       const crypto = await import('node:crypto');
       const signature = crypto.createHmac('sha256', 'unit-secret').update(raw).digest('hex');
 
       const response = await request(app)
-        .post('/api/webhooks/whatsapp')
+        .post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key')
         .set(headerName, signature)
         .send(payload);
 
@@ -283,13 +319,13 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
 
   it('prefers the x-signature header over the legacy alias when both are provided', async () => {
     const app = buildApp();
-    const payload = { event: 'preferred' };
+    const payload = { event: 'preferred', instanceId: 'instance-1' };
     const raw = JSON.stringify(payload);
     const crypto = await import('node:crypto');
     const validSignature = crypto.createHmac('sha256', 'unit-secret').update(raw).digest('hex');
 
     const response = await request(app)
-      .post('/api/webhooks/whatsapp')
+      .post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key')
       .set('x-signature', validSignature)
       .set('x-signature-sha256', 'deadbeef')
       .send(payload);
@@ -300,13 +336,13 @@ describe('WhatsApp webhook HMAC signature enforcement', () => {
 
   it('rejects when the preferred header mismatches even if the legacy alias matches', async () => {
     const app = buildApp();
-    const payload = { event: 'mismatch' };
+    const payload = { event: 'mismatch', instanceId: 'instance-1' };
     const raw = JSON.stringify(payload);
     const crypto = await import('node:crypto');
     const validSignature = crypto.createHmac('sha256', 'unit-secret').update(raw).digest('hex');
 
     const response = await request(app)
-      .post('/api/webhooks/whatsapp')
+      .post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key')
       .set('x-signature', 'deadbeef')
       .set('x-signature-sha256', validSignature)
       .send(payload);
@@ -371,7 +407,7 @@ describe('WhatsApp webhook Baileys event logging', () => {
     triggerPollChoiceInboxNotificationMock.mockResolvedValue({ status: 'ok', persisted: true });
   });
 
-  it('persists a debug snapshot before ingesting normalized messages', async () => {
+  it('persists a job before acknowledging the webhook', async () => {
     const app = buildApp();
     const eventPayload = {
       event: 'WHATSAPP_MESSAGES_UPSERT',
@@ -397,52 +433,19 @@ describe('WhatsApp webhook Baileys event logging', () => {
       },
     };
 
-    const response = await request(app).post('/api/webhooks/whatsapp').send(eventPayload);
+    const response = await request(app).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send(eventPayload);
 
     expect(response.status).toBe(204);
 
-    await inboundQueueTesting.waitForIdle();
-    expect(processedIntegrationEventCreateMock).toHaveBeenCalledTimes(1);
-    expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
-
-    const logCallOrder = processedIntegrationEventCreateMock.mock.invocationCallOrder[0];
-    const ingestCallOrder = ingestInboundWhatsAppMessageMock.mock.invocationCallOrder[0];
-    expect(logCallOrder).toBeDefined();
-    expect(ingestCallOrder).toBeDefined();
-    expect(logCallOrder!).toBeLessThan(ingestCallOrder!);
-
-    const createArgs = processedIntegrationEventCreateMock.mock.calls[0]?.[0];
-    expect(createArgs).toMatchObject({
-      data: {
-        source: 'baileys:webhook',
-      },
-    });
-
-    const payload = (createArgs?.data as { payload?: unknown })?.payload as Record<string, unknown> | undefined;
-    expect(payload).toBeDefined();
-    expect(payload).toMatchObject({
+    expect(hoistedMocks.enqueueMock).toHaveBeenCalledWith(expect.objectContaining({
       tenantId: 'tenant-42',
       instanceId: 'instance-1',
       chatId: '5511999999999@s.whatsapp.net',
-      messageId: 'wamid-1',
-      direction: 'INBOUND',
-      normalizedIndex: 0,
-    });
-
-    const metadata = payload?.metadata as Record<string, unknown> | undefined;
-    expect(metadata).toMatchObject({
-      tenantId: 'tenant-42',
-      chatId: '5511999999999@s.whatsapp.net',
-    });
-    expect(typeof metadata?.source).toBe('string');
-    const brokerMetadata = metadata?.broker as Record<string, unknown> | undefined;
-    expect(brokerMetadata).toMatchObject({
-      messageType: 'notify',
-      messageContentType: 'text',
-    });
-
-    expect(typeof payload?.rawPayload).toBe('string');
-    expect(payload?.rawPayload as string).toContain('WHATSAPP_MESSAGES_UPSERT');
+    }));
+    expect(ingestInboundWhatsAppMessageMock).not.toHaveBeenCalled();
+    expect(processedIntegrationEventCreateMock).not.toHaveBeenCalled();
+    await consumeQueuedEvents();
+    expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
   });
 
   it('processes broker contract inbound message events with shared instrumentation', async () => {
@@ -468,28 +471,16 @@ describe('WhatsApp webhook Baileys event logging', () => {
       },
     } satisfies Record<string, unknown>;
 
-    const response = await request(app).post('/api/webhooks/whatsapp').send(eventPayload);
+    const response = await request(app).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send(eventPayload);
 
     expect(response.status).toBe(204);
-    await inboundQueueTesting.waitForIdle();
+    await consumeQueuedEvents();
 
     expect(normalizeUpsertEventMock).not.toHaveBeenCalled();
-    expect(processedIntegrationEventCreateMock).toHaveBeenCalledTimes(1);
+    expect(processedIntegrationEventCreateMock).not.toHaveBeenCalled();
     expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
 
-    const createArgs = processedIntegrationEventCreateMock.mock.calls[0]?.[0];
-    const debugPayload = (createArgs?.data as { payload?: unknown })?.payload as
-      | Record<string, unknown>
-      | undefined;
 
-    expect(debugPayload).toMatchObject({
-      tenantId: 'tenant-42',
-      instanceId: 'instance-1',
-      chatId: '5511999999999@s.whatsapp.net',
-      messageId: 'wamid-1',
-      direction: 'INBOUND',
-      normalizedIndex: 0,
-    });
 
     const [envelope] = ingestInboundWhatsAppMessageMock.mock.calls[0] ?? [];
     expect(envelope).toMatchObject({
@@ -533,27 +524,16 @@ describe('WhatsApp webhook Baileys event logging', () => {
       },
     } satisfies Record<string, unknown>;
 
-    const response = await request(app).post('/api/webhooks/whatsapp').send(eventPayload);
+    const response = await request(app).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send(eventPayload);
 
     expect(response.status).toBe(204);
-    await inboundQueueTesting.waitForIdle();
+    await consumeQueuedEvents();
 
     expect(normalizeUpsertEventMock).not.toHaveBeenCalled();
-    expect(processedIntegrationEventCreateMock).toHaveBeenCalledTimes(1);
+    expect(processedIntegrationEventCreateMock).not.toHaveBeenCalled();
     expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
 
-    const createArgs = processedIntegrationEventCreateMock.mock.calls[0]?.[0];
-    const debugPayload = (createArgs?.data as { payload?: unknown })?.payload as
-      | Record<string, unknown>
-      | undefined;
 
-    expect(debugPayload).toMatchObject({
-      tenantId: 'tenant-42',
-      instanceId: 'instance-2',
-      messageId: 'wamid-2',
-      direction: 'INBOUND',
-      normalizedIndex: 0,
-    });
 
     const metrics = await renderMetrics();
     expect(metrics).not.toMatch(/invalid_contract/);
@@ -582,13 +562,13 @@ describe('WhatsApp webhook Baileys event logging', () => {
       },
     } satisfies Record<string, unknown>;
 
-    const response = await request(app).post('/api/webhooks/whatsapp').send(eventPayload);
+    const response = await request(app).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send(eventPayload);
 
     expect(response.status).toBe(204);
-    await inboundQueueTesting.waitForIdle();
+    await consumeQueuedEvents();
 
     expect(normalizeUpsertEventMock).not.toHaveBeenCalled();
-    expect(processedIntegrationEventCreateMock).toHaveBeenCalledTimes(1);
+    expect(processedIntegrationEventCreateMock).not.toHaveBeenCalled();
     expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledTimes(1);
 
     const [envelope] = ingestInboundWhatsAppMessageMock.mock.calls[0] ?? [];
@@ -639,358 +619,63 @@ describe('WhatsApp webhook instance resolution', () => {
     return app;
   };
 
-  it('signals failure when ingestion does not persist message', async () => {
+  const envelope = (instanceId: string, tenantId: string) => ({
+    id: 'envelope-1',
+    event: 'MESSAGE_INBOUND',
+    instanceId,
+    tenantId,
+    timestamp: '2024-01-01T00:00:00.000Z',
+    payload: {
+      instanceId, direction: 'INBOUND', timestamp: '2024-01-01T00:00:00.000Z',
+      contact: { phone: '+5511999999999', name: 'Contato' },
+      message: { id: 'wamid-1', type: 'text', text: 'Olá' },
+      metadata: { contact: { remoteJid: '5511999999999@s.whatsapp.net' } },
+    },
+  });
+
+  it('returns 503 when the job cannot be written', async () => {
+    hoistedMocks.enqueueMock.mockRejectedValueOnce(new Error('Database unavailable'));
+    const response = await request(createInstanceApp()).post('/api/webhooks/whatsapp')
+      .set('x-api-key', 'unit-api-key').send(envelope('instance-1', 'tenant-42'));
+    expect(response.status).toBe(503);
+    expect(response.headers['retry-after']).toBe('5');
+    expect(ingestInboundWhatsAppMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the stored instance without changing its mapping', async () => {
+    hoistedMocks.findInstances.mockResolvedValueOnce([{ id: 'stored-instance', brokerId: 'broker-id', tenantId: 'tenant-42' }]);
+    const response = await request(createInstanceApp()).post('/api/webhooks/whatsapp')
+      .set('x-api-key', 'unit-api-key').send(envelope('broker-id', 'tenant-42'));
+    expect(response.status).toBe(204);
+    expect(hoistedMocks.enqueueMock).toHaveBeenCalledWith(expect.objectContaining({ instanceId: 'stored-instance', tenantId: 'tenant-42' }));
+    expect(prismaMock.whatsAppInstance.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects ambiguous instances and unknown broker IDs before enqueueing', async () => {
+    process.env.WHATSAPP_DEFAULT_INSTANCE_ID = 'instance-1';
     const app = createInstanceApp();
-    prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(null);
-
-    normalizeUpsertEventMock.mockReturnValueOnce({
-      normalized: [
-        {
-          messageIndex: 0,
-          messageId: 'wamid.fail',
-          sessionId: null,
-          brokerId: null,
-          tenantId: 'tenant-uuid',
-          messageType: 'text',
-          messageUpsertType: 'notify',
-          isGroup: false,
-          data: {
-            instanceId: 'instance-1',
-            tenantId: 'tenant-uuid',
-            direction: 'INBOUND',
-            metadata: {
-              instanceId: 'instance-1',
-              contact: { remoteJid: '5511999999999@s.whatsapp.net' },
-            },
-            message: {
-              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.fail' },
-            },
-            contact: { phone: '+55 11 99999-9999' },
-          },
-        },
-      ],
-    });
-
-    ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(false);
-
-    const response = await request(app)
-      .post('/api/webhooks/whatsapp')
-      .send({
-        event: 'WHATSAPP_MESSAGES_UPSERT',
-        instanceId: 'instance-1',
-        payload: {
-          messages: [
-            {
-              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.fail' },
-            },
-          ],
-        },
-      });
-
-    expect(response.status).toBe(204);
-
-    await inboundQueueTesting.waitForIdle();
-
-    const metrics = await renderMetrics();
-    expect(metrics).toMatch(
-      /whatsapp_webhook_events_total\{[^}]*reason="ingest_failed"[^}]*result="failed"[^}]*\} 1/
-    );
-  });
-
-  it('resolves stored instance metadata and persists missing broker id when matching UUID', async () => {
-    const app = createInstanceApp();
-    const uuid = 'broker-uuid-1234';
-    prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce({
-      id: 'stored-instance',
-      brokerId: null,
-      tenantId: 'tenant-uuid',
-    });
-    prismaMock.whatsAppInstance.update.mockResolvedValueOnce({});
-
-    normalizeUpsertEventMock.mockReturnValueOnce({
-      normalized: [
-        {
-          messageIndex: 0,
-          messageId: 'wamid.uuid',
-          sessionId: null,
-          brokerId: null,
-          tenantId: 'tenant-uuid',
-          messageType: 'text',
-          messageUpsertType: 'notify',
-          isGroup: false,
-          data: {
-            instanceId: 'stored-instance',
-            tenantId: 'tenant-uuid',
-            direction: 'INBOUND',
-            metadata: {
-              instanceId: 'stored-instance',
-              contact: { remoteJid: '5511999999999@s.whatsapp.net' },
-            },
-            message: {
-              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.uuid' },
-            },
-            contact: { phone: '+55 11 99999-9999' },
-          },
-        },
-      ],
-    });
-
-    ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(true);
-
-    const response = await request(app)
-      .post('/api/webhooks/whatsapp')
-      .send({
-        event: 'WHATSAPP_MESSAGES_UPSERT',
-        instanceId: uuid,
-        payload: {
-          messages: [
-            {
-              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.uuid' },
-            },
-          ],
-        },
-      });
-
-    expect(response.status).toBe(204);
-
-    await inboundQueueTesting.waitForIdle();
-
-    expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(1);
-    const lookupArgs = prismaMock.whatsAppInstance.findFirst.mock.calls[0]?.[0];
-    expect(lookupArgs).toBeTruthy();
-    expect(lookupArgs).toMatchObject({
-      where: {
-        OR: expect.arrayContaining([
-          expect.objectContaining({ id: uuid }),
-          expect.objectContaining({ brokerId: uuid }),
-        ]),
-      },
-      select: { id: true, brokerId: true, tenantId: true },
-    });
-
-    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledWith({
-      where: { id: 'stored-instance' },
-      data: { brokerId: uuid },
-    });
-
-    expect(ingestInboundWhatsAppMessageMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        instanceId: 'stored-instance',
-        tenantId: 'tenant-uuid',
-      })
-    );
-  });
-
-  it('reuses persisted instances for sequential Baileys events sharing the same broker id', async () => {
-    const app = buildApp();
-    const storedInstanceId = 'stored-instance';
-    const rawBrokerId = 'baileys-instance';
-    const tenantId = 'tenant-uuid';
-
-    prismaMock.whatsAppInstance.findFirst.mockReset();
-    prismaMock.whatsAppInstance.findFirst
-      .mockResolvedValueOnce({ id: storedInstanceId, brokerId: storedInstanceId, tenantId })
-      .mockResolvedValueOnce({ id: storedInstanceId, brokerId: rawBrokerId, tenantId });
-
-    prismaMock.whatsAppInstance.update.mockReset();
-    prismaMock.whatsAppInstance.update.mockResolvedValue({
-      id: storedInstanceId,
-      brokerId: rawBrokerId,
-      tenantId,
-    });
-
-    ingestInboundWhatsAppMessageMock.mockReset();
-    ingestInboundWhatsAppMessageMock.mockResolvedValue(true);
-
-    normalizeUpsertEventMock.mockReset();
-    normalizeUpsertEventMock.mockReturnValue({
-      normalized: [
-        {
-          messageIndex: 0,
-          messageId: 'wamid-1',
-          sessionId: null,
-          brokerId: rawBrokerId,
-          tenantId,
-          messageType: 'text',
-          messageUpsertType: 'notify',
-          isGroup: false,
-          data: {
-            instanceId: storedInstanceId,
-            tenantId,
-            direction: 'INBOUND',
-            metadata: {
-              instanceId: storedInstanceId,
-              tenantId,
-            },
-            message: {
-              key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid-1' },
-            },
-            contact: { phone: '+55 11 99999-9999' },
-          },
-        },
-      ],
-    });
-
-    const payload = {
-      event: 'WHATSAPP_MESSAGES_UPSERT',
-      instanceId: rawBrokerId,
-      tenantId,
-      payload: {
-        instanceId: rawBrokerId,
-        tenantId,
-        messages: [
-          {
-            key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid-1' },
-          },
-        ],
-      },
-    };
-
-    const firstResponse = await request(app).post('/api/webhooks/whatsapp').send(payload);
-    expect(firstResponse.status).toBe(204);
-    await inboundQueueTesting.waitForIdle();
-
-    expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(1);
-    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledTimes(1);
-    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledWith({
-      where: { id: storedInstanceId },
-      data: { brokerId: rawBrokerId },
-    });
-
-    expect(normalizeUpsertEventMock).toHaveBeenCalledTimes(1);
-    expect(normalizeUpsertEventMock.mock.calls[0]?.[1]).toMatchObject({
-      brokerId: rawBrokerId,
-      instanceId: storedInstanceId,
-      tenantId,
-    });
-
-    const firstEnvelope = ingestInboundWhatsAppMessageMock.mock.calls[0]?.[0];
-    expect(firstEnvelope?.instanceId).toBe(storedInstanceId);
-    expect(firstEnvelope?.tenantId).toBe(tenantId);
-    expect(firstEnvelope?.message?.metadata?.brokerId).toBe(rawBrokerId);
-
-    const secondResponse = await request(app).post('/api/webhooks/whatsapp').send(payload);
-    expect(secondResponse.status).toBe(204);
-    await inboundQueueTesting.waitForIdle();
-
-    expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(2);
-    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledTimes(1);
-
-    expect(normalizeUpsertEventMock).toHaveBeenCalledTimes(2);
-    expect(normalizeUpsertEventMock.mock.calls[1]?.[1]).toMatchObject({
-      brokerId: rawBrokerId,
-      instanceId: storedInstanceId,
-      tenantId,
-    });
-
-    const secondEnvelope = ingestInboundWhatsAppMessageMock.mock.calls[1]?.[0];
-    expect(secondEnvelope?.instanceId).toBe(storedInstanceId);
-    expect(secondEnvelope?.tenantId).toBe(tenantId);
-    expect(secondEnvelope?.message?.metadata?.brokerId).toBe(rawBrokerId);
-  });
-
-  it('falls back to the default instance id when direct broker reconciliation misses', async () => {
-    const app = buildApp();
-    const defaultInstanceId = 'default-instance';
-    const rawBrokerId = 'baileys-instance';
-    const tenantId = 'tenant-uuid';
-
-    process.env.WHATSAPP_DEFAULT_INSTANCE_ID = defaultInstanceId;
-    refreshWhatsAppEnv();
-
-    prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(null);
-    prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce({
-      id: defaultInstanceId,
-      brokerId: defaultInstanceId,
-      tenantId,
-    });
-
-    prismaMock.whatsAppInstance.update.mockResolvedValue({
-      id: defaultInstanceId,
-      brokerId: rawBrokerId,
-      tenantId,
-    });
-
-    ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(true);
-
-    normalizeUpsertEventMock.mockReturnValue({
-      normalized: [
-        {
-          messageIndex: 0,
-          messageId: 'wamid-legacy',
-          sessionId: null,
-          brokerId: rawBrokerId,
-          tenantId,
-          messageType: 'text',
-          messageUpsertType: 'notify',
-          isGroup: false,
-          data: {
-            instanceId: defaultInstanceId,
-            tenantId,
-            direction: 'INBOUND',
-            metadata: {
-              instanceId: defaultInstanceId,
-              tenantId,
-            },
-            message: {
-              key: { remoteJid: '5511888888888@s.whatsapp.net', id: 'wamid-legacy' },
-            },
-            contact: { phone: '+55 11 88888-8888' },
-          },
-        },
-      ],
-    });
-
-    const payload = {
-      event: 'WHATSAPP_MESSAGES_UPSERT',
-      instanceId: rawBrokerId,
-      tenantId,
-      payload: {
-        instanceId: rawBrokerId,
-        tenantId,
-        messages: [
-          {
-            key: { remoteJid: '5511888888888@s.whatsapp.net', id: 'wamid-legacy' },
-          },
-        ],
-      },
-    };
-
-    const response = await request(app).post('/api/webhooks/whatsapp').send(payload);
-    expect(response.status).toBe(204);
-
-    await inboundQueueTesting.waitForIdle();
-
-    expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledTimes(1);
-    expect(prismaMock.whatsAppInstance.findUnique).toHaveBeenCalledTimes(1);
-    expect(prismaMock.whatsAppInstance.findUnique).toHaveBeenCalledWith({
-      where: { id: defaultInstanceId },
-      select: { id: true, brokerId: true, tenantId: true },
-    });
-
-    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledTimes(1);
-    expect(prismaMock.whatsAppInstance.update).toHaveBeenCalledWith({
-      where: { id: defaultInstanceId },
-      data: { brokerId: rawBrokerId },
-    });
-
-    expect(normalizeUpsertEventMock).toHaveBeenCalledTimes(1);
-    expect(normalizeUpsertEventMock.mock.calls[0]?.[1]).toMatchObject({
-      brokerId: rawBrokerId,
-      instanceId: defaultInstanceId,
-      tenantId,
-    });
-
-    const envelope = ingestInboundWhatsAppMessageMock.mock.calls[0]?.[0];
-    expect(envelope?.instanceId).toBe(defaultInstanceId);
-    expect(envelope?.tenantId).toBe(tenantId);
-    expect(envelope?.message?.metadata?.brokerId).toBe(rawBrokerId);
+    for (const instances of [[], [
+      { id: 'one', tenantId: 'tenant-42' },
+      { id: 'two', tenantId: 'tenant-123' },
+    ]]) {
+      hoistedMocks.findInstances.mockResolvedValueOnce(instances);
+      const response = await request(app).post('/api/webhooks/whatsapp')
+        .set('x-api-key', 'unit-api-key').send(envelope('unknown', 'tenant-42'));
+      expect(response.status).toBe(403);
+    }
+    expect(hoistedMocks.enqueueMock).not.toHaveBeenCalled();
+    expect(prismaMock.whatsAppInstance.update).not.toHaveBeenCalled();
   });
 });
 
 describe('WhatsApp webhook poll choice events', () => {
   const pollChoiceEvents: Array<{ event: string; payload: unknown }> = [];
   let pollChoiceSubscriptions: Array<() => void> = [];
+
+  const storedPollInstance = (tenantId: string) => {
+    hoistedMocks.findInstances.mockResolvedValueOnce([{ id: 'stored-poll-instance', tenantId }]);
+    return 'stored-poll-instance';
+  };
 
   beforeEach(() => {
     process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE = 'false';
@@ -1113,7 +798,7 @@ describe('WhatsApp webhook poll choice events', () => {
     ingestInboundWhatsAppMessageMock.mockResolvedValueOnce(true);
 
     const response = await request(buildApp())
-      .post('/api/webhooks/whatsapp')
+      .post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key')
       .send({
         event: 'WHATSAPP_MESSAGES_UPSERT',
         instanceId: 'instance-1',
@@ -1121,7 +806,7 @@ describe('WhatsApp webhook poll choice events', () => {
       });
 
     expect(response.status).toBe(204);
-    await inboundQueueTesting.waitForIdle();
+    await consumeQueuedEvents();
     expect(upsertPollMetadataMock).toHaveBeenCalledWith(
       expect.objectContaining({
         pollId: 'poll-msg-1',
@@ -1180,9 +865,9 @@ describe('WhatsApp webhook poll choice events', () => {
     } as never);
 
     const response = await request(app)
-      .post('/api/webhooks/whatsapp')
+      .post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key')
       .send(
-        createPollChoiceEventEnvelope({
+        { ...createPollChoiceEventEnvelope({
           payload: {
             pollId: 'poll-1',
             voterJid: '5511999999999@s.whatsapp.net',
@@ -1200,7 +885,7 @@ describe('WhatsApp webhook poll choice events', () => {
             },
             timestamp: now,
           },
-        })
+        }), instanceId: storedPollInstance('tenant-123') }
       );
 
     expect(response.status).toBe(204);
@@ -1219,7 +904,7 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledWith({
       poll: expect.objectContaining({ pollId: 'poll-1' }),
       tenantId: 'tenant-123',
-      instanceId: null,
+      instanceId: 'stored-poll-instance',
       requestId: expect.any(String),
       state: expect.objectContaining({ pollId: 'poll-1' }),
       selectedOptions: expect.arrayContaining([{ id: 'opt-1', title: 'Option 1' }]),
@@ -1242,315 +927,68 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(completion?.payload).toMatchObject({ outcome: 'accepted', reason: 'poll_choice' });
   });
 
-  it('falls back to poll metadata tenant when vote context is missing', async () => {
-    const now = new Date().toISOString();
-    syncPollChoiceStateMock.mockResolvedValueOnce(false);
-    prismaMock.message.findFirst.mockResolvedValueOnce(null);
-    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce({
-      status: 'ok',
-      persisted: true,
-    });
-    recordPollChoiceVoteMock.mockResolvedValueOnce({
-      updated: true,
-      state: {
-        pollId: 'poll-metadata',
-        context: {},
-        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
-        votes: {
-          '5511999999999@s.whatsapp.net': {
-            optionIds: ['opt-1'],
-            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-            messageId: 'wamid-metadata',
-            timestamp: now,
-          },
-        },
-        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        updatedAt: now,
-      },
-      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-    });
-
-    getPollMetadataMock.mockResolvedValueOnce({ pollId: 'poll-metadata', tenantId: 'tenant-meta' });
-
-    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
-      id: 'message-db-id',
-      content: '[Mensagem recebida via WhatsApp]',
-      metadata: {},
-    } as never);
-
-    const app = buildApp();
-
-    const response = await request(app).post('/api/webhooks/whatsapp').send({
-      event: 'POLL_CHOICE',
-      payload: {
-        pollId: 'poll-metadata',
-        voterJid: '5511999999999@s.whatsapp.net',
-        messageId: 'wamid-metadata',
-        selectedOptionIds: ['opt-1'],
-        selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-        options: [{ id: 'opt-1', title: 'Option 1', selected: true }],
-        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        timestamp: now,
-      },
-    });
-
-    expect(response.status).toBe(204);
-    expect(getPollMetadataMock).toHaveBeenCalledWith('poll-metadata');
-    expect(storageUpdateMessageMock).toHaveBeenCalledWith(
-      'tenant-meta',
-      'message-db-id',
-      expect.objectContaining({
-        content: 'Option 1',
-      })
-    );
+  it('rejects a poll with an unrecognized instance before resolving metadata', async () => {
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp')
+      .set('x-api-key', 'unit-api-key').send({
+        event: 'POLL_CHOICE',
+        instanceId: 'unknown-poll-instance',
+        payload: { pollId: 'poll-legacy', voterJid: '5511999999999@s.whatsapp.net' },
+      });
+    expect(response.status).toBe(403);
+    expect(recordPollChoiceVoteMock).not.toHaveBeenCalled();
+    expect(getPollMetadataMock).not.toHaveBeenCalled();
+    expect(storageUpdateMessageMock).not.toHaveBeenCalled();
   });
 
-  it('retries poll vote message update after tenant metadata becomes available', async () => {
-    const now = new Date().toISOString();
-    syncPollChoiceStateMock.mockResolvedValueOnce(false);
-    prismaMock.message.findFirst.mockResolvedValueOnce(null);
-    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce({
-      status: 'ok',
-      persisted: true,
-    });
+  it('includes the poll creation message ID when locating the linked vote', async () => {
+    const pollId = 'poll-with-creation';
     recordPollChoiceVoteMock.mockResolvedValueOnce({
-      updated: true,
-      state: {
-        pollId: 'poll-retry',
-        context: {},
-        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
-        votes: {
-          '5511999999999@s.whatsapp.net': {
-            optionIds: ['opt-1'],
-            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-            messageId: 'wamid-retry',
-            timestamp: now,
-          },
-        },
-        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        updatedAt: now,
-      },
+      updated: true, state: createPollChoiceVoteState({ pollId }),
       selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
     });
-
-    getPollMetadataMock.mockResolvedValueOnce(null).mockResolvedValueOnce({
-      pollId: 'poll-retry',
-      tenantId: 'tenant-delayed',
-    });
-
-    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
-      id: 'message-db-id',
-      content: '[Mensagem recebida via WhatsApp]',
-      metadata: {},
-    } as never);
-
-    const schedulerSpy = vi.fn(async (callback, delayMs) => {
-      expect(delayMs).toBe(500);
-      await callback();
-    });
-
-    webhookControllerTesting.setPollVoteRetryScheduler(schedulerSpy);
-    webhookControllerTesting.pollChoice.setPollVoteRetryScheduler(schedulerSpy);
-
-    try {
-      const app = buildApp();
-
-      const response = await request(app).post('/api/webhooks/whatsapp').send({
-        event: 'POLL_CHOICE',
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp')
+      .set('x-api-key', 'unit-api-key')
+      .send({
+        event: 'POLL_CHOICE', instanceId: storedPollInstance('tenant-123'),
         payload: {
-          pollId: 'poll-retry',
-          voterJid: '5511999999999@s.whatsapp.net',
-          messageId: 'wamid-retry',
-          selectedOptionIds: ['opt-1'],
-          selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-          options: [{ id: 'opt-1', title: 'Option 1', selected: true }],
-          aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-          timestamp: now,
+          pollId, voterJid: '5511999999999@s.whatsapp.net', messageId: 'wamid-vote',
+          pollCreationMessageKey: { id: 'wamid-creation', remoteJid: '5511999999999@s.whatsapp.net' },
+          selectedOptionIds: ['opt-1'], selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
         },
       });
-
-      expect(response.status).toBe(204);
-      expect(schedulerSpy).toHaveBeenCalledTimes(1);
-      expect(getPollMetadataMock).toHaveBeenCalledWith('poll-retry');
-      expect(getPollMetadataMock).toHaveBeenCalledTimes(2);
-      expect(storageUpdateMessageMock).toHaveBeenCalledWith(
-        'tenant-delayed',
-        'message-db-id',
-        expect.objectContaining({
-          content: 'Option 1',
-        })
-      );
-    } finally {
-      webhookControllerTesting.resetPollVoteRetryScheduler();
-      webhookControllerTesting.pollChoice.resetPollVoteRetryScheduler();
-    }
-  });
-  /*
-  it('includes poll creation message id when updating vote messages', async () => {
-    const now = new Date().toISOString();
-    syncPollChoiceStateMock.mockResolvedValueOnce(false);
-    prismaMock.message.findFirst.mockResolvedValueOnce(null);
-    triggerPollChoiceInboxNotificationMock.mockResolvedValueOnce({
-      status: 'ok',
-      persisted: true,
-    });
-    recordPollChoiceVoteMock.mockResolvedValueOnce({
-      updated: true,
-      state: {
-        pollId: 'poll-with-creation',
-        options: [],
-        votes: {},
-      },
-    });
-
-    await webhookControllerTesting.dispatchPollChoiceEvent({
-      event: 'vote',
-      tenantId: 'tenant-id',
-      instanceId: 'instance-id',
-      timestamp: now,
-      payload: {
-        pollId: 'poll-with-creation',
-        vote: {
-          voterJid: 'user@wa',
-          optionIds: ['opt-1'],
-        },
-      },
-    });
-
-    expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalled();
-
+    expect(response.status).toBe(204);
+    expect(findPollVoteMessageCandidateMock).toHaveBeenCalledWith(expect.objectContaining({
+      pollId, identifiers: expect.arrayContaining(['wamid-creation']),
+    }));
   });
 
-  it('skips poll choice inbox notification when existing poll message is found', async () => {
+  it('skips the inbox notification when the linked message already has the selection', async () => {
     const now = new Date().toISOString();
-    syncPollChoiceStateMock.mockResolvedValueOnce(false);
+    const voterJid = '5511999999999@s.whatsapp.net';
     findPollVoteMessageCandidateMock.mockResolvedValueOnce({
       id: 'existing-poll-message-id',
-      metadata: {
-        poll: { selectedOptionIds: ['opt-1'] },
-        pollChoice: { vote: { optionIds: ['opt-1'] } },
-        pollVote: { selectedOptions: [{ id: 'opt-1', title: 'Option 1' }] },
-      },
-    } as never);
+      metadata: { poll: { selectedOptionIds: ['opt-1'] }, pollVote: { selectedOptions: [{ id: 'opt-1', title: 'Option 1' }] } },
+    });
     recordPollChoiceVoteMock.mockResolvedValueOnce({
       updated: true,
-      state: {
+      state: createPollChoiceVoteState({
         pollId: 'poll-existing',
-        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
-        votes: {
-          '5511999999999@s.whatsapp.net': {
-            optionIds: ['opt-1'],
-            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-            messageId: 'wamid-vote',
-            timestamp: now,
-          },
-        },
-        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-            messageId: 'wamid-poll-existing',
-            timestamp: now,
-          },
-        },
-        aggregates: {
-          totalVoters: 1,
-          totalVotes: 1,
-          optionTotals: { 'opt-1': 1 },
-        },
-        brokerAggregates: {
-          totalVoters: 1,
-          totalVotes: 1,
-          optionTotals: { 'opt-1': 1 },
-        },
-        updatedAt: now,
-      },
+        votes: { [voterJid]: { optionIds: ['opt-1'], selectedOptions: [{ id: 'opt-1', title: 'Option 1' }], messageId: 'wamid-vote', timestamp: now } },
+      }),
       selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
     });
-
-    const updatePollVoteMessageSpy = vi.fn().mockResolvedValue({
-      status: 'updated',
-      state: PollVoteUpdateState.Completed,
-      tenantId: 'tenant-321',
-      storageMessageId: 'storage-message',
-      messageId: 'storage-message',
-      candidates: [],
-      metadataChanged: true,
-      contentUpdated: true,
-      captionUpdated: false,
-    });
-    webhookControllerTesting.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
-    webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
-
-    try {
-      const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
-        event: 'POLL_CHOICE',
-        tenantId: 'tenant-321',
-        payload: {
-          pollId: 'poll-with-creation',
-          voterJid: '5511999999999@s.whatsapp.net',
-          messageId: 'wamid-vote',
-          pollCreationMessageKey: {
-            id: 'wamid-creation',
-            remoteJid: '5511999999999@s.whatsapp.net',
-          },
-          options: [{ id: 'opt-1', title: 'Option 1', selected: true }],
-          aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-          timestamp: now,
-        },
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp')
+      .set('x-api-key', 'unit-api-key')
+      .send({
+        ...createPollChoiceEventEnvelope({
+          payload: { pollId: 'poll-existing', voterJid, selectedOptionIds: ['opt-1'],
+            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }], timestamp: now },
+        }),
+        instanceId: storedPollInstance('tenant-123'),
       });
-
-      expect(response.status).toBe(204);
-      expect(updatePollVoteMessageSpy).toHaveBeenCalledTimes(1);
-      expect(updatePollVoteMessageSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          messageIds: expect.arrayContaining(['wamid-vote', 'wamid-creation', 'poll-with-creation']),
-        })
-      );
-    } finally {
-      webhookControllerTesting.resetUpdatePollVoteMessageHandler();
-      webhookControllerTesting.pollChoice.resetUpdatePollVoteMessageHandler();
-    }
-    storageFindMessageByExternalIdMock.mockResolvedValueOnce({
-      id: 'message-db-id',
-      content: '[Mensagem recebida via WhatsApp]',
-      metadata: {},
-    } as never);
-
-    const app = buildApp();
-
-    const response = await request(app).post('/api/webhooks/whatsapp').send({
-      event: 'POLL_CHOICE',
-      tenantId: 'tenant-123',
-      payload: {
-        pollId: 'poll-existing',
-        voterJid: '5511999999999@s.whatsapp.net',
-        messageId: 'wamid-poll-existing',
-        selectedOptionIds: ['opt-1'],
-        selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-        options: [
-          { id: 'opt-1', title: 'Option 1', selected: true },
-          { id: 'opt-2', title: 'Option 2', selected: false },
-        ],
-        aggregates: {
-          totalVoters: 1,
-          totalVotes: 1,
-          optionTotals: { 'opt-1': 1, 'opt-2': 0 },
-        },
-        timestamp: now,
-      },
-    });
-
     expect(response.status).toBe(204);
     expect(triggerPollChoiceInboxNotificationMock).not.toHaveBeenCalled();
-    expect(findPollVoteMessageCandidateMock).toHaveBeenCalledWith({
-      tenantId: 'tenant-123',
-      pollId: 'poll-existing',
-      chatId: '5511999999999@s.whatsapp.net',
-      identifiers: expect.arrayContaining(['poll-existing', 'wamid-poll-existing']),
-    });
   });
-  */
 
   it('triggers poll choice inbox notification when existing poll metadata is outdated', async () => {
     const now = new Date().toISOString();
@@ -1565,7 +1003,7 @@ describe('WhatsApp webhook poll choice events', () => {
     recordPollChoiceVoteMock.mockResolvedValueOnce({
       updated: true,
       state: {
-        pollId: 'poll-existing',
+        pollId: 'poll-outdated',
         options: [
           { id: 'opt-1', title: 'Option 1', index: 0 },
           { id: 'opt-2', title: 'Option 2', index: 1 },
@@ -1587,13 +1025,14 @@ describe('WhatsApp webhook poll choice events', () => {
 
     const app = buildApp();
 
-    const response = await request(app).post('/api/webhooks/whatsapp').send({
+    const response = await request(app).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send({
       event: 'POLL_CHOICE',
+      instanceId: storedPollInstance('tenant-123'),
       tenantId: 'tenant-123',
       payload: {
-        pollId: 'poll-existing',
+        pollId: 'poll-outdated',
         voterJid: '5511999999999@s.whatsapp.net',
-        messageId: 'wamid-poll-existing',
+        messageId: 'wamid-poll-outdated',
         selectedOptionIds: ['opt-1'],
         selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
         options: [
@@ -1613,7 +1052,7 @@ describe('WhatsApp webhook poll choice events', () => {
     expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledTimes(1);
     expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        poll: expect.objectContaining({ pollId: 'poll-existing' }),
+        poll: expect.objectContaining({ pollId: 'poll-outdated' }),
         selectedOptions: expect.arrayContaining([expect.objectContaining({ id: 'opt-1' })]),
       })
     );
@@ -1660,8 +1099,9 @@ describe('WhatsApp webhook poll choice events', () => {
     webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
-      const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+      const response = await request(buildApp()).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send({
         event: 'POLL_CHOICE',
+        instanceId: storedPollInstance('tenant-enc'),
         tenantId: 'tenant-enc',
         payload: {
           pollId: 'poll-enc',
@@ -1732,8 +1172,9 @@ describe('WhatsApp webhook poll choice events', () => {
     webhookControllerTesting.pollChoice.setUpdatePollVoteMessageHandler(updatePollVoteMessageSpy);
 
     try {
-      const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+      const response = await request(buildApp()).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send({
         event: 'POLL_CHOICE',
+        instanceId: storedPollInstance('tenant-enc'),
         tenantId: 'tenant-enc',
         payload: {
           pollId: 'poll-enc-failure',
@@ -1756,54 +1197,18 @@ describe('WhatsApp webhook poll choice events', () => {
     }
   });
 
-  it('records poll choice inbox failure when tenant context is unavailable', async () => {
-    const now = new Date().toISOString();
-    syncPollChoiceStateMock.mockResolvedValueOnce(false);
-    prismaMock.message.findFirst.mockResolvedValueOnce(null);
-    recordPollChoiceVoteMock.mockResolvedValueOnce({
-      updated: true,
-      state: createPollChoiceVoteState({
-        pollId: 'poll-missing-tenant',
-        options: [{ id: 'opt-1', title: 'Option 1', index: 0 }],
-        votes: {
-          '5511999999999@s.whatsapp.net': {
-            optionIds: ['opt-1'],
-            selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-            messageId: 'wamid-missing-tenant',
-            timestamp: now,
-          },
-        },
-        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        brokerAggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        updatedAt: now,
-      }),
-      selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
-    });
-
-    const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
-      event: 'POLL_CHOICE',
-      payload: {
-        pollId: 'poll-missing-tenant',
-        voterJid: '5511999999999@s.whatsapp.net',
-        selectedOptionIds: ['opt-1'],
-        options: [{ id: 'opt-1', title: 'Option 1', selected: true }],
-        aggregates: { totalVoters: 1, totalVotes: 1, optionTotals: { 'opt-1': 1 } },
-        timestamp: now,
-      },
-    });
-
-    expect(response.status).toBe(204);
+  it('rejects a poll whose tenant conflicts with the stored instance', async () => {
+    hoistedMocks.findInstances.mockResolvedValueOnce([{ id: 'instance-1', tenantId: 'tenant-42' }]);
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp')
+      .set('x-api-key', 'unit-api-key').send({
+        event: 'POLL_CHOICE',
+        instanceId: 'instance-1',
+        tenantId: 'tenant-123',
+        payload: { pollId: 'poll-conflict', voterJid: '5511999999999@s.whatsapp.net' },
+      });
+    expect(response.status).toBe(403);
+    expect(recordPollChoiceVoteMock).not.toHaveBeenCalled();
     expect(triggerPollChoiceInboxNotificationMock).not.toHaveBeenCalled();
-
-    const metrics = await renderMetrics();
-    expect(metrics).toMatch(
-      /whatsapp_webhook_events_total\{[^}]*reason="poll_choice_inbox_missing_tenant"[^}]*result="failed"[^}]*\} 1/
-    );
-    const failure = pollChoiceEvents.find((entry) => entry.event === 'pollChoiceCompleted');
-    expect(failure?.payload).toMatchObject({
-      outcome: 'failed',
-      reason: 'poll_choice_inbox_missing_tenant',
-    });
   });
 
   it('records poll choice inbox failure when synthetic message ingestion is rejected', async () => {
@@ -1834,8 +1239,9 @@ describe('WhatsApp webhook poll choice events', () => {
       selectedOptions: [{ id: 'opt-2', title: 'Option 2' }],
     });
 
-    const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send({
       event: 'POLL_CHOICE',
+      instanceId: storedPollInstance('tenant-abc'),
       tenantId: 'tenant-abc',
       payload: {
         pollId: 'poll-ingest-rejected',
@@ -1847,7 +1253,7 @@ describe('WhatsApp webhook poll choice events', () => {
       },
     });
 
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(503);
     expect(triggerPollChoiceInboxNotificationMock).toHaveBeenCalledTimes(1);
 
     const metrics = await renderMetrics();
@@ -1891,8 +1297,9 @@ describe('WhatsApp webhook poll choice events', () => {
       selectedOptions: [{ id: 'opt-1', title: 'Option' }],
     });
 
-    const response = await request(buildApp()).post('/api/webhooks/whatsapp').send({
+    const response = await request(buildApp()).post('/api/webhooks/whatsapp').set('x-api-key', 'unit-api-key').send({
       event: 'POLL_CHOICE',
+      instanceId: storedPollInstance('tenant-123'),
       payload: {
         pollId: 'poll-duplicate',
         voterJid: 'user@s.whatsapp.net',

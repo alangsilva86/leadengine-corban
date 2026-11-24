@@ -1,7 +1,6 @@
-import { Router, type Request, type Response } from 'express';
+import { Router } from 'express';
 
 import { asyncHandler } from '../middleware/error-handler';
-import { logger } from '../config/logger';
 import {
   handleVerification,
   handleWhatsAppWebhook,
@@ -29,21 +28,6 @@ integrationWebhooksRouter.post(
 
 router.get('/whatsapp', handleVerification);
 
-// POST /api/webhooks/email - Webhook de email
-router.post(
-  '/email',
-  asyncHandler(async (req: Request, res: Response) => {
-    const payload = req.body;
-
-    logger.info('Email webhook received', { payload });
-
-    // TODO: Processar webhook de email
-
-    res.json({
-      success: true,
-      message: 'Webhook processed',
-    });
-  })
-);
+router.post('/email', (_req, res) => res.sendStatus(501));
 
 export { router as webhooksRouter, integrationWebhooksRouter };

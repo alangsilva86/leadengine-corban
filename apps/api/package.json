@@ -4,7 +4,7 @@
   "description": "API REST para o sistema Ticketz-LeadEngine",
   "main": "dist/server.mjs",
   "scripts": {
-    "build": "echo '🔥🔥🔥 BUILD INICIADO - VERSÃO 2025-11-03-AI-AUTO-REPLY-FINAL 🔥🔥🔥' && tsup --clean && pnpm -w --filter @ticketz/storage run prisma:generate && echo '✅ BUILD COMPLETO - Verificando código...' && grep -c 'AI AUTO-REPLY' dist/server.mjs && echo '✅ CÓDIGO AI VERIFICADO NO DIST'",
+    "build": "tsup --clean",
     "start": "node dist/server.mjs",
     "dev": "tsx watch src/server.ts"
   },

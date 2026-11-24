@@ -9,7 +9,7 @@ const LeadTableView = () => {
   const { filters, selection } = useCrmViewState();
   const { selectIds, deselectIds, clearSelection, openLeadDrawer } = useCrmViewContext();
   const permissions = useCrmPermissions();
-  const { leads, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useCrmLeads(filters);
+  const { leads, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error, refetch } = useCrmLeads(filters);
 
   const selectedIds = useMemo(() => selection.selectedIds, [selection.selectedIds]);
 
@@ -30,6 +30,8 @@ const LeadTableView = () => {
     openLeadDrawer(leadId);
     emitCrmTelemetry('crm.lead.open', { source: 'list', leadId });
   };
+
+  if (error) return <p role="alert">Não foi possível carregar os leads. <button onClick={() => refetch()}>Tentar novamente</button></p>;
 
   return (
     <LeadTable

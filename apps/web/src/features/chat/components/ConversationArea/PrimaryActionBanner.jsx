@@ -343,6 +343,7 @@ const PrimaryActionBanner = ({
               detailsOpen && 'bg-surface-overlay-strong text-foreground',
             )}
             aria-label={detailsOpen ? 'Ocultar detalhes do contato' : 'Mostrar detalhes do contato'}
+            disabled={!ticket?.id}
             onClick={() => handleDetails({})}
           >
             <PanelRightOpen className="h-4 w-4" aria-hidden />

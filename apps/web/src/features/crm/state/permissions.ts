@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useAuth } from '@/features/auth/AuthProvider.jsx';
 
 type CrmRole = 'agent' | 'manager' | 'admin';
 
@@ -38,19 +39,9 @@ const ROLE_PERMISSIONS: Record<CrmRole, PermissionSet> = {
   },
 };
 
-const resolveRole = () => {
-  if (typeof window === 'undefined') {
-    return 'agent' as CrmRole;
-  }
-  const stored = window.localStorage.getItem('leadengine:crm:role');
-  if (stored === 'manager' || stored === 'admin' || stored === 'agent') {
-    return stored;
-  }
-  return 'agent';
-};
-
 export const useCrmPermissions = () => {
-  const role = resolveRole();
+  const { user } = useAuth();
+  const role: CrmRole = user?.role === 'ADMIN' ? 'admin' : user?.role === 'SUPERVISOR' ? 'manager' : 'agent';
   return useMemo(() => ({ role, ...ROLE_PERMISSIONS[role] }), [role]);
 };
 

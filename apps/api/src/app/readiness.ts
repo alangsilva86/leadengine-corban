@@ -1,5 +1,6 @@
 import type { Server } from 'http';
 
+import { disconnectDatabase } from '../lib/prisma';
 import type { Logger } from '../types/logger';
 
 type ReadinessState = {
@@ -89,7 +90,8 @@ export const registerGracefulShutdown = (options: {
       process.exit(1);
     }, shutdownTimeoutMs);
 
-    server.close((error) => {
+    server.close(async (error) => {
+      await disconnectDatabase();
       clearTimeout(forceExit);
       if (error) {
         logger.error('Error while closing HTTP server during shutdown', { ...context, error });

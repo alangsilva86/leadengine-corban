@@ -1,10 +1,9 @@
-import { DomainError, NotFoundError } from '@ticketz/core';
+import { ConflictError, DomainError, NotFoundError } from '@ticketz/core';
 import { PhoneNormalizationError } from '../../utils/phone';
 import type { CreateTicketDTO, Message, SendMessageDTO, Ticket, TicketStatus } from '../../types/tickets';
 import { prisma } from '../../lib/prisma';
 import { findTicketsByContact, findTicketById as storageFindTicketById } from '@ticketz/storage';
 import { normalizePhoneNumber } from '../../utils/phone';
-import { getIdempotentValue, hashIdempotentPayload, rememberIdempotency } from '../../utils/idempotency';
 import { assertWithinRateLimit } from '../../utils/rate-limit';
 import { assertCircuitClosed, buildCircuitBreakerKey } from '../../utils/circuit-breaker';
 import {
@@ -113,12 +112,6 @@ const OUTBOUND_TPS_OVERRIDES = (() => {
     });
 
   return map;
-})();
-
-const IDEMPOTENCY_TTL_MS = (() => {
-  const raw = process.env.OUTBOUND_IDEMPOTENCY_TTL_MS;
-  const parsed = Number.parseInt(raw ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 24 * 60 * 60 * 1000;
 })();
 
 type WhatsAppInstanceForDispatch = {
@@ -287,7 +280,7 @@ type SendOnTicketParams = {
 };
 
 type SendToContactParams = {
-  tenantId?: string;
+  tenantId: string;
   operatorId?: string;
   contactId: string;
   payload: NormalizedMessagePayload;
@@ -345,7 +338,7 @@ export const createWhatsAppSendModule = (deps: WhatsAppSendModuleDeps) => {
       throw new NotFoundError('Ticket', ticketId);
     }
 
-    const contact = await prisma.contact.findUnique({ where: { id: ticket.contactId } });
+    const contact = await prisma.contact.findFirst({ where: { id: ticket.contactId, tenantId: resolvedTenantId ?? undefined } });
 
     if (!contact) {
       throw new NotFoundError('Contact', ticket.contactId);
@@ -372,7 +365,7 @@ export const createWhatsAppSendModule = (deps: WhatsAppSendModuleDeps) => {
 
     const instance = await prisma.whatsAppInstance.findUnique({ where: { id: targetInstanceId } });
 
-    if (!instance) {
+    if (!instance || instance.tenantId !== resolvedTenantId) {
       throw new NotFoundError('WhatsAppInstance', targetInstanceId);
     }
 
@@ -381,20 +374,6 @@ export const createWhatsAppSendModule = (deps: WhatsAppSendModuleDeps) => {
     }
 
     const tenantForOperations = resolvedTenantId;
-    let payloadHash: string | null = null;
-    if (idempotencyKey) {
-      payloadHash = hashIdempotentPayload({
-        tenantId: tenantForOperations,
-        ticketId,
-        instanceId: targetInstanceId,
-        payload,
-      });
-
-      const cached = getIdempotentValue<OutboundMessageResponse>(tenantForOperations, idempotencyKey);
-      if (cached && cached.payloadHash === payloadHash) {
-        return cached.value;
-      }
-    }
 
     const circuitKey = buildCircuitBreakerKey(tenantForOperations, targetInstanceId);
     assertCircuitClosed(circuitKey);
@@ -468,10 +447,6 @@ export const createWhatsAppSendModule = (deps: WhatsAppSendModuleDeps) => {
 
     const response = buildOutboundResponse(message);
 
-    if (idempotencyKey && payloadHash) {
-      rememberIdempotency(tenantForOperations, idempotencyKey, payloadHash, response, IDEMPOTENCY_TTL_MS);
-    }
-
     return response;
   };
 
@@ -488,38 +463,21 @@ export const createWhatsAppSendModule = (deps: WhatsAppSendModuleDeps) => {
     }: SendToContactParams,
     dependencies: WhatsAppTransportDependencies = {}
   ): Promise<OutboundMessageResponse> => {
-    const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+    const contact = await prisma.contact.findFirst({ where: { id: contactId, tenantId } });
 
     if (!contact) {
       throw new NotFoundError('Contact', contactId);
     }
 
-    const resolvedTenantId = tenantId ?? contact.tenantId;
-
-    if (!resolvedTenantId) {
-      throw new NotFoundError('Contact', contactId);
-    }
+    const resolvedTenantId = tenantId;
 
     if (instanceId) {
       await resolveDispatchInstanceId(instanceId);
     }
 
-    let normalizedPhone = contact.primaryPhone?.trim() ?? null;
-
-    if (to) {
-      const normalized = normalizePhoneNumber(to);
-      normalizedPhone = normalized.e164;
-
-      if ((contact.primaryPhone ?? null) !== normalizedPhone) {
-        await prisma.contact.update({
-          where: { id: contactId },
-          data: {
-            primaryPhone: normalizedPhone,
-            lastInteractionAt: new Date(),
-          },
-        });
-        await syncContactPrimaryPhone(resolvedTenantId, contactId, normalizedPhone);
-      }
+    const normalizedPhone = contact.primaryPhone?.trim() ?? null;
+    if (to && normalizePhoneNumber(to).e164 !== normalizedPhone) {
+      throw new ConflictError('Atualize e confirme o telefone no cadastro do contato antes de enviar.');
     }
 
     if (!normalizedPhone) {

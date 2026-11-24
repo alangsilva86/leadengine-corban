@@ -57,13 +57,15 @@ const rawBasicToken =
       : undefined
   );
 
+const useRealData = /^(true|1|yes|on)$/i.test(process.env.USE_REAL_DATA?.trim() ?? '');
+
 let parsedConfig: z.infer<typeof ConfigSchema>;
 
 try {
   parsedConfig = ConfigSchema.parse({
-    baseUrl: rawBaseUrl,
+    baseUrl: useRealData ? rawBaseUrl : rawBaseUrl || 'http://127.0.0.1:1',
     creditBaseUrl: rawCreditBaseUrl,
-    basicToken: rawBasicToken,
+    basicToken: useRealData ? rawBasicToken : rawBasicToken || 'disabled',
     timeoutMs: process.env.LEAD_ENGINE_TIMEOUT_MS
       ? Number(process.env.LEAD_ENGINE_TIMEOUT_MS)
       : undefined,
@@ -82,7 +84,7 @@ export const leadEngineConfig = parsedConfig;
 logger.info('Lead Engine configuration normalised', {
   effectiveBaseUrl: leadEngineConfig.baseUrl,
   effectiveCreditBaseUrl: leadEngineConfig.creditBaseUrl || null,
-  tokenPreview: leadEngineConfig.basicToken ? `${leadEngineConfig.basicToken.slice(0, 6)}…` : null,
+  tokenConfigured: Boolean(rawBasicToken),
   timeoutMs: leadEngineConfig.timeoutMs,
   defaultStartDate: leadEngineConfig.defaultStartDate || null,
   defaultEndDate: leadEngineConfig.defaultEndDate || null,

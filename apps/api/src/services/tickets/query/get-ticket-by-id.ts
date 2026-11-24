@@ -22,7 +22,7 @@ export const getTicketById = async (
     metrics: Boolean(options.includeMetrics),
   };
 
-  const { conversations, contacts, leads, notes } = await resolveTicketHydrations(tenantId, [ticket], include);
+  const { conversations, contacts, leads, notes } = await resolveTicketHydrations(tenantId, [ticket], include, options.actorId);
   const stats = conversations.get(ticketId);
   const salesTimeline = await listTicketSalesEvents(tenantId, ticketId);
 

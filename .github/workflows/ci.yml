@@ -28,3 +28,80 @@ jobs:
           path: |
             apps/web/dist/reports/css-report.html
             apps/web/dist/reports/css-report.json
+  corban-pilot:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: ticketz_corban_acceptance
+          POSTGRES_USER: ticketz
+          POSTGRES_PASSWORD: ticketz-local-ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ticketz -d ticketz_corban_acceptance"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ticketz:ticketz-local-ci@127.0.0.1:5432/ticketz_corban_acceptance?schema=public
+      DATABASE_DIRECT_URL: postgresql://ticketz:ticketz-local-ci@127.0.0.1:5432/ticketz_corban_acceptance?schema=public
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: corban-disposable-ci-session-secret
+      POLL_METADATA_ENCRYPTION_KEY: corban-disposable-ci-poll-secret
+      ENABLE_DB_TESTS: 'false'
+      USE_REAL_DATA: 'false'
+      PORT: '4000'
+      FRONTEND_URL: http://127.0.0.1:5173
+      CORS_ALLOWED_ORIGINS: http://127.0.0.1:5173
+      VITE_API_URL: http://127.0.0.1:4000
+      VITE_WS_URL: ws://127.0.0.1:4000
+      WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE: 'true'
+      WHATSAPP_WEBHOOK_API_KEY: local-corban-acceptance-key
+      WHATSAPP_WEBHOOK_HMAC_SECRET: local-corban-acceptance-signature
+      CORBAN_ACCEPTANCE_ENABLED: '1'
+      CORBAN_ACCEPTANCE_WEBHOOK_KEY: local-corban-acceptance-key
+      CORBAN_ACCEPTANCE_WEBHOOK_SECRET: local-corban-acceptance-signature
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20.x' }
+      - run: corepack enable && corepack prepare pnpm@9.12.3 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run db:migrate:deploy
+      - run: pnpm exec tsx packages/storage/prisma/seed.ts
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Testes de sessão, usuários e webhook
+        env:
+          DATABASE_URL: ''
+          DATABASE_DIRECT_URL: ''
+        run: >-
+          pnpm --filter @ticketz/api exec vitest run --pool forks --maxWorkers=1 --minWorkers=1
+          src/health.test.ts src/routes/__tests__/auth.routes.spec.ts src/routes/__tests__/users.routes.spec.ts
+          src/features/whatsapp-inbound/routes/__tests__/webhook-controller.spec.ts
+      - name: Testes da aba de usuários
+        run: pnpm --filter web exec vitest run src/features/users/__tests__/UsersSettingsTab.test.tsx
+      - name: Aceitação com PostgreSQL e navegador
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd apps/api && exec node dist/server.mjs) > "$RUNNER_TEMP/corban-api.log" 2>&1 &
+          api_pid=$!
+          (cd apps/web && exec node node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 5173 --strictPort) > "$RUNNER_TEMP/corban-web.log" 2>&1 &
+          web_pid=$!
+          trap 'kill "$api_pid" "$web_pid" 2>/dev/null || true' EXIT
+          for url in http://127.0.0.1:4000/ready http://127.0.0.1:5173/login; do
+            curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 "$url" > /dev/null
+          done
+          pnpm exec playwright test tests/playwright/corban-pilot.spec.ts --workers=1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: corban-pilot-results
+          if-no-files-found: ignore
+          path: test-results/

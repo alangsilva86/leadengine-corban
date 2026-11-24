@@ -13,62 +13,21 @@ type TimelineFilters = {
   limit?: number;
 };
 
-const FALLBACK_EVENTS: LeadTimelineEvent[] = [
-  {
-    id: 'evt-1',
-    type: 'note',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-    author: 'Você',
-    title: 'Contato registrado',
-    description: 'Lead adicionado manualmente ao CRM.',
-  },
-  {
-    id: 'evt-2',
-    type: 'call',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    author: 'Você',
-    title: 'Chamada de qualificação',
-    description: 'Cliente interessado no plano Plus. Retorno agendado.',
-  },
-  {
-    id: 'evt-3',
-    type: 'status_change',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 90).toISOString(),
-    author: 'Equipe',
-    title: 'Status atualizado',
-    description: 'Lead movido para negociação.',
-  },
-  {
-    id: 'evt-4',
-    type: 'message',
-    timestamp: new Date(Date.now() - 1000 * 60 * 60 * 120).toISOString(),
-    author: 'WhatsApp',
-    title: 'Mensagem recebida',
-    description: 'Cliente solicitou detalhes adicionais sobre integração.',
-  },
-];
-
 const fetchTimeline = async (filters: CrmFilterState, options: TimelineFilters): Promise<LeadTimelineEvent[]> => {
-  try {
-    const params = new URLSearchParams({
-      filters: serializeCrmFilters(filters),
-    });
-    if (options?.eventTypes?.length) {
-      params.set('types', options.eventTypes.join(','));
-    }
-    if (options?.limit) {
-      params.set('limit', String(options.limit));
-    }
-
-    const response = await apiGet(`/api/crm/timeline?${params.toString()}`);
-    const payload = response?.data ?? response;
-    if (payload && typeof payload === 'object' && Array.isArray((payload as TimelineResponse).items)) {
-      return (payload as TimelineResponse).items;
-    }
-  } catch (error) {
-    console.warn('[CRM] Falha ao carregar timeline', error);
+  const params = new URLSearchParams({
+    filters: serializeCrmFilters(filters),
+  });
+  if (options?.eventTypes?.length) {
+    params.set('types', options.eventTypes.join(','));
   }
-  return FALLBACK_EVENTS;
+  if (options?.limit) {
+    params.set('limit', String(options.limit));
+  }
+
+  const response = await apiGet(`/api/crm/timeline?${params.toString()}`);
+  const payload = response?.data ?? response;
+  if (!Array.isArray(payload?.items)) throw new Error('Resposta inválida ao carregar dados do CRM.');
+  return payload.items;
 };
 
 export const useCrmTimeline = (filters: CrmFilterState, options: TimelineFilters) => {

@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import type { Tenant, User } from '@prisma/client';
+import { getJwtSecret } from '../config/auth';
 import { logger } from '../config/logger';
 import { prisma } from '../lib/prisma';
 
@@ -40,8 +41,6 @@ declare global {
 // =============================================================================
 
 export const AUTH_MVP_BYPASS_TENANT_ID = process.env.AUTH_MVP_TENANT_ID || 'demo-tenant';
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
-const ACCESS_TOKEN_TYPE = 'access';
 
 export function getPermissionsByRole(role: UserRole): string[] {
   const permissions: Record<UserRole, string[]> = {
@@ -87,19 +86,41 @@ export function getPermissionsByRole(role: UserRole): string[] {
   return permissions[role] || [];
 }
 
-type TokenPayload = jwt.JwtPayload & {
+export type SessionClaims = jwt.JwtPayload & {
   sub: string;
   tenantId: string;
-  permissions?: string[];
-  type?: 'access' | 'refresh';
+  sid: string;
+  exp: number;
+  type: 'access' | 'refresh';
 };
+
+export const verifySessionToken = (token: string, type: SessionClaims['type']): SessionClaims => {
+  const claims = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
+  if (
+    typeof claims === 'string' || claims.type !== type || typeof claims.exp !== 'number' ||
+    typeof claims.sub !== 'string' || !claims.sub || typeof claims.tenantId !== 'string' ||
+    !claims.tenantId || typeof claims.sid !== 'string' || !claims.sid
+  ) {
+    throw new jwt.JsonWebTokenError('Invalid session claims');
+  }
+  return claims as SessionClaims;
+};
+
+export const findActiveSession = (claims: SessionClaims) => prisma.authSession.findFirst({
+  where: {
+    id: claims.sid,
+    userId: claims.sub,
+    expiresAt: { gt: new Date() },
+    user: { tenantId: claims.tenantId, isActive: true, tenant: { isActive: true } },
+  },
+  include: { user: { include: { tenant: true } } },
+});
 
 const normalizeJsonObject = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
 const buildAuthenticatedUser = (
   user: User & { tenant?: Tenant | null },
-  permissions?: string[]
 ): AuthenticatedUser => {
   const authenticated: AuthenticatedUser = {
     id: user.id,
@@ -108,8 +129,7 @@ const buildAuthenticatedUser = (
     name: user.name,
     role: user.role as UserRole,
     isActive: user.isActive,
-    permissions:
-      permissions && permissions.length ? permissions : getPermissionsByRole(user.role as UserRole),
+    permissions: getPermissionsByRole(user.role as UserRole),
   };
 
   if (user.tenant) {
@@ -142,27 +162,11 @@ const respondForbidden = (res: Response, message = 'Acesso negado para este tena
     },
   });
 
-const fetchUserFromDatabase = async (userId: string, tenantId: string) =>
-  prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      tenant: true,
-    },
-  }).then((user) => {
-    if (!user) {
-      return null;
-    }
-
-    if (!user.isActive || user.tenantId !== tenantId) {
-      return null;
-    }
-
-    if (!user.tenant || !user.tenant.isActive) {
-      return null;
-    }
-
-    return user;
-  });
+export const authenticateAccessToken = async (token: string) => {
+  const claims = verifySessionToken(token, 'access');
+  const session = await findActiveSession(claims);
+  return session ? { user: buildAuthenticatedUser(session.user), claims } : null;
+};
 
 // =============================================================================
 // Middleware Functions
@@ -184,23 +188,12 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
       return respondUnauthorized(res);
     }
 
-    const payload = jwt.verify(token, JWT_SECRET) as TokenPayload;
-
-    if (!payload.sub || !payload.tenantId) {
-      return respondUnauthorized(res);
+    const session = await authenticateAccessToken(token);
+    if (!session) {
+      return respondUnauthorized(res, 'Sessão não encontrada ou revogada.');
     }
 
-    if (payload.type && payload.type !== ACCESS_TOKEN_TYPE) {
-      return respondForbidden(res, 'Token não é do tipo de acesso');
-    }
-
-    const userRecord = await fetchUserFromDatabase(payload.sub, payload.tenantId);
-
-    if (!userRecord) {
-      return respondUnauthorized(res, 'Usuário não encontrado ou inativo');
-    }
-
-    req.user = buildAuthenticatedUser(userRecord, payload.permissions);
+    req.user = session.user;
     next();
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {

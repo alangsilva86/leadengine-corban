@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Pencil, Share2, GitMerge } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button.jsx';
@@ -155,6 +155,9 @@ const ContactDetailsPage = () => {
             </Button>
           </div>
         </div>
+        {contact && <div><Button variant="outline" asChild>
+          <Link to={`/crm/opportunities?${new URLSearchParams({ contactId })}`}>Oportunidades do contato</Link>
+        </Button></div>}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex h-full flex-col">
           <TabsList>
             <TabsTrigger value="summary">Resumo</TabsTrigger>

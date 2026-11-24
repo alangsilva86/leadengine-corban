@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import type { Prisma, TicketNote as StoredNote } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 
 export type TicketNoteVisibility = 'private' | 'team' | 'public';
 
@@ -17,29 +18,21 @@ export type TicketNote = {
   metadata?: Record<string, unknown>;
 };
 
-type NoteBucket = Map<string, TicketNote[]>; // ticketId -> notes
-const notesByTenant = new Map<string, NoteBucket>();
+const formatNote = (note: StoredNote): TicketNote => ({
+  ...note,
+  visibility: note.visibility === 'private' || note.visibility === 'public' ? note.visibility : 'team',
+  metadata: note.metadata && typeof note.metadata === 'object' && !Array.isArray(note.metadata)
+    ? note.metadata as Record<string, unknown>
+    : {},
+});
 
-const getTenantBucket = (tenantId: string): NoteBucket => {
-  let bucket = notesByTenant.get(tenantId);
-  if (!bucket) {
-    bucket = new Map();
-    notesByTenant.set(tenantId, bucket);
-  }
-  return bucket;
-};
-
-export const listTicketNotes = async (tenantId: string, ticketId: string): Promise<TicketNote[]> => {
-  const tenantBucket = getTenantBucket(tenantId);
-  const notes = tenantBucket.get(ticketId) ?? [];
-  return notes
-    .slice()
-    .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1))
-    .map((note) => ({
-      ...note,
-      ...(note.tags ? { tags: [...note.tags] } : {}),
-      ...(note.metadata ? { metadata: { ...note.metadata } } : {}),
-    }));
+export const listTicketNotes = async (tenantId: string, ticketIds: string[], actorId?: string): Promise<TicketNote[]> => {
+  const notes = await prisma.ticketNote.findMany({
+    where: { tenantId, ticketId: { in: ticketIds }, ticket: { tenantId },
+      OR: [{ visibility: { in: ['team', 'public'] } }, ...(actorId ? [{ visibility: 'private', authorId: actorId }] : [])] },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+  return notes.map(formatNote);
 };
 
 type CreateNoteInput = {
@@ -55,30 +48,7 @@ type CreateNoteInput = {
 };
 
 export const createTicketNote = async (input: CreateNoteInput): Promise<TicketNote> => {
-  const now = new Date();
-  const note: TicketNote = {
-    id: randomUUID(),
-    tenantId: input.tenantId,
-    ticketId: input.ticketId,
-    authorId: input.authorId,
-    authorName: input.authorName ?? null,
-    authorAvatar: input.authorAvatar ?? null,
-    body: input.body,
-    visibility: input.visibility ?? 'team',
-    createdAt: now,
-    updatedAt: now,
-    ...(input.tags ? { tags: [...input.tags] } : {}),
-    ...(input.metadata ? { metadata: { ...input.metadata } } : {}),
-  };
-
-  const tenantBucket = getTenantBucket(input.tenantId);
-  const list = tenantBucket.get(input.ticketId) ?? [];
-  tenantBucket.set(input.ticketId, [...list, note]);
-
-  return {
-    ...note,
-    ...(note.tags ? { tags: [...note.tags] } : {}),
-    ...(note.metadata ? { metadata: { ...note.metadata } } : {}),
-  };
+  const { metadata, ...data } = input;
+  const note = await prisma.ticketNote.create({ data: { ...data, metadata: metadata as Prisma.InputJsonValue } });
+  return formatNote(note);
 };
-

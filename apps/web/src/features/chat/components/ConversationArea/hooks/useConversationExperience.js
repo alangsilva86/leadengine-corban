@@ -419,7 +419,7 @@ export const useConversationExperience = ({
         basePayload.defaultInstanceId = defaultInstanceId;
       }
 
-      onSendMessage?.(basePayload);
+      return onSendMessage?.(basePayload);
       aiReplyStream.reset();
     },
     [

@@ -26,6 +26,7 @@ model Tenant {
   updatedAt DateTime @updatedAt
 
   // Relations
+  opportunities       Opportunity[]
   users               User[]
   contacts            Contact[]
   contactInteractions ContactInteraction[]
@@ -110,6 +111,8 @@ model User {
   assignedTickets Ticket[]      @relation("TicketAssignee")
   sentMessages    Message[]     @relation("MessageSender")
   assignedLeads   Lead[]        @relation("LeadAssignee")
+  opportunities   Opportunity[]
+  sessions        AuthSession[]
   userQueues      UserQueue[]
   contactTasks    ContactTask[]
   ownedContacts   Contact[]     @relation("ContactOwner")
@@ -119,7 +122,21 @@ model User {
   assignedTasks   Task[]        @relation("TaskAssignee")
 
   @@unique([tenantId, email])
+  @@unique([tenantId, id])
   @@map("users")
+}
+
+model AuthSession {
+  id           String   @id
+  userId       String
+  refreshNonce String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("auth_sessions")
 }
 
 model Queue {
@@ -199,6 +216,7 @@ model Contact {
   tickets             Ticket[]
   messages            Message[]
   leads               Lead[]
+  opportunities       Opportunity[]
   contactInteractions ContactInteraction[]
   contactTasks        ContactTask[]
   tasks               Task[]
@@ -212,6 +230,7 @@ model Contact {
   @@index([tenantId, status])
   @@index([tenantId, ownerId])
   @@index([tenantId, lifecycleStage])
+  @@unique([tenantId, id])
   @@map("contacts")
 }
 
@@ -505,9 +524,30 @@ model Ticket {
   queue            Queue             @relation(fields: [queueId], references: [id], onDelete: Cascade)
   assignee         User?             @relation("TicketAssignee", fields: [userId], references: [id], onDelete: SetNull)
   messages         Message[]
+  notes            TicketNote[]
 
   @@index([tenantId, stage])
   @@map("tickets")
+}
+
+model TicketNote {
+  id           String   @id @default(cuid())
+  tenantId     String
+  ticketId     String
+  authorId     String
+  authorName   String?
+  authorAvatar String?
+  body         String
+  visibility   String   @default("team")
+  tags         String[] @default([])
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ticketId, createdAt])
+  @@map("ticket_notes")
 }
 
 model Message {
@@ -548,6 +588,25 @@ model Message {
   @@index([instanceId, createdAt], map: "messages_instance_created_idx")
   @@index([ticketId, createdAt], map: "messages_ticket_created_idx")
   @@map("messages")
+}
+
+model InboundWebhookJob {
+  sequence       BigInt   @id @default(autoincrement())
+  eventKey       String   @unique
+  tenantId       String
+  instanceId     String
+  conversationId String
+  payload        Json?
+  attempts       Int      @default(0)
+  nextAttemptAt  DateTime @default(now())
+  leaseUntil     DateTime?
+  completedAt    DateTime?
+  failedAt       DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([nextAttemptAt, sequence])
+  @@index([tenantId, instanceId, conversationId, sequence], map: "inbound_webhook_conversation_idx")
+  @@map("inbound_webhook_jobs")
 }
 
 enum InboundMediaJobStatus {
@@ -611,9 +670,62 @@ model Lead {
   campaign         Campaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   assignee         User?             @relation("LeadAssignee", fields: [userId], references: [id], onDelete: SetNull)
   activities       LeadActivity[]
+  opportunities    Opportunity[]
 
   @@unique([tenantId, contactId], map: "leads_tenant_contact_unique")
+  @@unique([tenantId, id])
   @@map("leads")
+}
+
+enum OpportunityStage {
+  QUALIFICATION
+  PREPARATION
+  FOLLOW_UP
+  CLOSED
+}
+
+model Opportunity {
+  id           String           @id @default(cuid())
+  tenantId     String
+  contactId    String
+  leadId       String?
+  ownerId      String
+  intentKey    String
+  agreementRef String
+  employmentRef String
+  productRef   String
+  stage        OpportunityStage @default(QUALIFICATION)
+  version      Int              @default(1)
+  nextAction   String
+  nextActionAt DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact    Contact @relation(fields: [tenantId, contactId], references: [tenantId, id], onDelete: Restrict)
+  lead       Lead? @relation(fields: [tenantId, leadId], references: [tenantId, id], onDelete: Restrict)
+  owner      User @relation(fields: [tenantId, ownerId], references: [tenantId, id], onDelete: Restrict)
+  activities OpportunityActivity[]
+
+  @@unique([tenantId, intentKey])
+  @@index([tenantId, contactId])
+  @@index([tenantId, stage, updatedAt])
+  @@map("opportunities")
+}
+
+model OpportunityActivity {
+  id            String           @id @default(cuid())
+  opportunityId String
+  version       Int
+  actorId       String
+  stage         OpportunityStage
+  reason        String
+  createdAt     DateTime         @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
+
+  @@unique([opportunityId, version])
+  @@map("opportunity_activities")
 }
 
 model Campaign {

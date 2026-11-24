@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { ForbiddenError, UnauthorizedError } from '@ticketz/core';
 
@@ -21,21 +22,12 @@ const readHeader = (req: Request, headerName: string): string | null => {
 };
 
 const isValidToken = (token: string): boolean => {
-  if (ENV_TOKEN) {
-    return token === ENV_TOKEN;
-  }
-
-  const normalized = token.trim().toLowerCase();
-  return normalized === 'true' || normalized === '1';
+  if (!ENV_TOKEN) return false;
+  const expected = Buffer.from(ENV_TOKEN);
+  const received = Buffer.from(token);
+  return expected.length === received.length && timingSafeEqual(expected, received);
 };
 
-/**
- * Middleware placeholder até que exista um provedor de autenticação
- * próprio para operadores da plataforma. Qualquer usuário autenticado
- * pode acessar as rotas administrativas desde que envie um header
- * `x-platform-admin-token`. Em ambientes locais, valores "true" ou "1"
- * habilitam o acesso; em produção recomenda-se definir PLATFORM_ADMIN_TOKEN.
- */
 export const requirePlatformAdmin = (req: Request, _res: Response, next: NextFunction): void => {
   if (!req.user) {
     return next(new UnauthorizedError('Authenticated user is required for platform admin access.'));

@@ -210,7 +210,7 @@ export const resolveRequestTenantId = (req: Request, requestedTenantId?: unknown
   const queryTenant = readTenantQuery(req);
   const userTenantId = normalizeTenantId(req.user?.tenantId);
 
-  const resolvedByHook = resolveTenantFromHooks({
+  const resolvedByHook = userTenantId ? null : resolveTenantFromHooks({
     req,
     requestedTenantId: payloadTenant,
     headerTenantId: headerTenant,

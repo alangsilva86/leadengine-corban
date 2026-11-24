@@ -1,352 +1,45 @@
-import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Link } from 'react-router-dom';
+import { useAuth } from '@/features/auth/AuthProvider.jsx';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Switch } from './ui/switch';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Badge } from './ui/badge';
-import {
-  Settings as SettingsIcon,
-  Bell,
-  Shield,
-  Database,
-  Webhook,
-  Key,
-  Mail,
-  Phone,
-  Globe,
-  Save,
-  Plus,
-} from 'lucide-react';
 import QueuesTab from './settings/QueuesTab.jsx';
 import AiSettingsTab from './settings/AiSettingsTab';
 import MetaSettingsTab from './settings/MetaSettingsTab';
 import UsersSettingsTab from '@/features/users/components/UsersSettingsTab';
 
 const Settings = () => {
-  const [settings, setSettings] = useState({
-    notifications: {
-      email: true,
-      sms: false,
-      push: true,
-      leadAlerts: true,
-    },
-    integrations: {
-      whatsapp: true,
-      email: false,
-      webhook: false,
-    },
-    security: {
-      twoFactor: false,
-      sessionTimeout: 30,
-      ipWhitelist: false,
-    }
-  });
-
-  const handleSettingChange = (category, key, value) => {
-    setSettings(prev => ({
-      ...prev,
-      [category]: {
-        ...prev[category],
-        [key]: value
-      }
-    }));
-  };
-
-  const handleSave = () => {
-    // Simular salvamento
-    alert('Configurações salvas com sucesso!');
-  };
-
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const managesWorkspace = isAdmin || user?.role === 'SUPERVISOR';
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Configurações</h1>
-          <p className="textForegroundMuted mt-1">Gerencie sua conta, equipe e integrações</p>
-        </div>
-        <Button onClick={handleSave}>
-          <Save className="w-4 h-4 mr-2" />
-          Salvar Alterações
-        </Button>
-      </div>
-
-      <Tabs defaultValue="general" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-10">
-          <TabsTrigger value="general">Geral</TabsTrigger>
-          <TabsTrigger value="users">Usuários</TabsTrigger>
-          <TabsTrigger value="notifications">Notificações</TabsTrigger>
-          <TabsTrigger value="integrations">Integrações</TabsTrigger>
-          <TabsTrigger value="meta">Meta</TabsTrigger>
-          <TabsTrigger value="ai">IA</TabsTrigger>
-          <TabsTrigger value="security">Segurança</TabsTrigger>
-          <TabsTrigger value="queues">Filas</TabsTrigger>
+    <div className="min-w-0 space-y-6">
+      <h1 className="text-2xl font-semibold">Configurações</h1>
+      <Tabs defaultValue="general" className="space-y-4">
+        <TabsList className="h-auto max-w-full flex-wrap justify-start">
+          <TabsTrigger value="general">Organização</TabsTrigger>
+          {managesWorkspace && <TabsTrigger value="users">Usuários</TabsTrigger>}
+          {managesWorkspace && <TabsTrigger value="queues">Filas</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="meta">Meta</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="ai">IA</TabsTrigger>}
         </TabsList>
-
-        {/* Configurações Gerais */}
-        <TabsContent value="general" className="space-y-6">
+        <TabsContent value="general">
           <Card>
-            <CardHeader>
-              <CardTitle>Informações da Empresa</CardTitle>
-              <CardDescription>Configure os dados básicos da sua organização</CardDescription>
-            </CardHeader>
+            <CardHeader><CardTitle>{user?.tenant?.name ?? 'Organização'}</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="company-name">Nome da Empresa</Label>
-                  <Input id="company-name" defaultValue="Corban Correspondente Bancário" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="company-cnpj">CNPJ</Label>
-                  <Input id="company-cnpj" defaultValue="12.345.678/0001-90" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="company-phone">Telefone</Label>
-                  <Input id="company-phone" defaultValue="(11) 99999-9999" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="company-email">E-mail</Label>
-                  <Input id="company-email" defaultValue="contato@corban.com" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="company-address">Endereço</Label>
-                <Input id="company-address" defaultValue="Rua das Flores, 123 - Centro, São Paulo - SP" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Configurações do Sistema</CardTitle>
-              <CardDescription>Personalize o comportamento da aplicação</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="timezone">Fuso Horário</Label>
-                  <select id="timezone" className="w-full p-2 border rounded-md">
-                    <option>America/Sao_Paulo</option>
-                    <option>America/Manaus</option>
-                    <option>America/Fortaleza</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="language">Idioma</Label>
-                  <select id="language" className="w-full p-2 border rounded-md">
-                    <option>Português (Brasil)</option>
-                    <option>English</option>
-                    <option>Español</option>
-                  </select>
-                </div>
-              </div>
+              <dl className="grid gap-4 sm:grid-cols-2">
+                <div><dt className="text-sm text-muted-foreground">Identificador</dt><dd>{user?.tenant?.slug ?? '—'}</dd></div>
+                <div><dt className="text-sm text-muted-foreground">Fuso horário</dt><dd>{user?.tenant?.settings?.timezone ?? 'America/Sao_Paulo'}</dd></div>
+                <div><dt className="text-sm text-muted-foreground">Conta</dt><dd className="break-all">{user?.email}</dd></div>
+              </dl>
+              <Button variant="outline" asChild><Link to="/channels">Consultar canais</Link></Button>
             </CardContent>
           </Card>
         </TabsContent>
-
-        <TabsContent value="ai" className="space-y-6">
-          <AiSettingsTab />
-        </TabsContent>
-
-        <TabsContent value="meta" className="space-y-6">
-          <MetaSettingsTab />
-        </TabsContent>
-
-        {/* Gerenciamento de Usuários */}
-        <TabsContent value="users" className="space-y-6">
-          <UsersSettingsTab />
-        </TabsContent>
-
-        {/* Notificações */}
-        <TabsContent value="notifications" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Preferências de Notificação</CardTitle>
-              <CardDescription>Configure como e quando você quer ser notificado</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Notificações por E-mail</Label>
-                    <p className="text-sm textForegroundMuted">Receba atualizações importantes por e-mail</p>
-                  </div>
-                  <Switch 
-                    checked={settings.notifications.email}
-                    onCheckedChange={(value) => handleSettingChange('notifications', 'email', value)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Notificações por SMS</Label>
-                    <p className="text-sm textForegroundMuted">Receba alertas urgentes por SMS</p>
-                  </div>
-                  <Switch 
-                    checked={settings.notifications.sms}
-                    onCheckedChange={(value) => handleSettingChange('notifications', 'sms', value)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Notificações Push</Label>
-                    <p className="text-sm textForegroundMuted">Receba notificações no navegador</p>
-                  </div>
-                  <Switch 
-                    checked={settings.notifications.push}
-                    onCheckedChange={(value) => handleSettingChange('notifications', 'push', value)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Alertas de Novos Leads</Label>
-                    <p className="text-sm textForegroundMuted">Seja notificado imediatamente sobre novos leads</p>
-                  </div>
-                  <Switch 
-                    checked={settings.notifications.leadAlerts}
-                    onCheckedChange={(value) => handleSettingChange('notifications', 'leadAlerts', value)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Integrações */}
-
-        <TabsContent value="integrations" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Integrações Ativas</CardTitle>
-              <CardDescription>Gerencie suas conexões com serviços externos</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="border rounded-lg p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-5 h-5 textStatusWhatsapp" />
-                      <span className="font-medium">WhatsApp Business</span>
-                    </div>
-                    <Badge variant="default">Conectado</Badge>
-                  </div>
-                  <p className="text-sm textForegroundMuted">Receba e envie mensagens via WhatsApp</p>
-                  <Button variant="outline" size="sm">Configurar</Button>
-                </div>
-
-                <div className="border rounded-lg p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-5 h-5 text-blue-600" />
-                      <span className="font-medium">E-mail Marketing</span>
-                    </div>
-                    <Badge variant="secondary">Desconectado</Badge>
-                  </div>
-                  <p className="text-sm textForegroundMuted">Integre com plataformas de e-mail marketing</p>
-                  <Button variant="outline" size="sm">Conectar</Button>
-                </div>
-
-                <div className="border rounded-lg p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Webhook className="w-5 h-5 text-purple-600" />
-                      <span className="font-medium">Webhooks</span>
-                    </div>
-                    <Badge variant="secondary">Desconectado</Badge>
-                  </div>
-                  <p className="text-sm textForegroundMuted">Envie dados para sistemas externos</p>
-                  <Button variant="outline" size="sm">Configurar</Button>
-                </div>
-
-                <div className="border rounded-lg p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Database className="w-5 h-5 text-orange-600" />
-                      <span className="font-medium">CRM Externo</span>
-                    </div>
-                    <Badge variant="secondary">Desconectado</Badge>
-                  </div>
-                  <p className="text-sm textForegroundMuted">Sincronize com seu CRM atual</p>
-                  <Button variant="outline" size="sm">Conectar</Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Segurança */}
-        <TabsContent value="security" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Configurações de Segurança</CardTitle>
-              <CardDescription>Proteja sua conta e dados</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Autenticação de Dois Fatores</Label>
-                    <p className="text-sm textForegroundMuted">Adicione uma camada extra de segurança</p>
-                  </div>
-                  <Switch 
-                    checked={settings.security.twoFactor}
-                    onCheckedChange={(value) => handleSettingChange('security', 'twoFactor', value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="session-timeout">Timeout de Sessão (minutos)</Label>
-                  <Input 
-                    id="session-timeout" 
-                    type="number" 
-                    value={settings.security.sessionTimeout}
-                    onChange={(e) => handleSettingChange('security', 'sessionTimeout', parseInt(e.target.value))}
-                    className="w-32"
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>Lista Branca de IPs</Label>
-                    <p className="text-sm textForegroundMuted">Restrinja acesso a IPs específicos</p>
-                  </div>
-                  <Switch 
-                    checked={settings.security.ipWhitelist}
-                    onCheckedChange={(value) => handleSettingChange('security', 'ipWhitelist', value)}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Chaves de API</CardTitle>
-              <CardDescription>Gerencie suas chaves de acesso à API</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 border rounded-lg">
-                  <div>
-                    <p className="font-medium">Chave Principal</p>
-                    <p className="text-sm textForegroundMuted">tk_live_••••••••••••••••</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm">Regenerar</Button>
-                    <Button variant="outline" size="sm">Copiar</Button>
-                  </div>
-                </div>
-                <Button variant="outline">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Nova Chave de API
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="queues" className="space-y-6">
-          <QueuesTab />
-        </TabsContent>
+        {managesWorkspace && <TabsContent value="users"><UsersSettingsTab currentUserId={user.id} canManage={isAdmin} /></TabsContent>}
+        {managesWorkspace && <TabsContent value="queues"><QueuesTab /></TabsContent>}
+        {isAdmin && <TabsContent value="meta"><MetaSettingsTab /></TabsContent>}
+        {isAdmin && <TabsContent value="ai"><AiSettingsTab /></TabsContent>}
       </Tabs>
     </div>
   );

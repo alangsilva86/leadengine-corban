@@ -1,3 +1,4 @@
+import { getAuthToken } from '@/lib/auth.js';
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -44,6 +45,7 @@ export const useContactsLiveUpdates = ({ contactId, enabled = true } = {}) => {
 
         const socket = io(resolveSocketUrl(), {
           path: '/socket.io',
+          auth: (callback) => callback({ token: getAuthToken() }),
           transports: ['websocket', 'polling'],
           autoConnect: true,
         });

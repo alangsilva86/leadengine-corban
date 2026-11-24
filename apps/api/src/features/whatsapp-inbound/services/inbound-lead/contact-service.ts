@@ -159,10 +159,6 @@ export const ensureContact = async (
     customFields.registrations = [];
   }
 
-  if (!('consent' in customFields)) {
-    customFields.consent = { granted: true, base: 'legitimate_interest', grantedAt: interactionIso };
-  }
-
   const parseTimestamp = (value: unknown): number | null => {
     if (typeof value === 'string') {
       const parsed = Date.parse(value);

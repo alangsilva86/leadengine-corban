@@ -4,9 +4,7 @@ import { logger } from '../config/logger';
 import { prisma } from '../lib/prisma';
 import { toSlug } from '../lib/slug';
 import { getCampaignMetrics } from '@ticketz/storage';
-import { getUseRealDataFlag } from '../config/feature-flags';
 import type { CampaignDTO, CampaignWarning } from '../routes/campaigns.types';
-import { fetchLeadEngineCampaigns, type LeadEngineCampaignFilters } from './campaigns-upstream';
 import {
   type CampaignQueryFilters,
   type CampaignStatus,
@@ -18,7 +16,6 @@ import {
 } from '../routes/campaigns.validators';
 
 const LOG_CONTEXT = '[/api/campaigns]';
-const UPSTREAM_TIMEOUT_MS = 1500;
 
 const createEmptyRawMetrics = () =>
   ({
@@ -79,41 +76,6 @@ const readMetadata = (metadata: CampaignMetadata): Record<string, unknown> => {
   return {};
 };
 
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const error = new Error(`Operation timed out after ${timeoutMs}ms`);
-      error.name = 'TimeoutError';
-      reject(error);
-    }, timeoutMs);
-
-    promise
-      .then((value) => {
-        clearTimeout(timer);
-        resolve(value);
-      })
-      .catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-  });
-
-const toFixedNumber = (input: number | null, fractionDigits = 2): number | null => {
-  if (input === null) {
-    return null;
-  }
-  return Number(input.toFixed(fractionDigits));
-};
-
-const normalizeTenantSlug = (value: string | null | undefined): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const slug = toSlug(value, '');
-  return slug.length > 0 ? slug : undefined;
-};
-
 const buildCampaignHistoryEntry = (action: string, actorId: string, details?: Record<string, unknown>) => ({
   action,
   by: actorId,
@@ -171,7 +133,7 @@ const computeCampaignMetrics = (
 ): CampaignDTO['metrics'] => {
   const budget = readNumericField(metadata, 'budget');
   const cplTarget = readNumericField(metadata, 'cplTarget');
-  const cpl = budget !== null && rawMetrics.total > 0 ? toFixedNumber(budget / rawMetrics.total) : null;
+  const cpl = null;
 
   return {
     ...rawMetrics,
@@ -383,118 +345,8 @@ export const listCampaigns = async ({
     storeFilters.instanceId = instanceId;
   }
 
-  const storePromise = loadCampaignsFromStore(storeFilters);
-  storePromise.catch((error) => {
-    logger.error(`${LOG_CONTEXT} failed to preload campaigns from store`, {
-      ...logContext,
-      error: toSafeError(error),
-    });
-  });
-
-  let upstreamFailed = false;
-  let upstreamTimeout = false;
-
-  if (getUseRealDataFlag()) {
-    logger.info(`${LOG_CONTEXT} attempting upstream sync`, {
-      ...logContext,
-      targetStatus: statuses.join(','),
-    });
-
-    try {
-      const upstreamFilters: LeadEngineCampaignFilters = {
-        tenantId,
-        status: statuses.join(','),
-        requestId,
-      };
-
-      if (agreementId) {
-        upstreamFilters.agreementId = agreementId;
-      }
-
-      if (productType) {
-        upstreamFilters.productType = productType;
-      }
-
-      if (marginType) {
-        upstreamFilters.marginType = marginType;
-      }
-
-      if (strategy) {
-        upstreamFilters.strategy = strategy;
-      }
-
-      if (tags.length > 0) {
-        upstreamFilters.tags = tags.join(',');
-      }
-
-      const items = await withTimeout(
-        fetchLeadEngineCampaigns(upstreamFilters),
-        UPSTREAM_TIMEOUT_MS
-      );
-
-      logger.info(`${LOG_CONTEXT} upstream responded successfully`, {
-        ...logContext,
-        source: 'upstream',
-        count: items.length,
-      });
-
-      return { items, meta: { source: 'upstream', upstreamFallback: false } };
-    } catch (upstreamError) {
-      upstreamFailed = true;
-      const upstreamStatus = (upstreamError as { status?: number }).status;
-      upstreamTimeout = upstreamError instanceof Error && upstreamError.name === 'TimeoutError';
-
-      if (upstreamStatus === 404) {
-        logger.info(`${LOG_CONTEXT} upstream retornou 404 (sem campanhas)`, logContext);
-        return { items: [], meta: { source: 'upstream', upstreamFallback: false } };
-      }
-
-      if (upstreamTimeout) {
-        logger.warn(`${LOG_CONTEXT} upstream fetch timed out`, {
-          ...logContext,
-          timeoutMs: UPSTREAM_TIMEOUT_MS,
-          error: toSafeError(upstreamError),
-        });
-      } else if (typeof upstreamStatus === 'number' && upstreamStatus >= 500) {
-        logger.error(`${LOG_CONTEXT} upstream failure`, {
-          ...logContext,
-          upstreamStatus,
-          error: toSafeError(upstreamError),
-        });
-      } else if (typeof upstreamStatus === 'number' && upstreamStatus >= 400) {
-        logger.warn(`${LOG_CONTEXT} upstream returned client error, falling back to store`, {
-          ...logContext,
-          upstreamStatus,
-          error: toSafeError(upstreamError),
-        });
-      } else {
-        logger.error(`${LOG_CONTEXT} erro inesperado ao consultar upstream`, {
-          ...logContext,
-          error: toSafeError(upstreamError),
-        });
-      }
-
-      logger.warn(`${LOG_CONTEXT} falling back to local store after upstream error`, {
-        ...logContext,
-        upstreamStatus: upstreamStatus ?? null,
-        timeout: upstreamTimeout,
-      });
-    }
-  }
-
-  const { items, warnings } = await storePromise;
-
-  const result: ListCampaignsResult = {
-    items,
-    ...(warnings ? { warnings } : {}),
-    meta: {
-      source: upstreamFailed ? 'store-fallback' : 'store',
-      upstreamFallback: upstreamFailed,
-      upstreamTimeout,
-    },
-  };
-
-  return result;
+  const { items, warnings } = await loadCampaignsFromStore(storeFilters);
+  return { items, ...(warnings ? { warnings } : {}), meta: { source: 'store', upstreamFallback: false } };
 };
 
 export interface CreateCampaignInput {
@@ -543,7 +395,7 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<Create
   const rawAgreementName = normalizeClassificationValue(input.agreementName);
   const resolvedAgreementName = rawAgreementName ?? null;
   const rawInstanceId = typeof input.instanceId === 'string' ? input.instanceId.trim() : '';
-  const resolvedInstanceId = rawInstanceId || 'alan';
+  const resolvedInstanceId = rawInstanceId;
   const rawBrokerIdInput = typeof input.brokerId === 'string' ? input.brokerId.trim() : '';
   const resolvedBrokerId = rawBrokerIdInput || null;
   const identifierCandidates = Array.from(
@@ -555,9 +407,6 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<Create
   const resolvedName = ensureName(providedName, resolvedAgreementName || `Campanha ${Date.now()}`);
   const budget = typeof input.budget === 'number' ? input.budget : undefined;
   const cplTarget = typeof input.cplTarget === 'number' ? input.cplTarget : undefined;
-  const schedule = input.schedule ?? { type: 'immediate' };
-  const channel = typeof input.channel === 'string' && input.channel.length > 0 ? input.channel : 'whatsapp';
-  const audienceCount = input.audienceCount;
   const productType = input.productType || 'generic';
   const marginType = input.marginType ?? 'percentage';
   const marginValue = input.marginValue;
@@ -572,275 +421,16 @@ export const createCampaign = async (input: CreateCampaignInput): Promise<Create
   }
 
   if (getSafeMode()) {
-    const now = new Date();
-    const fakeId = `cmp_${Date.now()}`;
-    const metrics = {
-      ...createEmptyRawMetrics(),
-      budget: typeof budget === 'number' ? budget : null,
-      cplTarget: typeof cplTarget === 'number' ? cplTarget : null,
-      cpl: null,
-    } satisfies CampaignDTO['metrics'];
-    const classificationMetadata: Record<string, string> = {};
-    if (productType) {
-      classificationMetadata.productType = productType;
-    }
-    if (marginType) {
-      classificationMetadata.marginType = marginType;
-    }
-    if (strategy) {
-      classificationMetadata.strategy = strategy;
-    }
-    const responsePayload: CampaignDTO = {
-      id: fakeId,
-      tenantId: resolvedAgreementId,
-      agreementId: resolvedAgreementId,
-      agreementName: resolvedAgreementName || null,
-      name: resolvedName,
-      status: 'scheduled',
-      metadata: {
-        safeMode: true,
-        channel,
-        schedule,
-        audienceCount,
-        ...(resolvedTags.length > 0 ? { tags: resolvedTags } : {}),
-        ...(Object.keys(classificationMetadata).length > 0 ? { classification: classificationMetadata } : {}),
-        ...userMetadata,
-      },
-      instanceId: resolvedInstanceId,
-      instanceName: resolvedInstanceId,
-      whatsappInstanceId: resolvedInstanceId,
-      createdAt: now,
-      updatedAt: now,
-      metrics,
-      productType,
-      marginType,
-      strategy,
-      tags: resolvedTags,
-    };
-
-    return { data: responsePayload, meta: { safeMode: true }, statusCode: 201 };
+    throw new CampaignServiceError('SAFE_MODE', 'A criação de campanhas está suspensa.', 503);
   }
-
-  const explicitTenantId = input.explicitTenantId?.trim() || undefined;
-  const baseLogContext = {
-    requestedTenantId,
-    explicitTenantId: explicitTenantId ?? null,
-    instanceId: resolvedInstanceId,
-    requestedBrokerId: resolvedBrokerId,
-    agreementId: resolvedAgreementId,
-  };
-
-  const tenantIdentifierCandidates = Array.from(
-    new Set(
-      [explicitTenantId, requestedTenantId, resolvedAgreementId].filter(
-        (value): value is string => typeof value === 'string' && value.length > 0
-      )
-    )
-  );
-
-  let instance: Awaited<ReturnType<typeof prisma.whatsAppInstance.findUnique>> | null = null;
-
-  for (const candidateId of identifierCandidates) {
-    instance = await prisma.whatsAppInstance.findUnique({ where: { id: candidateId } });
-    if (instance) {
-      if (candidateId !== resolvedInstanceId) {
-        logger.info('WhatsApp instance resolved via alternate identifier during campaign creation', {
-          ...baseLogContext,
-          requestedInstanceId: resolvedInstanceId,
-          matchedIdentifier: candidateId,
-          resolvedInstanceId: instance.id,
-        });
-      }
-      break;
-    }
+  const tenantId = requestedTenantId;
+  if (!tenantId || (input.explicitTenantId && input.explicitTenantId !== tenantId)) {
+    throw new CampaignServiceError('FORBIDDEN', 'Organização inválida para a campanha.', 403);
   }
-
-  if (!instance) {
-    brokerLookup: for (const candidateBrokerId of identifierCandidates) {
-      if (tenantIdentifierCandidates.length > 0) {
-        for (const tenantCandidate of tenantIdentifierCandidates) {
-          instance = await prisma.whatsAppInstance.findUnique({
-            where: {
-              tenantId_brokerId: {
-                tenantId: tenantCandidate,
-                brokerId: candidateBrokerId,
-              },
-            },
-          });
-
-          if (instance) {
-            logger.info('WhatsApp instance resolved via broker identifier during campaign creation', {
-              ...baseLogContext,
-              requestedInstanceId: resolvedInstanceId,
-              matchedBrokerId: candidateBrokerId,
-              matchedTenantId: tenantCandidate,
-              resolvedInstanceId: instance.id,
-              resolvedBrokerId: instance.brokerId,
-            });
-            break brokerLookup;
-          }
-        }
-      } else {
-        break;
-      }
-    }
-  }
-
-  if (!instance) {
-    const placeholderTenantId = explicitTenantId || requestedTenantId || resolvedAgreementId;
-
-    logger.warn('WhatsApp instance not found. Creating placeholder for testing purposes.', {
-      ...baseLogContext,
-      tenantId: placeholderTenantId,
-      identifierCandidates,
-    });
-
-    const brokerIdentifier = resolvedBrokerId ?? resolvedInstanceId;
-
-    try {
-      instance = await prisma.whatsAppInstance.create({
-        data: {
-          id: resolvedInstanceId,
-          tenantId: placeholderTenantId,
-          name: resolvedInstanceId,
-          brokerId: brokerIdentifier,
-          status: 'connected',
-          connected: true,
-          metadata: {
-            origin: 'auto-created-for-campaign',
-          },
-        },
-      });
-    } catch (creationError) {
-      if (creationError instanceof Prisma.PrismaClientKnownRequestError && creationError.code === 'P2002') {
-        logger.warn('WhatsApp instance creation hit unique constraint; reusing existing record', {
-          ...baseLogContext,
-          prismaError: creationError.meta,
-          identifierCandidates,
-        });
-
-        const orConditions = identifierCandidates.flatMap((candidate) => {
-          const conditions = [
-            { id: candidate },
-            ...(tenantIdentifierCandidates.length > 0
-              ? tenantIdentifierCandidates.map((tenantCandidate) => ({
-                  AND: [{ tenantId: tenantCandidate }, { brokerId: candidate }],
-                }))
-              : []),
-            { brokerId: candidate },
-          ];
-
-          return conditions;
-        });
-
-        const findArgs =
-          orConditions.length > 0 ? ({ where: { OR: orConditions } } as const) : ({} as const);
-
-        instance = await prisma.whatsAppInstance.findFirst(findArgs);
-
-        if (!instance) {
-          throw creationError;
-        }
-      } else {
-        throw creationError;
-      }
-    }
-  }
-
-  const instanceTenantId =
-    typeof instance.tenantId === 'string' && instance.tenantId.trim().length > 0
-      ? instance.tenantId.trim()
-      : undefined;
-
-  let tenantRecord = instanceTenantId
-    ? await prisma.tenant.findFirst({
-        where: {
-          OR: [
-            { id: instanceTenantId },
-            ...(normalizeTenantSlug(instanceTenantId)
-              ? [{ slug: normalizeTenantSlug(instanceTenantId) as string }]
-              : []),
-          ],
-        },
-      })
-    : null;
-
-  const fallbackTenantIdCandidates = new Set<string>([
-    ...(explicitTenantId ? [explicitTenantId] : []),
-    ...(requestedTenantId ? [requestedTenantId] : []),
-    ...(resolvedAgreementId ? [resolvedAgreementId] : []),
-    ...(instanceTenantId ? [instanceTenantId] : []),
-  ]);
-
-  const fallbackSlugCandidates = new Set<string>();
-  for (const candidate of [
-    explicitTenantId,
-    requestedTenantId,
-    resolvedAgreementId,
-    resolvedAgreementName,
-    instanceTenantId,
-  ]) {
-    const slug = normalizeTenantSlug(candidate ?? undefined);
-    if (slug) {
-      fallbackSlugCandidates.add(slug);
-    }
-  }
-
-  const pickFirst = <T,>(values: Iterable<T>): T | undefined => {
-    for (const value of values) {
-      return value;
-    }
-    return undefined;
-  };
-
-  const preferredTenantId = pickFirst(fallbackTenantIdCandidates) ?? requestedTenantId;
-  const preferredSlug = normalizeTenantSlug(preferredTenantId) ?? pickFirst(fallbackSlugCandidates);
-  const preferredName = resolvedAgreementName || resolvedAgreementId || preferredTenantId || 'Lead Engine Tenant';
-
-  if (!tenantRecord) {
-    try {
-      tenantRecord = await prisma.tenant.create({
-        data: {
-          id: preferredTenantId,
-          name: preferredName,
-          slug: preferredSlug ?? undefined,
-          settings: {},
-        },
-      });
-    } catch (creationError) {
-      if (creationError instanceof Prisma.PrismaClientKnownRequestError && creationError.code === 'P2002') {
-        const fallbackWhere = {
-          OR: [
-            ...Array.from(fallbackTenantIdCandidates).map((id) => ({ id })),
-            ...(fallbackSlugCandidates.size > 0 ? Array.from(fallbackSlugCandidates).map((slug) => ({ slug })) : []),
-            ...(preferredSlug ? [{ slug: preferredSlug }] : []),
-            ...(preferredTenantId ? [{ id: preferredTenantId }] : []),
-          ],
-          ...(preferredSlug ? { slug: preferredSlug } : {}),
-        } as Prisma.TenantWhereInput;
-
-        tenantRecord = await prisma.tenant.findFirst({ where: fallbackWhere });
-
-        if (!tenantRecord) {
-          throw creationError;
-        }
-      } else {
-        throw creationError;
-      }
-    }
-  }
-
-  const resolvedTenantId =
-    tenantRecord?.id || instanceTenantId || explicitTenantId || requestedTenantId || resolvedAgreementId;
-
-  if (tenantRecord && instance.tenantId !== tenantRecord.id) {
-    instance = await prisma.whatsAppInstance.update({
-      where: { id: instance.id },
-      data: { tenantId: tenantRecord.id },
-    });
-  }
-
-  const tenantId = resolvedTenantId;
+  const instance = await prisma.whatsAppInstance.findFirst({
+    where: { tenantId, OR: [{ id: { in: identifierCandidates } }, { brokerId: { in: identifierCandidates } }] },
+  });
+  if (!instance) throw new CampaignServiceError('INSTANCE_NOT_FOUND', 'Selecione uma instância cadastrada nesta organização.', 404);
   const effectiveInstanceId = instance.id;
 
   const actorId = input.actorId || 'system';

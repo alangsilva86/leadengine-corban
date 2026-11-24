@@ -173,7 +173,7 @@ const dispatchUnauthorizedEvent = () => {
   window.dispatchEvent(event);
 };
 
-const handleResponse = async (response) => {
+const handleResponse = async (response, path) => {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.success === false) {
     const errorMessage = payload?.error?.message || response.statusText;
@@ -185,7 +185,7 @@ const handleResponse = async (response) => {
     if (retryAfterHeader) {
       error.retryAfter = retryAfterHeader;
     }
-    if (response.status === 401) {
+    if (response.status === 401 && !['/api/auth/login', '/api/auth/token/refresh'].includes(path)) {
       dispatchUnauthorizedEvent();
     }
     throw error;
@@ -309,7 +309,7 @@ const safeFetch = async (path, init = {}) => {
       window.dispatchEvent(event);
     }
 
-    return handleResponse(response);
+    return handleResponse(response, path);
   });
 };
 

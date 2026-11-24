@@ -1,3 +1,4 @@
+import { ConflictError } from '@ticketz/core';
 import {
   Prisma,
   type ContactInteraction as PrismaContactInteraction,
@@ -801,6 +802,11 @@ export const mergeContacts = async ({ tenantId, targetId, sourceIds, preserve }:
   }
 
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`
+      SELECT id FROM "contacts"
+      WHERE "tenantId" = ${tenantId} AND id IN (${Prisma.join([targetId, ...uniqueSourceIds])})
+      ORDER BY id FOR UPDATE
+    `;
     const target = await tx.contact.findFirst({
       where: { tenantId, id: targetId },
       include: CONTACT_TAGS_INCLUDE,
@@ -814,8 +820,25 @@ export const mergeContacts = async ({ tenantId, targetId, sourceIds, preserve }:
       include: CONTACT_TAGS_INCLUDE,
     });
 
-    if (!sources.length) {
-      return mapContact(target as PrismaContactWithTags);
+    if (sources.length !== uniqueSourceIds.length) {
+      throw new ConflictError('Uma das origens da mesclagem já não existe ou pertence a outra organização.');
+    }
+
+    const documents = [target, ...sources]
+      .map(({ document }) => document?.trim())
+      .filter((document): document is string => Boolean(document));
+    const identifiers = new Set(documents.map(document => document.toUpperCase().replace(/[.\s\/-]/g, '')));
+    if (identifiers.size > 1) {
+      throw new ConflictError('Contatos com documentos diferentes exigem conferência antes da mesclagem.');
+    }
+
+    const sourceScope = { tenantId, contactId: { in: uniqueSourceIds } };
+    const [leadCount, aiMemoryCount] = await Promise.all([
+      tx.lead.count({ where: { tenantId, contactId: { in: [targetId, ...uniqueSourceIds] } } }),
+      tx.aiMemory.count({ where: sourceScope }),
+    ]);
+    if (leadCount > 1 || aiMemoryCount > 0) {
+      throw new ConflictError('A mesclagem exige conciliação dos leads ou memórias vinculados.');
     }
 
     const targetTagNames = target.tags
@@ -854,6 +877,11 @@ export const mergeContacts = async ({ tenantId, targetId, sourceIds, preserve }:
     })();
 
     await Promise.all([
+      tx.contactPhone.updateMany({ where: sourceScope, data: { contactId: targetId, isPrimary: false } }),
+      tx.contactEmail.updateMany({ where: sourceScope, data: { contactId: targetId, isPrimary: false } }),
+      tx.interaction.updateMany({ where: sourceScope, data: { contactId: targetId } }),
+      tx.task.updateMany({ where: sourceScope, data: { contactId: targetId } }),
+      tx.opportunity.updateMany({ where: sourceScope, data: { contactId: targetId } }),
       tx.ticket.updateMany({
         where: { tenantId, contactId: { in: uniqueSourceIds } },
         data: { contactId: targetId },
@@ -881,6 +909,8 @@ export const mergeContacts = async ({ tenantId, targetId, sourceIds, preserve }:
       data: {
         customFields: mergedCustomFields as Prisma.InputJsonValue,
         notes: mergedNotes,
+        document: documents[0] ?? null,
+        isBlocked: target.isBlocked || sources.some(source => source.isBlocked),
       },
     });
 

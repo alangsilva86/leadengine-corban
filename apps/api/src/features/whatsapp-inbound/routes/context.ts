@@ -76,7 +76,9 @@ export type WebhookRejectionReason =
   | 'invalid_signature'
   | 'rate_limited'
   | 'missing_authorization'
-  | 'missing_tenant';
+  | 'missing_tenant'
+  | 'not_configured'
+  | 'invalid_instance_scope';
 
 export const trackWebhookRejection = (reason: WebhookRejectionReason) => {
   whatsappWebhookEventsCounter.inc({

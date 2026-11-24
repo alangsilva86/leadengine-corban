@@ -331,7 +331,7 @@ export const listAllocations = async (filters: AllocationFilters): Promise<LeadA
   }
 
   const allocations = await prisma.leadAllocation.findMany({
-    where,
+    where: { AND: [where, { campaign: { tenantId: filters.tenantId }, lead: { tenantId: filters.tenantId } }] },
     orderBy: { receivedAt: 'desc' },
     include: { lead: { include: { tenant: true } }, campaign: true, tenant: true },
   });
@@ -364,6 +364,8 @@ export const allocateBrokerLeads = async (params: {
   }
 
   const created = await prisma.$transaction(async (tx) => {
+    const campaign = await tx.campaign.findFirst({ where: { id: targetCampaignId, tenantId: params.tenantId }, select: { id: true } });
+    if (!campaign) throw new Error('Campanha não encontrada na organização.');
     const allocations: LeadAllocationRecord[] = [];
 
     for (const leadInput of params.leads) {

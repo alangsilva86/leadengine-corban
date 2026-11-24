@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { Buffer } from 'node:buffer';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { logger } from '../../../config/logger';
 import {
@@ -18,12 +19,9 @@ import {
 import { pollChoiceEventBus, type PollChoiceEventBusPayloads, type PollChoiceEventName } from '../services/poll-choice-event-bus';
 import { resolveWebhookContext } from '../services/resolve-webhook-context';
 import { asArray, normalizeApiKey, readString, unwrapWebhookEvent } from '../utils/webhook-parsers';
-import { buildIdempotencyKey, registerIdempotency } from '../utils/webhook-idempotency';
 import {
   ensureWebhookContext,
-  isTrustedWebhookIp,
   logWebhookEvent,
-  resolveClientAddress,
   trackWebhookRejection,
   type WhatsAppWebhookContext,
 } from './context';
@@ -64,12 +62,6 @@ const createWebhookRateLimiter = (config: WhatsAppWebhookControllerConfig) =>
     max: WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
     standardHeaders: false,
     legacyHeaders: false,
-    keyGenerator: (req: Request) => {
-      const base = resolveClientAddress(req);
-      const tenantHint = readString(req.header('x-tenant-id')) ?? 'no-tenant';
-      const refreshHint = readString(req.header('x-refresh')) ?? 'no';
-      return `${base}|${tenantHint}|${refreshHint}`;
-    },
     handler: (req: Request, res: Response) => {
       const context = config.ensureWebhookContext(req, res);
       config.logWebhookEvent('warn', '🛑 WhatsApp webhook rate limit exceeded', context, {
@@ -81,160 +73,46 @@ const createWebhookRateLimiter = (config: WhatsAppWebhookControllerConfig) =>
     },
   });
 
-const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
-  const parts = token.split('.');
-  if (parts.length < 2) {
-    return null;
-  }
-
-  try {
-    const base64 = parts[1]?.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64?.padEnd(Math.ceil((base64?.length ?? 0) / 4) * 4, '=');
-    const json = Buffer.from(padded ?? '', 'base64').toString('utf8');
-    return JSON.parse(json) as Record<string, unknown>;
-  } catch (error) {
-    logger.debug('Failed to decode webhook bearer token payload', { error });
-    return null;
-  }
-};
-
-const resolveTenantId = (token: string | null, req: Request): string | null => {
-  const fromHeader = readString(req.header('x-tenant-id'));
-  if (fromHeader) {
-    return fromHeader;
-  }
-
-  if (!token) {
-    return null;
-  }
-
-  const jwtPayload = decodeJwtPayload(token);
-  const fromJwt = readString(jwtPayload?.tenantId, jwtPayload?.tenant, jwtPayload?.subTenant);
-  if (fromJwt) {
-    return fromJwt;
-  }
-
-  const colonTenant = /^tenant[:/](.+)$/i.exec(token)?.[1];
-  return colonTenant?.trim() ?? null;
-};
-
 const createVerifyWhatsAppWebhookRequest = (config: WhatsAppWebhookControllerConfig) =>
   async (req: Request, res: Response, next: NextFunction) => {
     const context = config.ensureWebhookContext(req, res);
     const expectedApiKey = getWebhookApiKey();
-    const trustedIpBypass = isTrustedWebhookIp(context.remoteIp);
-
-    const rawAuthorization = readString(req.header('authorization'), req.header('x-authorization'));
-    const bearerToken = normalizeApiKey(rawAuthorization);
-
-    if (!bearerToken) {
-      config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: missing bearer token', context);
-      config.trackWebhookRejection('missing_authorization');
-      res.status(401).json({
-        ok: false,
-        error: {
-          code: 'MISSING_AUTHORIZATION',
-          message: 'Envie Authorization: Bearer <token> para acessar o webhook.',
-        },
-      });
+    if (!expectedApiKey) {
+      config.trackWebhookRejection('not_configured');
+      res.status(503).end();
       return;
     }
 
-    if (trustedIpBypass) {
-      config.logWebhookEvent('debug', '✅ WhatsApp webhook authenticated via trusted IP', context, {
-        remoteIp: context.remoteIp,
-      });
-    } else if (expectedApiKey) {
-      const providedApiKey = normalizeApiKey(
-        readString(req.header('x-webhook-token'), req.header('x-api-key'), rawAuthorization)
-      );
-
-      if (!providedApiKey) {
-        config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: authorization header missing', context);
-        config.trackWebhookRejection('invalid_api_key');
-        res.status(401).end();
-        return;
-      }
-
-      if (providedApiKey !== expectedApiKey) {
-        config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: invalid authorization token', context);
-        config.trackWebhookRejection('invalid_api_key');
-        res.status(401).end();
-        return;
-      }
-    }
-
-    let tenantId = resolveTenantId(bearerToken, req);
-
-    if (!tenantId) {
-      const events = asArray(req.body);
-      const firstEntry = events[0];
-      const unwrapped = unwrapWebhookEvent(firstEntry ?? req.body);
-
-      const resolvedContext = await resolveWebhookContext({
-        eventRecord: (unwrapped?.event ?? firstEntry ?? req.body) as RawBaileysUpsertEvent,
-        envelopeRecord: (unwrapped?.envelope ?? firstEntry ?? req.body) as Record<string, unknown>,
-        defaultInstanceId: getDefaultInstanceId(),
-      });
-
-      tenantId = resolvedContext.tenantId ?? null;
-    }
-    if (!tenantId) {
-      config.logWebhookEvent('error', '🛑 WhatsApp webhook rejected: tenantId missing', context);
-      config.trackWebhookRejection('missing_tenant');
-      res.status(400).json({
-        ok: false,
-        error: {
-          code: 'MISSING_TENANT',
-          message: 'Inclua o tenant no Authorization ou no header X-Tenant-Id.',
-        },
-      });
+    const provided = normalizeApiKey(readString(
+      req.header('x-webhook-token'), req.header('x-api-key'), req.header('authorization'),
+      req.header('x-authorization')
+    ));
+    const expected = Buffer.from(expectedApiKey);
+    const actual = Buffer.from(provided ?? '');
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      config.trackWebhookRejection('invalid_api_key');
+      res.status(401).end();
       return;
     }
 
-    (req as Request & { tenantId?: string }).tenantId = tenantId;
-    context.tenantId = tenantId;
-
-    if (context.signatureRequired) {
+    if (context.signatureRequired || process.env.NODE_ENV === 'production') {
       const secret = getWebhookSignatureSecret();
-      const signature = readString(
-        req.header('x-webhook-signature'),
-        req.header('x-webhook-signature-sha256'),
-        req.header('x-signature'),
-        req.header('x-signature-sha256')
-      );
-
-      if (!signature || !secret) {
-        config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: signature missing', context);
+      const signature = readString(req.header('x-webhook-signature'), req.header('x-webhook-signature-sha256'),
+        req.header('x-signature'), req.header('x-signature-sha256'))?.replace(/^sha256=/i, '');
+      if (!secret || !signature || !/^[a-f0-9]{64}$/i.test(signature) || !req.rawBody) {
         config.trackWebhookRejection('invalid_signature');
-        res.status(401).end();
+        res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
         return;
       }
-
-      try {
-        const crypto = await import('node:crypto');
-        const expectedBuffer = crypto.createHmac('sha256', secret).update(req.rawBody ?? '').digest();
-        const providedBuffer = Buffer.from(signature, 'hex');
-
-        const matches =
-          providedBuffer.length === expectedBuffer.length &&
-          crypto.timingSafeEqual(providedBuffer, expectedBuffer);
-
-        if (!matches) {
-          config.logWebhookEvent('warn', '🛑 WhatsApp webhook rejected: signature mismatch', context);
-          config.trackWebhookRejection('invalid_signature');
-          res.status(401).end();
-          return;
-        }
-      } catch (error) {
-        config.logWebhookEvent('warn', 'Failed to verify WhatsApp webhook signature', context, { error });
+      const signedBody = createHmac('sha256', secret).update(req.rawBody).digest();
+      if (!timingSafeEqual(signedBody, Buffer.from(signature, 'hex'))) {
         config.trackWebhookRejection('invalid_signature');
-        res.status(401).end();
+        res.status(401).json({ ok: false, code: 'INVALID_SIGNATURE' });
         return;
       }
     }
 
-    return next();
+    next();
   };
 
 const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
@@ -286,6 +164,7 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
     let pollPersisted = 0;
     let pollIgnored = 0;
     let pollFailures = 0;
+    let rejectedContexts = 0;
 
     for (const entry of events) {
       const unwrapped = unwrapWebhookEvent(entry);
@@ -303,12 +182,18 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
         eventRecord,
         envelopeRecord,
         defaultInstanceId,
+        expectedTenantId: readString(req.header('x-tenant-id')),
       });
 
+      if (!resolvedContext.tenantId || !resolvedContext.instanceId) {
+        rejectedContexts += 1;
+        continue;
+      }
+
       const rawInstanceId = resolvedContext.rawInstanceId ?? undefined;
-      const instanceOverride = resolvedContext.instanceId ?? undefined;
+      const instanceOverride = resolvedContext.instanceId;
       const brokerOverride = resolvedContext.brokerId;
-      const tenantOverride = resolvedContext.tenantId ?? undefined;
+      const tenantOverride = resolvedContext.tenantId;
 
       if (eventType === 'WHATSAPP_MESSAGES_UPDATE') {
         const ackOutcome = await processMessagesUpdate(eventRecord, envelopeRecord, {
@@ -390,31 +275,13 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
       }
 
       for (const normalized of normalizedMessages) {
-        const normalizedIdemKey = buildIdempotencyKey(
-          tenantOverride ?? normalized.tenantId ?? 'unknown',
-          instanceOverride ?? brokerOverride ?? rawInstanceId ?? null,
-          normalized?.messageId ?? null,
-          normalized?.messageIndex ?? 0
-        );
-        if (!registerIdempotency(normalizedIdemKey)) {
-          whatsappWebhookEventsCounter.inc({
-            origin: 'webhook',
-            tenantId: tenantOverride ?? normalized.tenantId ?? 'unknown',
-            instanceId: instanceOverride ?? brokerOverride ?? rawInstanceId ?? 'unknown',
-            result: 'ignored',
-            reason: 'message_duplicate',
-          });
-          continue;
-        }
-
         const processed = await processNormalizedMessage({
           normalized,
           eventRecord,
-          envelopeRecord,
           rawPreview,
           requestId,
-          tenantOverride: tenantOverride ?? null,
-          instanceOverride: instanceOverride ?? null,
+          tenantOverride,
+          instanceOverride,
         });
 
         if (processed) {
@@ -452,7 +319,16 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
       durationMs: Date.now() - startedAt,
     });
 
-    res.status(204).send();
+    if (rejectedContexts > 0) {
+      config.trackWebhookRejection('invalid_instance_scope');
+      res.status(403).end();
+      return;
+    }
+    if (prepFailures > 0 || ackFailures > 0 || pollFailures > 0) {
+      res.status(503).setHeader('Retry-After', '5').end();
+      return;
+    }
+    res.status(204).end();
   };
 
 const handleVerificationRequest = (req: Request, res: Response) => {

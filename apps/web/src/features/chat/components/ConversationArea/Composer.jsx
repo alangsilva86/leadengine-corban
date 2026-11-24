@@ -345,12 +345,12 @@ export const Composer = forwardRef(function Composer(
     const payloadContent = trimmed;
     const caption = hasAttachments ? trimmed || undefined : undefined;
 
-    onSend?.({
+    const accepted = await onSend?.({
       content: payloadContent,
       attachments: normalizedAttachments,
       caption,
     });
-    resetComposer();
+    if (accepted !== false && onSend) resetComposer();
   };
 
   const handleAttachmentClick = () => {

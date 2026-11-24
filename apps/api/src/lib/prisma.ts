@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
-import { ensureTicketStageSupport, setPrismaClient } from '@ticketz/storage';
+import { setPrismaClient } from '@ticketz/storage';
 import { logger } from '../config/logger';
 
 export interface DatabaseDisabledErrorContext {
@@ -220,12 +220,6 @@ const createPrismaClient = (): PrismaClient => {
 
 export const prisma = createPrismaClient();
 
-if (isDatabaseEnabled) {
-  void ensureTicketStageSupport(prisma, { logger }).catch((error) => {
-    logger.error('[Prisma] ❌ Failed to ensure ticket stage support', { error });
-  });
-}
-
 if (isDatabaseEnabled && process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
@@ -242,17 +236,3 @@ export async function disconnectDatabase() {
     logger.error('[Prisma] ❌ Erro ao desconectar do banco de dados', { error });
   }
 }
-
-process.on('beforeExit', async () => {
-  await disconnectDatabase();
-});
-
-process.on('SIGINT', async () => {
-  await disconnectDatabase();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await disconnectDatabase();
-  process.exit(0);
-});

@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { apiGet, apiPost } from '@/lib/api.js';
 import {
   clearAuthToken,
+  getAuthPayload,
   getAuthToken,
   getTenantId,
   onAuthTokenChange,
@@ -13,6 +14,12 @@ import {
   setTenantSlugHint,
 } from '@/lib/auth.js';
 
+/** @typedef {{
+  status: string, loading: boolean, error: unknown, user: any, tenantId: string,
+  login: (input: {email: string, password: string, tenantSlug: string, remember?: boolean}) => Promise<unknown>,
+  logout: () => Promise<void>, refresh: () => void, selectTenant: (id: string) => void
+}} AuthContextValue */
+/** @type {import('react').Context<AuthContextValue | null>} */
 const AuthContext = createContext(null);
 
 const resolveTenantFromUser = (user) => {
@@ -44,31 +51,16 @@ const resolveTenantSlugHintFromUser = (user) => {
   return null;
 };
 
-const readErrorMessage = (error, fallback = 'Não foi possível completar a ação.') => {
-  if (!error) {
-    return fallback;
-  }
-  if (typeof error === 'string') {
-    return error;
-  }
-  if (error instanceof Error) {
-    return error.message || fallback;
-  }
-  if (typeof error === 'object' && error) {
-    const payloadMessage = error?.payload?.error?.message;
-    if (typeof payloadMessage === 'string' && payloadMessage.trim()) {
-      return payloadMessage.trim();
-    }
-  }
-  return fallback;
-};
-
 export const AuthProvider = ({ children }) => {
-  const [status, setStatus] = useState(() => (getAuthToken() ? 'checking' : 'unauthenticated'));
+  const queryClient = useQueryClient();
+  const [status, setStatus] = useState('checking');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(status === 'checking');
   const [error, setError] = useState(null);
   const abortControllerRef = useRef(null);
+  const renewalRef = useRef(null);
+  const sessionVersion = useRef(0);
+  const signingOut = useRef(false);
 
   const finishWith = useCallback((nextStatus, user = null) => {
     setStatus(nextStatus);
@@ -76,18 +68,49 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
+  const acceptSession = useCallback((session) => {
+    const token = session?.token?.accessToken;
+    if (!token || !session?.user) throw new Error('Resposta inválida ao autenticar.');
+    const tenant = resolveTenantFromUser(session.user);
+    const slug = resolveTenantSlugHintFromUser(session.user);
+    if (tenant) setTenantId(tenant);
+    if (slug) setTenantSlugHint(slug);
+    setAuthToken(token);
+    setError(null);
+    finishWith('authenticated', session.user);
+    return session.user;
+  }, [finishWith]);
+
+  const renewSession = useCallback(() => {
+    if (signingOut.current) return Promise.resolve(null);
+    if (renewalRef.current) return renewalRef.current;
+    const version = sessionVersion.current;
+    const send = () => apiPost('/api/auth/token/refresh', {});
+    const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+    const request = locks ? locks.request('corban-session-renewal', send) : send();
+    const pending = request.then(({ data }) => {
+      return version === sessionVersion.current ? acceptSession(data) : null;
+    }).catch((err) => {
+      if (version !== sessionVersion.current) return null;
+      if (err?.status !== 401) throw err;
+      clearAuthToken();
+      queryClient.clear();
+      finishWith('unauthenticated', null);
+      return null;
+    }).finally(() => {
+      if (renewalRef.current === pending) renewalRef.current = null;
+    });
+    renewalRef.current = pending;
+    return pending;
+  }, [acceptSession, finishWith, queryClient]);
+
   const fetchProfile = useCallback(
     async (signal) => {
-      const token = getAuthToken();
-      if (!token) {
-        finishWith('unauthenticated', null);
-        return null;
-      }
-
       setLoading(true);
       setError(null);
 
       try {
+        if (!getAuthToken()) return await renewSession();
         const response = await apiGet('/api/auth/me', { signal });
         if (signal?.aborted) {
           return null;
@@ -108,9 +131,13 @@ export const AuthProvider = ({ children }) => {
           return null;
         }
         if (err?.status === 401) {
-          clearAuthToken();
-          finishWith('unauthenticated', null);
-          return null;
+          try {
+            return await renewSession();
+          } catch (renewalError) {
+            setError(renewalError);
+            finishWith('error', null);
+            return null;
+          }
         }
         console.warn('Falha ao carregar sessão atual', err);
         setError(err);
@@ -118,7 +145,7 @@ export const AuthProvider = ({ children }) => {
         return null;
       }
     },
-    [finishWith]
+    [finishWith, renewSession]
   );
 
   const refresh = useCallback(() => {
@@ -138,68 +165,63 @@ export const AuthProvider = ({ children }) => {
   }, [refresh]);
 
   useEffect(() => {
-    const unsubscribeToken = onAuthTokenChange(() => {
-      refresh();
-    });
-    const unsubscribeExpire = onAuthTokenExpire(() => {
-      clearAuthToken();
-      finishWith('unauthenticated', null);
-    });
-
-    const handleUnauthorized = () => {
-      clearAuthToken();
-      finishWith('unauthenticated', null);
+    let timer;
+    const handleRenewalFailure = (err) => {
+      if (getAuthToken()) return;
+      setError(err);
+      finishWith('error', null);
     };
+    const renew = () => {
+      void renewSession().catch(handleRenewalFailure);
+    };
+    const unsubscribeToken = onAuthTokenChange(() => {
+      clearTimeout(timer);
+      const expiry = getAuthPayload()?.exp;
+      // Skip the proactive timer for the final two minutes of an expiring session.
+      // The expiration handler will make one last attempt.
+      const delay = typeof expiry === 'number' ? expiry * 1000 - Date.now() - 120_000 : 0;
+      if (delay > 0) timer = setTimeout(renew, delay);
+    });
+    const unsubscribeExpire = onAuthTokenExpire(renew);
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('leadengine:auth-unauthorized', handleUnauthorized);
+      window.addEventListener('leadengine:auth-unauthorized', renew);
     }
 
     return () => {
       unsubscribeToken?.();
       unsubscribeExpire?.();
+      clearTimeout(timer);
       if (typeof window !== 'undefined') {
-        window.removeEventListener('leadengine:auth-unauthorized', handleUnauthorized);
+        window.removeEventListener('leadengine:auth-unauthorized', renew);
       }
     };
-  }, [finishWith, refresh]);
+  }, [finishWith, renewSession]);
 
   const login = useCallback(async ({ email, password, tenantSlug, remember = false }) => {
     if (!email || !password || !tenantSlug) {
       throw new Error('Informe e-mail, senha e tenant para continuar.');
     }
 
+    sessionVersion.current += 1;
+    abortControllerRef.current?.abort();
     const payload = await apiPost('/api/auth/login', {
       email,
       password,
       tenantSlug,
       remember,
+      sessionCookie: true,
     });
 
-    const token = payload?.data?.token?.accessToken;
-    if (!token) {
-      throw new Error('Resposta inválida ao autenticar.');
-    }
-
-    const expiresAt = Date.now() + (remember ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000);
-    setAuthToken(token, { expiresAt });
-    const tenant = payload?.data?.user?.tenant?.id ?? payload?.data?.user?.tenantId ?? tenantSlug;
-    const tenantSlugHint =
-      payload?.data?.user?.tenant?.slug ?? payload?.data?.user?.tenant?.name ?? tenantSlug ?? null;
-    if (tenant) {
-      setTenantId(tenant);
-    }
-    if (tenantSlugHint) {
-      setTenantSlugHint(tenantSlugHint);
-    }
-
-    setCurrentUser(payload?.data?.user ?? null);
-    setStatus('authenticated');
-    setLoading(false);
+    queryClient.clear();
+    acceptSession(payload?.data);
     return payload?.data ?? null;
-  }, []);
+  }, [acceptSession, queryClient]);
 
   const logout = useCallback(async () => {
+    signingOut.current = true;
+    sessionVersion.current += 1;
+    abortControllerRef.current?.abort();
     try {
       await apiPost('/api/auth/logout', {});
     } catch (err) {
@@ -208,24 +230,11 @@ export const AuthProvider = ({ children }) => {
       }
     } finally {
       clearAuthToken();
+      queryClient.clear();
       finishWith('unauthenticated', null);
+      signingOut.current = false;
     }
-  }, [finishWith]);
-
-  const recoverPassword = useCallback(async ({ email, tenantSlug }) => {
-    if (!email) {
-      throw new Error('Informe o e-mail cadastrado para continuar.');
-    }
-    try {
-      await apiPost('/api/auth/password/recover', {
-        email,
-        tenantSlug: tenantSlug || getTenantId(),
-      });
-      toast.success('Enviamos instruções para o seu e-mail.');
-    } catch (err) {
-      throw new Error(readErrorMessage(err, 'Não foi possível enviar o e-mail de recuperação.'));
-    }
-  }, []);
+  }, [finishWith, queryClient]);
 
   const selectTenant = useCallback((tenantId) => {
     setTenantId(tenantId);
@@ -240,11 +249,10 @@ export const AuthProvider = ({ children }) => {
       tenantId: resolveTenantFromUser(currentUser) ?? getTenantId(),
       login,
       logout,
-      recoverPassword,
       refresh,
       selectTenant,
     }),
-    [currentUser, error, loading, login, logout, recoverPassword, refresh, selectTenant, status]
+    [currentUser, error, loading, login, logout, refresh, selectTenant, status]
   );
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;

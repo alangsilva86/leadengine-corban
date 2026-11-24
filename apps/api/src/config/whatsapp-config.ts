@@ -116,9 +116,7 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
         normalizeString(process.env.WHATSAPP_BROKER_API_KEY),
       signatureSecret:
         normalizeString(process.env.WHATSAPP_WEBHOOK_HMAC_SECRET) ??
-        normalizeString(process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET) ??
-        normalizeString(process.env.WHATSAPP_WEBHOOK_API_KEY) ??
-        normalizeString(process.env.WHATSAPP_BROKER_API_KEY),
+        normalizeString(process.env.WHATSAPP_WEBHOOK_SIGNATURE_SECRET),
       enforceSignature: normalizeBoolean(process.env.WHATSAPP_WEBHOOK_ENFORCE_SIGNATURE, false),
       trustedIps: (
         process.env.WHATSAPP_WEBHOOK_TRUSTED_IPS ??

@@ -9,8 +9,6 @@ import {
   Megaphone,
   Settings,
   Ticket,
-  Bell,
-  Search,
   User,
   LogOut,
   ChevronsLeft,
@@ -22,7 +20,6 @@ import {
 import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils.js';
 import { Button } from '@/components/ui/button.jsx';
-import { Input } from '@/components/ui/input.jsx';
 import { useAuth } from '@/features/auth/AuthProvider.jsx';
 import {
   Sidebar,
@@ -41,7 +38,6 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar.jsx';
 import HealthIndicator from './HealthIndicator.jsx';
-import TenantSelector from './TenantSelector.jsx';
 import { CONTEXTUAL_NAVIGATION_IDS, NAVIGATION_PAGES, PRIMARY_NAVIGATION_IDS } from '@/features/navigation/routes.ts';
 
 const NAVIGATION_ICON_MAP = {
@@ -107,7 +103,7 @@ const LayoutContent = ({
     <div className={containerClassName}>
       <div
         className={cn(
-          'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-6 overflow-y-auto',
+          'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 min-w-0 flex-col gap-6 overflow-y-auto',
           paddingVariant === 'none' ? 'p-0' : 'p-6 md:p-8',
           stickyFooterPaddingClass
         )}
@@ -172,7 +168,7 @@ const LayoutShell = ({
   disableContentInnerWrapper = false,
   fullWidthContent = false,
 }) => {
-  const { isMobile, state, setOpen, setOpenMobile, toggleSidebar } = useSidebar();
+  const { isMobile, state, setOpenMobile, toggleSidebar } = useSidebar();
   const isSidebarCollapsed = state === 'collapsed';
   const { user, logout, status: authStatus } = useAuth();
   const displayName = user?.name ?? 'Operador';
@@ -209,23 +205,6 @@ const LayoutShell = ({
         )),
     [currentPage, handleNavigate]
   );
-
-  const handleSidebarCollapseToggle = () => {
-    if (isMobile) {
-      setOpenMobile(true);
-      return;
-    }
-
-    toggleSidebar();
-  };
-
-  const handleMobileSidebarOpen = () => {
-    if (isMobile) {
-      setOpenMobile(true);
-    } else {
-      setOpen(true);
-    }
-  };
 
   return (
     <div className="flex h-full min-h-0 w-full overflow-hidden bg-background text-foreground">
@@ -297,26 +276,19 @@ const LayoutShell = ({
           </div>
         </SidebarFooter>
       </Sidebar>
-      <SidebarInset className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <SidebarInset className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <LayoutHeader>
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
               className="md:hidden"
-              onClick={handleMobileSidebarOpen}
+              onClick={() => setOpenMobile(true)}
               aria-label="Abrir navegação"
             >
               <Menu className="h-5 w-5" />
             </Button>
-            <div className="relative hidden min-w-0 flex-1 items-center sm:flex">
-              <Search className="pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Buscar tickets, contatos..."
-                className="h-9 w-full rounded-lg border border-border bg-muted/40 pl-9 text-sm shadow-none placeholder:text-muted-foreground"
-              />
-            </div>
+            {user?.tenant?.name && <span className="truncate text-sm font-medium">{user.tenant.name}</span>}
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <Button
@@ -337,26 +309,9 @@ const LayoutShell = ({
               )}
               <span className="sr-only">Alternar tema</span>
             </Button>
-            <TenantSelector />
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[0.65rem] font-medium text-primary-foreground">
-                5
-              </span>
-            </Button>
             <HealthIndicator />
           </div>
         </LayoutHeader>
-        <div className="px-4 py-4 sm:hidden">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Buscar tickets, contatos..."
-              className="h-9 w-full rounded-lg border border-border bg-muted/40 pl-9 text-sm shadow-none placeholder:text-muted-foreground"
-            />
-          </div>
-        </div>
         <LayoutContent
           className="h-full min-h-0"
           paddingVariant={contentPaddingVariant}

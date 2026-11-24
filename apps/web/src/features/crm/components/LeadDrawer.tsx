@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Drawer,
   DrawerContent,
@@ -14,12 +15,9 @@ import useLeadDetails from '../hooks/useLeadDetails';
 import useLeadTimeline from '../hooks/useLeadTimeline';
 import useLeadTasks from '../hooks/useLeadTasks';
 import LeadHeader from './lead-drawer/LeadHeader';
-import LeadActionList from './lead-drawer/LeadActionList';
 import LeadTimeline from './lead-drawer/LeadTimeline';
 import LeadTaskList from './lead-drawer/LeadTaskList';
 import { useCrmViewContext } from '../state/view-context';
-import useCrmPermissions from '../state/permissions';
-import emitCrmTelemetry from '../utils/telemetry';
 
 type LeadDrawerProps = {
   open: boolean;
@@ -29,10 +27,9 @@ type LeadDrawerProps = {
 
 const LeadDrawer = ({ open, leadId, onOpenChange }: LeadDrawerProps) => {
   const { toggleRealtime } = useCrmViewContext();
-  const permissions = useCrmPermissions();
-  const { lead, isLoading: leadLoading } = useLeadDetails(leadId);
-  const { timeline, isLoading: timelineLoading } = useLeadTimeline(leadId);
-  const { tasks, isLoading: tasksLoading } = useLeadTasks(leadId);
+  const { lead, isLoading: leadLoading, error: leadError } = useLeadDetails(leadId);
+  const { timeline, isLoading: timelineLoading, error: timelineError } = useLeadTimeline(leadId);
+  const { tasks, isLoading: tasksLoading, error: tasksError } = useLeadTasks(leadId);
 
   useEffect(() => {
     if (open) {
@@ -53,28 +50,23 @@ const LeadDrawer = ({ open, leadId, onOpenChange }: LeadDrawerProps) => {
         </DrawerHeader>
         <ScrollArea className="flex-1">
           <div className="flex flex-col gap-6 p-6">
-            {ready && lead ? <LeadHeader lead={lead} /> : <div className="h-32 animate-pulse rounded-lg bg-muted/40" />}
-
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Ações rápidas</h3>
-              <LeadActionList
-                onMarkConnected={() => emitCrmTelemetry('crm.lead.open', { action: 'mark_connected', leadId })}
-                onScheduleFollowUp={() => emitCrmTelemetry('crm.lead.open', { action: 'schedule_follow_up', leadId })}
-                onSendMessage={() => emitCrmTelemetry('crm.lead.open', { action: 'send_message', leadId })}
-                onEditLead={() => emitCrmTelemetry('crm.lead.open', { action: 'edit_lead', leadId })}
-                canManageTasks={permissions.canManageTasks}
-                canEditLead={permissions.canEditLead}
-              />
-            </section>
+            {ready && lead && <LeadHeader lead={lead} />}
+            {leadLoading && <p role="status">Carregando lead…</p>}
+            {leadError && <p role="alert">Não foi possível carregar os detalhes do lead.</p>}
+            {lead?.contactId && (
+              <Button asChild><Link to={`/crm/opportunities?${new URLSearchParams({ contactId: lead.contactId, leadId: lead.id })}`}>
+                Abrir oportunidades do contato
+              </Link></Button>
+            )}
 
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
-              {timelineLoading ? <div className="h-24 animate-pulse rounded-lg bg-muted/40" /> : <LeadTimeline events={timeline} />}
+              {timelineLoading ? <div className="h-24 animate-pulse rounded-lg bg-muted/40" /> : timelineError ? <p role="alert">Histórico indisponível.</p> : <LeadTimeline events={timeline} />}
             </section>
 
             <section className="space-y-3">
               <h3 className="text-sm font-semibold text-foreground">Próximas tarefas</h3>
-              {tasksLoading ? <div className="h-24 animate-pulse rounded-lg bg-muted/40" /> : <LeadTaskList tasks={tasks} />}
+              {tasksLoading ? <div className="h-24 animate-pulse rounded-lg bg-muted/40" /> : tasksError ? <p role="alert">Tarefas indisponíveis.</p> : <LeadTaskList tasks={tasks} />}
             </section>
           </div>
         </ScrollArea>
@@ -86,12 +78,7 @@ const LeadDrawer = ({ open, leadId, onOpenChange }: LeadDrawerProps) => {
                 Fechar
               </Button>
             </DrawerClose>
-            <Button
-              type="button"
-              onClick={() => emitCrmTelemetry('crm.insights.navigate', { targetView: 'list', entry: 'drawer_footer', leadId })}
-            >
-              Ver detalhes completos
-            </Button>
+
           </div>
         </DrawerFooter>
       </DrawerContent>

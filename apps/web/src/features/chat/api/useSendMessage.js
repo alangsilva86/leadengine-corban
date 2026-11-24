@@ -206,6 +206,7 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
         throw new Error('ticketId is required to send a message');
       }
 
+      const idempotencyKey = generateIdempotencyKey();
       let lastError = null;
       for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt += 1) {
         try {
@@ -219,7 +220,6 @@ export const useSendMessage = ({ fallbackTicketId } = {}) => {
             mediaFileName,
             caption,
           });
-          const idempotencyKey = generateIdempotencyKey();
           const response = await apiPost(
             `/api/tickets/${targetTicketId}/messages`,
             {

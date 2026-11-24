@@ -6,7 +6,7 @@ import {
 } from '../../schemas/broker-contracts';
 import type { NormalizedRawUpsertMessage } from '../../services/baileys-raw-normalizer';
 import { asRecord, readNumber, readString } from '../../utils/webhook-parsers';
-import { sanitizeMetadataValue, toRawPreview } from './helpers';
+import { sanitizeMetadataValue } from './helpers';
 
 type NormalizeContractEventOptions = {
   requestId: string;
@@ -46,7 +46,6 @@ export const normalizeContractEvent = (
     logger.warn('Received invalid broker WhatsApp contract event', {
       requestId: options.requestId,
       issues: parsed.error.issues,
-      preview: toRawPreview(eventRecord),
     });
     return null;
   }

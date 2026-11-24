@@ -1,7 +1,9 @@
+import { getAuthPayload, getTenantId } from '@/lib/auth.js';
 import sessionStorageAvailable from '@/lib/session-storage.js';
 
 const INSTANCES_CACHE_KEY = 'leadengine:whatsapp:instances';
 const INSTANCES_CACHE_VERSION = 2;
+const getCacheKey = () => `${INSTANCES_CACHE_KEY}:${getTenantId()}:${getAuthPayload()?.sub ?? 'anonymous'}`;
 
 export interface InstancesCacheEntry {
   schemaVersion: number;
@@ -16,7 +18,7 @@ export const readInstancesCache = (): InstancesCacheEntry | null => {
   }
 
   try {
-    const raw = sessionStorage.getItem(INSTANCES_CACHE_KEY);
+    const raw = sessionStorage.getItem(getCacheKey());
     if (!raw) {
       return null;
     }
@@ -34,7 +36,7 @@ export const readInstancesCache = (): InstancesCacheEntry | null => {
           : null;
 
     if (version !== INSTANCES_CACHE_VERSION) {
-      sessionStorage.removeItem(INSTANCES_CACHE_KEY);
+      sessionStorage.removeItem(getCacheKey());
       return null;
     }
 
@@ -52,7 +54,7 @@ export const persistInstancesCache = (list: unknown[], currentId: string | null)
 
   try {
     sessionStorage.setItem(
-      INSTANCES_CACHE_KEY,
+      getCacheKey(),
       JSON.stringify({
         schemaVersion: INSTANCES_CACHE_VERSION,
         list,
@@ -69,7 +71,7 @@ export const clearInstancesCache = (): void => {
   if (!sessionStorageAvailable()) {
     return;
   }
-  sessionStorage.removeItem(INSTANCES_CACHE_KEY);
+  sessionStorage.removeItem(getCacheKey());
 };
 
 export const cacheConstants = {

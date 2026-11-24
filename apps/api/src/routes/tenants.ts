@@ -38,10 +38,9 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const tenantId = resolveRequestTenantId(req);
-    const canReadAll = hasPermission(req, 'tenants:read');
 
     const tenants = await prisma.tenant.findMany({
-      where: canReadAll ? {} : { id: tenantId },
+      where: { id: tenantId },
       orderBy: { createdAt: 'asc' },
     });
 

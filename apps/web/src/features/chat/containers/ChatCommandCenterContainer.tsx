@@ -15,7 +15,6 @@ import {
   getLegacyStageValue,
   normalizeStage,
 } from '../components/ConversationArea/utils/stage.js';
-import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import { getTenantId } from '@/lib/auth.js';
 import { apiGet, apiPost } from '@/lib/api.js';
 import LossReasonDialog from '../components/ConversationArea/LossReasonDialog.jsx';
@@ -461,7 +460,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   });
 
   const sendMessage = useCallback(
-    ({
+    async ({
       content,
       attachments = [],
       template,
@@ -473,7 +472,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       const files = Array.isArray(attachments) ? attachments : [];
       const trimmed = (content ?? '').trim();
       if (!trimmed && files.length === 0 && !template) {
-        return;
+        return false;
       }
 
       const metadata: ChatMessageMetadata = {};
@@ -641,21 +640,20 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         mutationPayload.caption = normalizedCaption ?? null;
       }
 
-      controller.sendMessageMutation.mutate(mutationPayload, {
-        onSuccess: (result: unknown) => {
-          const error = (result as { error?: { message?: string } } | null)?.error;
-          if (error) {
-            availability.notifyOutboundError(error, error?.message ?? 'Não foi possível enviar a mensagem.');
-            return;
-          }
-          availability.resetAvailability();
-          emitInboxTelemetry('chat.outbound_message', {
-            ticketId: controller.selectedTicketId,
-            hasTemplate: Boolean(template),
-            hasAttachments,
-          });
-        },
-        onError: (error: any) => {
+      try {
+        const result = await controller.sendMessageMutation.mutateAsync(mutationPayload);
+        if (result?.error) {
+          availability.notifyOutboundError(result.error, result.error.message ?? 'Não foi possível enviar a mensagem.');
+          return false;
+        }
+        availability.resetAvailability();
+        emitInboxTelemetry('chat.outbound_message', {
+          ticketId: controller.selectedTicketId,
+          hasTemplate: Boolean(template),
+          hasAttachments,
+        });
+        return true;
+      } catch (error: any) {
           const normalizedPayloadError = error?.payload?.error ?? error?.error ?? null;
           const fallbackMessage =
             normalizedPayloadError?.recoveryHint ??
@@ -682,8 +680,8 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
             error: normalizedPayloadError?.code ?? error?.message,
             hasTemplate: Boolean(template),
           });
-        },
-      });
+        return false;
+      }
     },
     [availability, controller, selectedTicket]
   );
@@ -833,9 +831,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         ticketId: controller.selectedTicketId,
         contactId,
       });
-      toast.info('Edição de contato', {
-        description: 'Integração com editor de contato ainda não está disponível neste ambiente.',
-      });
+      window.location.assign(`/contacts/${encodeURIComponent(contactId)}`);
     },
     [controller.selectedTicketId]
   );
@@ -1055,7 +1051,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
 	  };
 
   return (
-    <WhatsAppInstancesProvider autoRefresh initialFetch logger={{}}>
+    <>
       <ChatCommandCenter
         currentUser={currentUser}
         manualConversation={manualConversationProps}
@@ -1070,7 +1066,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         onConfirm={handleBulkLossConfirm}
         isSubmitting={isBulkLossSubmitting}
       />
-    </WhatsAppInstancesProvider>
+    </>
   );
 };
 

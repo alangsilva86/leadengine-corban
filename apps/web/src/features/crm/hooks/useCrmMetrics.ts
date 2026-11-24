@@ -17,70 +17,11 @@ type CrmMetricsQueryResult = {
   fetchedAt: string | null;
 };
 
-const FALLBACK_METRICS: CrmMetricsSnapshot = {
-  summary: [
-    {
-      id: 'activeLeads',
-      label: 'Leads ativos',
-      unit: 'count',
-      value: 128,
-      delta: 6,
-      deltaUnit: 'count',
-      trend: 'up',
-    },
-    {
-      id: 'newLeads',
-      label: 'Novos (7d)',
-      unit: 'count',
-      value: 42,
-      delta: 8,
-      deltaUnit: 'count',
-      trend: 'up',
-    },
-    {
-      id: 'slaCompliance',
-      label: 'Dentro do SLA',
-      unit: 'percentage',
-      value: 86,
-      delta: -4,
-      deltaUnit: 'percentage',
-      trend: 'down',
-    },
-    {
-      id: 'avgResponseTime',
-      label: '1ª resposta média',
-      unit: 'duration',
-      value: 68,
-      delta: -12,
-      deltaUnit: 'duration',
-      trend: 'up',
-    },
-    {
-      id: 'stalledLeads',
-      label: 'Sem atividade (7d)',
-      unit: 'count',
-      value: 17,
-      delta: 2,
-      deltaUnit: 'count',
-      trend: 'down',
-    },
-    {
-      id: 'conversionRate',
-      label: 'Taxa de conversão',
-      unit: 'percentage',
-      value: 28,
-      delta: 3,
-      deltaUnit: 'percentage',
-      trend: 'up',
-    },
-  ],
-  retrievedAt: new Date().toISOString(),
-  source: 'fallback',
-};
+const EMPTY_METRICS: CrmMetricsSnapshot = { summary: [], retrievedAt: '', source: 'fallback' };
 
 const normalizeMetricsResponse = (payload: unknown): CrmMetricsSnapshot => {
   if (!payload || typeof payload !== 'object') {
-    return FALLBACK_METRICS;
+    throw new Error('Resposta inválida ao carregar indicadores.');
   }
 
   const maybeSummary = Array.isArray((payload as any).summary) ? (payload as any).summary : [];
@@ -110,7 +51,7 @@ const normalizeMetricsResponse = (payload: unknown): CrmMetricsSnapshot => {
       const trend: CrmMetricPrimitive['trend'] =
         entry.trend === 'up' || entry.trend === 'down' || entry.trend === 'flat'
           ? entry.trend
-          : inferTrend(delta);
+          : inferTrend(delta) ?? 'flat';
 
       return {
         id,
@@ -124,10 +65,6 @@ const normalizeMetricsResponse = (payload: unknown): CrmMetricsSnapshot => {
       } satisfies CrmMetricPrimitive;
     })
     .filter(Boolean) as CrmMetricPrimitive[];
-
-  if (summary.length === 0) {
-    return FALLBACK_METRICS;
-  }
 
   const retrievedAt =
     typeof (payload as any).retrievedAt === 'string' ? (payload as any).retrievedAt : new Date().toISOString();
@@ -143,14 +80,8 @@ const fetchCrmMetrics = async (filters: CrmFilterState): Promise<CrmMetricsSnaps
   const serializedFilters = serializeCrmFilters(filters);
   const query = new URLSearchParams({ filters: serializedFilters });
 
-  try {
-    const response = await apiGet(`/api/crm/metrics?${query.toString()}`);
-    const payload = response?.data ?? response;
-    return normalizeMetricsResponse(payload);
-  } catch (error) {
-    console.warn('[CRM] Falha ao carregar métricas. Usando fallback local.', error);
-    return FALLBACK_METRICS;
-  }
+  const response = await apiGet(`/api/crm/metrics?${query}`);
+  return normalizeMetricsResponse(response?.data ?? response);
 };
 
 export const useCrmMetrics = ({ filters, enabled = true }: UseCrmMetricsOptions) => {
@@ -162,15 +93,14 @@ export const useCrmMetrics = ({ filters, enabled = true }: UseCrmMetricsOptions)
     enabled,
     staleTime: 60 * 1000,
     gcTime: 5 * 60 * 1000,
-    placeholderData: (previousData) => previousData ?? FALLBACK_METRICS,
   });
 
-  const data = queryResult.data ?? FALLBACK_METRICS;
+  const data = queryResult.data ?? EMPTY_METRICS;
 
   const metrics: CrmMetricsQueryResult = useMemo(
     () => ({
       summary: data.summary,
-      fetchedAt: data.retrievedAt ?? null,
+      fetchedAt: data.retrievedAt || null,
       source: data.source ?? 'fallback',
     }),
     [data]

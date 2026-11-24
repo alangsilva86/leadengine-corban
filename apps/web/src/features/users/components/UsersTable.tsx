@@ -51,6 +51,7 @@ type UsersTableProps = {
   onRemove: (userId: string) => void;
   busyUserIds?: string[];
   currentUserId?: string | null;
+  canManage?: boolean;
 };
 
 const UsersTable = ({
@@ -60,6 +61,7 @@ const UsersTable = ({
   onRemove,
   busyUserIds = [],
   currentUserId,
+  canManage = true,
 }: UsersTableProps) => {
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
 
@@ -111,7 +113,7 @@ const UsersTable = ({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <Select value={user.role} onValueChange={(value) => onRoleChange(user.id, value as UserRole)} disabled={busy}>
+                      <Select value={user.role} onValueChange={(value) => onRoleChange(user.id, value as UserRole)} disabled={!canManage || busy || user.id === currentUserId}>
                         <SelectTrigger aria-label={`Alterar função de ${user.name}`} className="w-[180px]">
                           <SelectValue />
                         </SelectTrigger>
@@ -131,7 +133,7 @@ const UsersTable = ({
                       <Switch
                         checked={user.isActive}
                         onCheckedChange={(value) => onToggleActive(user.id, value)}
-                        disabled={busy || user.id === currentUserId}
+                        disabled={!canManage || busy || user.id === currentUserId}
                         aria-label={`Alternar status de ${user.name}`}
                       />
                       <UserStatusBadge isActive={user.isActive} />
@@ -146,7 +148,7 @@ const UsersTable = ({
                       variant="ghost"
                       size="icon"
                       onClick={() => setPendingRemoval(user.id)}
-                      disabled={disableRemoval || busy}
+                      disabled={!canManage || disableRemoval || busy}
                       aria-label={`Desativar ${user.name}`}
                     >
                       <Trash2 className="h-4 w-4" />

@@ -176,7 +176,6 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
   const rawPhone = ticket?.contact?.phone ?? ticket?.metadata?.contactPhone ?? null;
   const onSendSMS = headerProps?.onSendSMS;
   const onContactFieldSave = headerProps?.onContactFieldSave;
-  const onEditContact = headerProps?.onEditContact;
   const onDealFieldSave = headerProps?.onDealFieldSave;
   const nextStepValue = headerProps?.nextStepValue;
   const onNextStepSave = headerProps?.onNextStepSave;
@@ -259,7 +258,6 @@ export const ConversationAreaView = ({ timeline, composer, header }) => {
         <ContactDetailsPanel
           ticket={ticket}
           onContactFieldSave={onContactFieldSave}
-          onEditContact={onEditContact}
           onCall={handleCall}
           onSendSms={handleSendSms}
           nextStepValue={nextStepValue}

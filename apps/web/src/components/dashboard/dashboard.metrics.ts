@@ -323,6 +323,11 @@ const buildRecentTickets = (tickets: DashboardTicket[]): RecentTicketEntry[] =>
       return ticket;
     });
 
+export const channelPresentation = (value: string) => {
+  const channel = normalizeChannel(value);
+  return { name: channelLabels[channel], color: channelColors[channel] };
+};
+
 export const processTickets = (ticketsData: DashboardTicketsResponse | null | undefined): TicketInsights => {
   const items = Array.isArray(ticketsData?.items) ? ticketsData.items : [];
   const dayBuckets = createDayBuckets();

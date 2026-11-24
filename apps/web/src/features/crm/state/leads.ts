@@ -3,6 +3,7 @@ export type LeadStatus = 'new' | 'in_progress' | 'engaged' | 'won' | 'lost';
 export interface LeadSummary {
   id: string;
   name: string;
+  contactId?: string;
   stage: string;
   ownerId: string | null;
   ownerName: string | null;

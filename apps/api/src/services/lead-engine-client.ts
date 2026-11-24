@@ -72,59 +72,6 @@ export type BrokerLeadRecord = ConfigBrokerLeadRecord & {
   createdAt?: string;
   updatedAt?: string;
 };
-// ============================================================================
-// Dados de fallback para desenvolvimento
-// ============================================================================
-
-const FALLBACK_LEADS: BrokerLeadRecord[] = [
-  {
-    id: 'demo-lead-1',
-    fullName: 'Maria Helena Souza',
-    document: '09941751919',
-    registrations: ['1839'],
-    agreementId: 'saec-goiania',
-    agreementCode: 'SaecGoiania',
-    phone: '+5562999887766',
-    margin: 487.5,
-    netMargin: 390,
-    score: 92,
-    tags: ['respondido', 'whatsapp'],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-lead-2',
-    fullName: 'Carlos Henrique Lima',
-    document: '82477214500',
-    registrations: ['1920'],
-    agreementId: 'saec-goiania',
-    agreementCode: 'SaecGoiania',
-    phone: '+5562999776655',
-    margin: 512.4,
-    netMargin: 405.8,
-    score: 88,
-    tags: ['novo', 'sms'],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'demo-lead-3',
-    fullName: 'Fernanda Alves Ribeiro',
-    document: '15840762033',
-    registrations: ['2044'],
-    agreementId: 'rf1-boa-vista',
-    agreementCode: 'Rf1BoaVista',
-    phone: '+5595999776655',
-    margin: 462.75,
-    netMargin: 371.4,
-    score: 86,
-    tags: ['respondido', 'whatsapp'],
-    createdAt: new Date().toISOString(),
-  },
-];
-
-// ============================================================================
-// Cliente Lead Engine atualizado
-// ============================================================================
-
 class LeadEngineClient {
   private readonly baseUrl: string;
   private readonly creditBaseUrl?: string;
@@ -280,61 +227,6 @@ class LeadEngineClient {
     return range;
   }
 
-  private fallback(agreementId: string, take: number): BrokerLeadRecord[] {
-    const scoped = FALLBACK_LEADS.filter((lead) => lead.agreementId === agreementId);
-    const candidates = scoped.length > 0 ? scoped : FALLBACK_LEADS;
-    const quantity = Math.min(Math.max(take, 1), Math.max(candidates.length, 1));
-    const timestamp = Date.now();
-
-    return Array.from({ length: quantity }, (_, index) => {
-      const base = candidates[index % candidates.length];
-      return {
-        ...base,
-        id: `${base.id}-${timestamp}-${index}`,
-        agreementId,
-      } satisfies BrokerLeadRecord;
-    });
-  }
-
-  public getFallbackLeadsForAgreement(agreementId: string, take = 25): BrokerLeadRecord[] {
-    return this.fallback(agreementId, take);
-  }
-
-  private getFallbackLeads(params: {
-    agreementCode?: string;
-    documentNumber?: string;
-    size?: number;
-    page?: number;
-  }): LeadResponse {
-    const agreementCode = params.agreementCode;
-    let leads = FALLBACK_LEADS;
-
-    if (agreementCode) {
-      leads = FALLBACK_LEADS.filter(
-        (lead) => lead.agreementCode === agreementCode || lead.agreementId === agreementCode
-      );
-    }
-
-    if (params.documentNumber) {
-      leads = leads.filter((lead) => lead.document === params.documentNumber);
-    }
-
-    const size = Math.min(Math.max(params.size ?? 25, 1), 100);
-    const page = Math.max(params.page ?? 0, 0);
-    const start = page * size;
-    const end = start + size;
-
-    return {
-      data: leads.slice(start, end),
-      total: leads.length,
-      pagination: {
-        page,
-        size,
-        total: leads.length,
-      },
-    };
-  }
-
   async getLeads(params: {
     startDateUtc?: string;
     endDateUtc?: string;
@@ -360,32 +252,16 @@ class LeadEngineClient {
       queryParams.set('agreementCode', params.agreementCode);
     }
 
-    const range = this.applyDefaultRange(queryParams);
-
+    this.applyDefaultRange(queryParams);
     if (!this.useRealData) {
-      logger.info(`${LOG_PREFIX} 🧪 Retornando leads de fallback`, {
-        agreementCode: params.agreementCode ?? null,
-        rangeStart: range.start ?? null,
-        rangeEnd: range.end ?? null,
-      });
-      return this.getFallbackLeads(params);
+      throw createLeadEngineError('Integração LeadEngine desativada.', { status: 503 });
     }
-
-    try {
-      return await this.request<LeadResponse>(`/api/v1/lead?${queryParams.toString()}`);
-    } catch (error) {
-      logger.warn(`${LOG_PREFIX} Fallback para dados locais`, {
-        agreementCode: params.agreementCode ?? null,
-        error,
-      });
-      return this.getFallbackLeads(params);
-    }
+    return this.request<LeadResponse>(`/api/v1/lead?${queryParams.toString()}`);
   }
 
   async ingestLead(leads: IngestLeadRequest[]): Promise<void> {
     if (!this.useRealData) {
-      logger.info(`${LOG_PREFIX} Simulando ingestão de ${leads.length} leads`);
-      return;
+      throw createLeadEngineError('Integração LeadEngine desativada.', { status: 503 });
     }
 
     await this.request('/api/v1/lead', {
@@ -398,10 +274,7 @@ class LeadEngineClient {
 
   async ingestCreditLead(agreementSlug: string, leads: CreditLeadRequest[]): Promise<void> {
     if (!this.useRealData) {
-      logger.info(
-        `${LOG_PREFIX} Simulando ingestão de ${leads.length} leads de crédito para ${agreementSlug}`
-      );
-      return;
+      throw createLeadEngineError('Integração LeadEngine desativada.', { status: 503 });
     }
 
     if (!this.creditBaseUrl) {
@@ -438,7 +311,7 @@ class LeadEngineClient {
         agreementCode: agreementId,
         take,
       });
-      return this.fallback(agreementId, take);
+      return [];
     }
 
     logger.info(`${LOG_PREFIX} ✅ Leads recebidos`, {

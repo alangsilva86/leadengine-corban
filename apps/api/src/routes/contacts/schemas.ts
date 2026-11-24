@@ -113,8 +113,10 @@ export const ListContactTasksQuerySchema = PaginationQuerySchema.extend({
   status: TaskStatusParamSchema,
 });
 
-export const ContactIdParamSchema = z.object({ contactId: z.string().uuid() });
-export const TaskIdParamSchema = z.object({ taskId: z.string().uuid() });
+export const ContactResourceIdSchema = z.union([z.string().cuid(), z.string().uuid()]);
+
+export const ContactIdParamSchema = z.object({ contactId: ContactResourceIdSchema });
+export const TaskIdParamSchema = z.object({ taskId: ContactResourceIdSchema });
 
 export const parseOrRespond = <T>(schema: ZodSchema<T>, payload: unknown, res: Response): T | null => {
   try {

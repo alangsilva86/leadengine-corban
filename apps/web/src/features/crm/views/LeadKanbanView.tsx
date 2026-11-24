@@ -1,15 +1,13 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import KanbanBoard from '../components/kanban/KanbanBoard';
 import useKanbanStages from '../hooks/useKanbanStages';
 import useCrmLeads from '../hooks/useCrmLeads';
 import { useCrmViewState } from '../state/view-context';
-import useCrmPermissions from '../state/permissions';
 
 const LeadKanbanView = () => {
   const { filters } = useCrmViewState();
   const stages = useKanbanStages();
-  const { leads, isLoading } = useCrmLeads(filters);
-  const permissions = useCrmPermissions();
+  const { leads, isLoading, error, refetch, hasNextPage, fetchNextPage } = useCrmLeads(filters);
 
   const leadsByStage = useMemo(() => {
     const map: Record<string, typeof leads> = {};
@@ -55,24 +53,18 @@ const LeadKanbanView = () => {
     return map;
   }, [leadsByStage]);
 
-  const handleMoveLead = useCallback(
-    async (leadId: string, fromStage: string, toStage: string, position: number) => {
-      if (!permissions.canMoveLead) {
-        return;
-      }
-      // Mutação real será implementada na etapa de backend.
-    },
-    [permissions.canMoveLead]
-  );
+  if (error) return <p role="alert">Não foi possível carregar os leads. <button onClick={() => refetch()}>Tentar novamente</button></p>;
 
   return (
+    <>
     <KanbanBoard
       stages={stages}
       leadsByStage={leadsByStage}
       metricsByStage={metricsByStage}
       isLoading={isLoading && !leads.length}
-      {...(permissions.canMoveLead ? { onMoveLead: handleMoveLead } : {})}
     />
+    {hasNextPage && <button onClick={() => fetchNextPage()}>Carregar mais leads</button>}
+    </>
   );
 };
 

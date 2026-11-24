@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 
 import {
   BulkContactsActionSchema,
@@ -7,7 +7,6 @@ import {
   CreateContactPayloadSchema,
   MergeContactsDTOSchema,
   UpdateContactPayloadSchema,
-  WhatsappActionPayloadSchema,
 } from '@ticketz/core';
 import type { ContactFilters } from '@ticketz/core';
 import {
@@ -24,29 +23,26 @@ import {
 
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
+import { requireRoles } from '../middleware/policies';
 import { respondWithValidationError } from '../utils/http-validation';
 import { ConflictError, NotFoundError } from '@ticketz/core';
 import {
   ContactIdParamSchema,
+  ContactResourceIdSchema,
   ListContactsQuerySchema,
   PaginationQuerySchema,
   parseOrRespond,
 } from './contacts/schemas';
-import { sendWhatsappBulkAction } from '../services/contacts/whatsapp-bulk';
 import { normalizePaginationQuery } from '../utils/pagination';
 
-type NormalizePayloadFn = (payload: { type: string; [key: string]: unknown }) => NormalizedMessagePayload;
-
-let normalizePayloadCached: NormalizePayloadFn | null = null;
-const loadNormalizePayload = async (): Promise<NormalizePayloadFn> => {
-  if (!normalizePayloadCached) {
-    const mod = await import('@ticketz/contracts');
-    normalizePayloadCached = mod.normalizePayload as NormalizePayloadFn;
-  }
-  return normalizePayloadCached;
-};
-
 const router: Router = Router();
+const mergeContactsBody = MergeContactsDTOSchema.omit({ tenantId: true }).extend({
+  targetId: ContactResourceIdSchema,
+  sourceIds: z.array(ContactResourceIdSchema).min(1),
+});
+const bulkContactsBody = BulkContactsActionSchema.omit({ tenantId: true }).extend({
+  contactIds: z.array(ContactResourceIdSchema).min(1),
+});
 
 router.get(
   '/',
@@ -146,8 +142,9 @@ router.post(
 router.post(
   '/merge',
   requireTenant,
+  requireRoles('ADMIN'),
   asyncHandler(async (req: Request, res: Response) => {
-    const payload = parseOrRespond(MergeContactsDTOSchema.omit({ tenantId: true }), req.body, res);
+    const payload = parseOrRespond(mergeContactsBody, req.body, res);
     if (!payload) {
       return;
     }
@@ -227,7 +224,7 @@ router.post(
   '/actions/bulk',
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
-    const payload = parseOrRespond(BulkContactsActionSchema.omit({ tenantId: true }), req.body, res);
+    const payload = parseOrRespond(bulkContactsBody, req.body, res);
     if (!payload) {
       return;
     }
@@ -241,19 +238,8 @@ router.post(
 router.post(
   '/actions/whatsapp',
   requireTenant,
-  asyncHandler(async (req: Request, res: Response) => {
-    const payload = parseOrRespond(WhatsappActionPayloadSchema, req.body, res);
-    if (!payload) {
-      return;
-    }
-
-    const tenantId = req.user!.tenantId;
-    const operatorId = req.user!.id;
-
-    const results = await sendWhatsappBulkAction({ tenantId, operatorId, payload });
-
-    res.status(202).json({ success: true, data: { results } });
-  })
+  (_req, res) => res.status(409).json({ success: false,
+    error: { code: 'CAMPAIGN_NOT_HOMOLOGATED', message: 'Disparos em lote dependem de um canal e modelos homologados.' } }),
 );
 
 router.get(

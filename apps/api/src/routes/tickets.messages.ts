@@ -12,15 +12,11 @@ import {
 } from '../services/ticket-service';
 import { resolveRequestTenantId } from '../services/tenant-service';
 import { ensureTicketId, paginationValidation, validateTicketId } from './tickets.shared';
-import { getSocketServer } from '../lib/socket-registry';
-import { getDefaultInstanceId } from '../config/whatsapp';
 import { logger } from '../config/logger';
 import {
   WhatsAppBrokerError,
   WhatsAppBrokerNotConfiguredError,
 } from '../services/whatsapp-broker-client';
-import { getWhatsAppTransport, type WhatsAppTransportSendMessagePayload } from '../features/whatsapp-transport';
-import { whatsappOutboundMetrics } from '../lib/metrics';
 import { recordBrokerFailure, recordBrokerSuccess } from '../services/broker-observability';
 import {
   hasStructuredContactData,
@@ -35,14 +31,11 @@ import {
   resolveBrokerCode,
   resolveBrokerStatus,
   resolveRequestId,
-  safeTruncate,
-  serializeError,
 } from '../utils/request-parsers';
-import { findOrCreateOpenTicketByChat, upsertMessageByExternalId, type PassthroughMessageMedia } from '@ticketz/storage';
 
 const router: Router = Router();
-
 const allowedMediaTypes = new Set(['image', 'video', 'audio', 'document']);
+
 const allowedFileMessageTypes = new Set(['IMAGE', 'VIDEO', 'AUDIO', 'DOCUMENT']);
 const allowedMessageTypes = new Set<MessageType | 'TEXT'>([
   'TEXT',
@@ -73,94 +66,9 @@ const decodeCursor = (cursor: string | undefined): number | null => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const emitRealtimeMessage = (tenantId: string, ticketId: string, payload: unknown) => {
-  const socket = getSocketServer();
-  if (!socket) {
-    return;
-  }
-
-  socket.to(`tenant:${tenantId}`).emit('messages.new', payload);
-  socket.to(`ticket:${ticketId}`).emit('messages.new', payload);
-};
-
-const normalizeOutboundMedia = (
-  value: unknown
-):
-  | {
-      broker: {
-        mediaType: 'image' | 'video' | 'audio' | 'document';
-        mimetype?: string;
-        base64?: string;
-        mediaUrl?: string;
-        fileName?: string;
-        caption?: string;
-      };
-      storage: PassthroughMessageMedia;
-    }
-  | null => {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const mediaRecord = value as Record<string, unknown>;
-  const normalizedMediaType = normalizeString(mediaRecord.mediaType)?.toLowerCase();
-  if (!normalizedMediaType || !allowedMediaTypes.has(normalizedMediaType)) {
-    return null;
-  }
-
-  const base64 = normalizeString(mediaRecord.base64);
-  const mediaUrl = normalizeString(mediaRecord.mediaUrl);
-  const mimetype = normalizeString(mediaRecord.mimetype ?? mediaRecord.mimeType);
-  const fileName = normalizeString(mediaRecord.fileName ?? mediaRecord.filename);
-  const caption = normalizeString(mediaRecord.caption);
-  const mediaKey = normalizeString(mediaRecord.mediaKey ?? mediaRecord.media_key);
-  const directPath = normalizeString(mediaRecord.directPath ?? mediaRecord.direct_path);
-
-  const broker: {
-    mediaType: 'image' | 'video' | 'audio' | 'document';
-    mimetype?: string;
-    base64?: string;
-    mediaUrl?: string;
-    fileName?: string;
-    caption?: string;
-  } = {
-    mediaType: normalizedMediaType as 'image' | 'video' | 'audio' | 'document',
-  };
-
-  if (mimetype) {
-    broker.mimetype = mimetype;
-  }
-  if (base64) {
-    broker.base64 = base64;
-  }
-  if (mediaUrl) {
-    broker.mediaUrl = mediaUrl;
-  }
-  if (fileName) {
-    broker.fileName = fileName;
-  }
-  if (caption) {
-    broker.caption = caption;
-  }
-
-  const storage: PassthroughMessageMedia = {
-    mediaType: normalizedMediaType as 'image' | 'video' | 'audio' | 'document',
-    caption: caption ?? null,
-    mimeType: mimetype ?? null,
-    fileName: fileName ?? null,
-    url: mediaUrl ?? null,
-    size: null,
-    base64: base64 ?? null,
-    mediaKey: mediaKey ?? null,
-    directPath: directPath ?? null,
-  };
-
-  return { broker, storage };
-};
-
 const buildRecoveryHint = (requestId: string | null): string => {
   const base =
-    'Guardamos a mensagem e ela será reenviada automaticamente assim que o WhatsApp voltar a responder.';
+    'Confira o status do envio no atendimento antes de fazer outra tentativa.';
   if (requestId) {
     return `${base} ID da falha: ${requestId}.`;
   }
@@ -316,8 +224,6 @@ router.post(
     const ticketId = normalizeString(req.body.ticketId);
     const text = normalizeString(req.body.text) ?? normalizeString(req.body.content);
     const instanceOverride = normalizeString(req.body.iid) ?? normalizeString(req.body.instanceId);
-    const mediaPayload = chatId ? normalizeOutboundMedia(req.body.media) : null;
-    const transport = getWhatsAppTransport();
     const baseRequestId = resolveRequestId(req);
     const requestWithRid = req as Request & { rid?: string };
     if (!requestWithRid.rid) {
@@ -475,264 +381,10 @@ router.post(
       return;
     }
 
-    const normalizedChatId = chatId;
-    const instanceId = instanceOverride ?? getDefaultInstanceId();
-
-    if (!normalizedChatId) {
-      res.status(400).json({ code: 'CHAT_ID_REQUIRED', message: 'Informe chatId ou ticketId válido.' });
-      return;
-    }
-
-    if (!instanceId) {
-      res.status(400).json({ code: 'INSTANCE_REQUIRED', message: 'Informe iid ou configure WHATSAPP_DEFAULT_INSTANCE_ID.' });
-      return;
-    }
-
-    const contactLabel = normalizeString(req.body.contactName) ?? normalizedChatId;
-    const messageMetadata = isRecord(req.body.metadata)
-      ? { ...(req.body.metadata as Record<string, unknown>) }
-      : ({} as Record<string, unknown>);
-
-    const requestedType = typeof req.body.type === 'string' ? req.body.type.trim().toUpperCase() : null;
-    const normalizedLocation = normalizeLocationPayload(req.body.location ?? req.body.coordinates);
-    const normalizedContacts = normalizeContactsPayload(req.body.contacts ?? req.body.contact ?? req.body.vcard);
-    const normalizedTemplate = normalizeTemplatePayload(req.body.template);
-
-    if (normalizedLocation) {
-      messageMetadata.location = normalizedLocation;
-    }
-
-    if (normalizedContacts) {
-      messageMetadata.contacts = normalizedContacts;
-    }
-
-    if (normalizedTemplate) {
-      messageMetadata.template = normalizedTemplate;
-    }
-
-    if (typeof req.body.previewUrl === 'boolean') {
-      messageMetadata.previewUrl = req.body.previewUrl;
-    }
-
-    const normalizedType = (() => {
-      if (requestedType && allowedMessageTypes.has(requestedType as MessageType)) {
-        return requestedType.toLowerCase();
-      }
-      if (mediaPayload) {
-        return mediaPayload.broker.mediaType;
-      }
-      if (normalizedLocation) {
-        return 'location';
-      }
-      if (normalizedTemplate) {
-        return 'template';
-      }
-      if (normalizedContacts) {
-        return 'contact';
-      }
-      return 'text';
-    })();
-
-    try {
-      const messagePayload: WhatsAppTransportSendMessagePayload = {
-        to: normalizedChatId,
-        content: text ?? mediaPayload?.broker.caption ?? '',
-        type: normalizedType,
-        previewUrl: Boolean(req.body?.previewUrl),
-      };
-
-      if (mediaPayload?.broker.caption) {
-        messagePayload.caption = mediaPayload.broker.caption;
-      }
-
-      if (mediaPayload) {
-        messagePayload.media = mediaPayload.broker as Record<string, unknown>;
-      }
-
-      if (mediaPayload?.broker.mediaUrl) {
-        messagePayload.mediaUrl = mediaPayload.broker.mediaUrl;
-      }
-
-      if (mediaPayload?.broker.mimetype) {
-        messagePayload.mediaMimeType = mediaPayload.broker.mimetype;
-      }
-
-      if (mediaPayload?.broker.fileName) {
-        messagePayload.mediaFileName = mediaPayload.broker.fileName;
-      }
-
-      if (normalizedType === 'location' && normalizedLocation) {
-        messagePayload.location = normalizedLocation;
-      }
-
-      if (normalizedType === 'template' && normalizedTemplate) {
-        messagePayload.template = normalizedTemplate;
-      }
-
-      if (normalizedType === 'contact' && normalizedContacts) {
-        messagePayload.contacts = normalizedContacts;
-      }
-
-      if (Object.keys(messageMetadata).length > 0) {
-        messagePayload.metadata = messageMetadata;
-      }
-
-      const startedAt = Date.now();
-      const brokerResponse = await transport.sendMessage(instanceId, messagePayload);
-      const latencyMs = Date.now() - startedAt;
-      const metricBase = {
-        origin: 'tickets.router',
-        tenantId,
-        instanceId,
-      } as const;
-      const outboundStatus =
-        typeof (brokerResponse as Record<string, unknown>).status === 'string'
-          ? ((brokerResponse as Record<string, unknown>).status as string)
-          : 'SENT';
-      whatsappOutboundMetrics.incTotal({ ...metricBase, status: outboundStatus });
-      whatsappOutboundMetrics.observeLatency(metricBase, latencyMs);
-
-      const externalId = brokerResponse.externalId ?? `TEMP-${Date.now()}`;
-      const ticketContext = await findOrCreateOpenTicketByChat({
-        tenantId,
-        chatId: normalizedChatId,
-        displayName: contactLabel,
-        phone: normalizedChatId,
-        instanceId,
-      });
-
-      const { message } = await upsertMessageByExternalId({
-        tenantId,
-        ticketId: ticketContext.ticket.id,
-        chatId: normalizedChatId,
-        direction: 'outbound',
-        externalId,
-        type: mediaPayload ? 'media' : 'text',
-        text: text ?? mediaPayload?.storage.caption ?? null,
-        media: mediaPayload ? mediaPayload.storage : null,
-        metadata: {
-          source: 'baileys',
-          brokerResponse: safeTruncate(brokerResponse),
-          instanceId,
-        },
-        timestamp: Date.now(),
-      });
-
-      recordBrokerSuccess({
-        tenantId,
-        ticketId: ticketContext.ticket.id,
-        chatId: normalizedChatId,
-        instanceId,
-        brokerStatus: 200,
-        requestId: baseRequestId,
-      });
-      logger.info('📤 [Tickets] outbound enviado', {
-        tenantId,
-        ticketId: ticketContext.ticket.id,
-        chatId: normalizedChatId,
-        instanceId,
-        brokerStatus: 200,
-        requestId: baseRequestId,
-        messageId: message.id,
-        externalId: message.externalId ?? externalId,
-      });
-
-      emitRealtimeMessage(tenantId, ticketContext.ticket.id, message);
-
-      res.status(200).json({
-        success: true,
-        data: {
-          messageId: message.id,
-          externalId: message.externalId ?? externalId,
-          ticketId: ticketContext.ticket.id,
-          ticket: ticketContext.ticket,
-          message,
-        },
-      });
-    } catch (error) {
-      if (error instanceof WhatsAppBrokerNotConfiguredError) {
-        res.status(503).json({
-          success: false,
-          error: {
-            code: 'BROKER_NOT_CONFIGURED',
-            message: error.message,
-            ...(error.missing ? { missing: error.missing } : {}),
-          },
-        });
-        return;
-      }
-
-      const ticketContext = await findOrCreateOpenTicketByChat({
-        tenantId,
-        chatId: normalizedChatId,
-        displayName: contactLabel,
-        phone: normalizedChatId,
-        instanceId,
-      });
-
-      const errorId = `ERR-${Date.now()}`;
-      const requestId = resolveRequestId(req, error);
-      const brokerStatus = resolveBrokerStatus(error) ?? 502;
-      const brokerCode = resolveBrokerCode(error) ?? 'BROKER_ERROR';
-      const { message } = await upsertMessageByExternalId({
-        tenantId,
-        ticketId: ticketContext.ticket.id,
-        chatId: normalizedChatId,
-        direction: 'outbound',
-        externalId: errorId,
-        type: mediaPayload ? 'media' : 'text',
-        text: text ?? mediaPayload?.storage.caption ?? null,
-        media: mediaPayload ? mediaPayload.storage : null,
-        metadata: {
-          source: 'baileys',
-          brokerError: serializeError(error),
-          instanceId,
-          retry: {
-            status: 'pending',
-            reason: brokerCode,
-            requestId,
-            capturedAt: new Date().toISOString(),
-          },
-        },
-        timestamp: Date.now(),
-      });
-
-      recordBrokerFailure({
-        tenantId,
-        ticketId: ticketContext.ticket.id,
-        chatId: normalizedChatId,
-        instanceId,
-        brokerStatus,
-        errorCode: brokerCode,
-        requestId,
-        recoveryQueued: true,
-      });
-      logger.error('🚨 [Tickets] outbound falhou', {
-        tenantId,
-        ticketId: ticketContext.ticket.id,
-        chatId: normalizedChatId,
-        instanceId,
-        brokerStatus,
-        brokerCode,
-        requestId,
-        error,
-      });
-      emitRealtimeMessage(tenantId, ticketContext.ticket.id, message);
-
-      res.status(502).json({
-        success: false,
-        error: {
-          code: 'BROKER_ERROR',
-          message: error instanceof Error ? error.message : String(error),
-          brokerCode,
-          brokerStatus,
-          requestId,
-          ticketId: ticketContext.ticket.id,
-          queuedMessageId: message.id,
-          recoveryHint: buildRecoveryHint(requestId),
-        },
-      });
-    }
+    res.status(409).json({
+      success: false,
+      error: { code: 'CONVERSATION_REQUIRED', message: 'Envie mensagens a partir de um atendimento verificado.' },
+    });
   })
 );
 

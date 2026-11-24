@@ -1,3 +1,4 @@
+import { emitToUser } from '../../../lib/socket-registry';
 import { ConflictError, NotFoundError } from '@ticketz/core';
 import {
   assignTicket as storageAssignTicket,
@@ -190,7 +191,11 @@ export const addTicketNote = async (
 
   const note = await createTicketNote(notePayload);
 
-  emitTicketEvent(tenantId, ticketId, 'ticket.note.created', note, author.id);
+  if (note.visibility === 'private') {
+    emitToUser(author.id, 'ticket.note.created', note);
+  } else {
+    emitTicketEvent(tenantId, ticketId, 'ticket.note.created', note, author.id);
+  }
 
   const ticketEnvelope = buildTicketRealtimeEnvelope({
     tenantId,

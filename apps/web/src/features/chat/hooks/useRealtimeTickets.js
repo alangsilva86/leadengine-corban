@@ -1,3 +1,4 @@
+import { getAuthToken } from '@/lib/auth.js';
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '@/lib/api.js';
 
@@ -79,6 +80,7 @@ export const useRealtimeTickets = ({
 
         const socket = io(resolveSocketUrl(), {
           path: '/socket.io',
+          auth: (callback) => callback({ token: getAuthToken() }),
           transports,
           withCredentials: true,
           reconnectionAttempts: 3,

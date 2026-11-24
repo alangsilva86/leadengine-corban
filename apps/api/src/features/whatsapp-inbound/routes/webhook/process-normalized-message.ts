@@ -1,8 +1,5 @@
 import { logger } from '../../../../config/logger';
-import {
-  getDefaultInstanceId,
-  getDefaultTenantId,
-} from '../../../../config/whatsapp';
+import { isWhatsappDebugFeatureEnabled } from '../../../../config/feature-flags';
 import { whatsappWebhookEventsCounter } from '../../../../lib/metrics';
 import { emitWhatsAppDebugPhase } from '../../../debug/services/whatsapp-debug-emitter';
 import { enqueueInboundWebhookJob } from '../../services/inbound-queue';
@@ -13,39 +10,23 @@ import { logBaileysDebugEvent } from '../../utils/baileys-event-logger';
 import type { NormalizedRawUpsertMessage } from '../../services/baileys-raw-normalizer';
 import { asRecord, readNumber, readString } from '../../utils/webhook-parsers';
 import { normalizeChatId } from '../../utils/poll-helpers';
-import { toRawPreview } from './helpers';
 import { getAiRoutingPreferences } from '../../../../config/ai-route';
 
 type ProcessNormalizedMessageOptions = {
   normalized: NormalizedRawUpsertMessage;
   eventRecord: Record<string, unknown>;
-  envelopeRecord: Record<string, unknown>;
   rawPreview: string;
   requestId: string;
-  tenantOverride?: string | null;
-  instanceOverride?: string | null;
+  tenantOverride: string;
+  instanceOverride: string;
 };
 
 export const processNormalizedMessage = async (
   options: ProcessNormalizedMessageOptions
 ): Promise<boolean> => {
-  const { normalized, eventRecord, envelopeRecord, rawPreview, requestId } = options;
+  const { normalized, eventRecord, rawPreview, requestId, tenantOverride: tenantId, instanceOverride: instanceId } = options;
   const { mode: aiRouteMode, skipServerAutoReply } = getAiRoutingPreferences();
   const aiRouteIsFront = aiRouteMode === 'front';
-
-  const tenantId =
-    options.tenantOverride ??
-    normalized.tenantId ??
-    readString((eventRecord as { tenantId?: unknown }).tenantId, envelopeRecord.tenantId) ??
-    getDefaultTenantId();
-
-  const instanceId =
-    readString(
-      options.instanceOverride,
-      normalized.data.instanceId,
-      (eventRecord as { instanceId?: unknown }).instanceId,
-      envelopeRecord.instanceId
-    ) ?? getDefaultInstanceId();
 
   const metadataContactRecord = asRecord(normalized.data.metadata?.contact);
   const messageRecord = (normalized.data.message ?? {}) as Record<string, unknown>;
@@ -304,7 +285,7 @@ export const processNormalizedMessage = async (
         ? metadataSource
         : 'baileys:webhook';
 
-    if (debugSource) {
+    if (isWhatsappDebugFeatureEnabled()) {
       await logBaileysDebugEvent(debugSource, {
         tenantId: tenantId ?? null,
         instanceId: instanceId ?? null,
@@ -312,11 +293,6 @@ export const processNormalizedMessage = async (
         messageId: normalized.messageId ?? externalId ?? null,
         direction,
         timestamp,
-        metadata,
-        contact: contactRecord,
-        message: messageRecord,
-        rawPayload: toRawPreview(eventRecord),
-        rawEnvelope: toRawPreview(envelopeRecord),
         normalizedIndex: normalized.messageIndex,
       });
     }
@@ -329,7 +305,7 @@ export const processNormalizedMessage = async (
       reason: aiRouteIsFront ? 'routed_front' : 'routed_server',
     });
 
-    enqueueInboundWebhookJob({
+    await enqueueInboundWebhookJob({
       requestId,
       tenantId,
       instanceId,

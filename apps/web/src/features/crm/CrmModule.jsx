@@ -1,36 +1,19 @@
 import { Suspense, lazy, useCallback } from 'react';
 import { Routes, Route, Outlet, useNavigate } from 'react-router-dom';
+import { NAVIGATION_PAGES } from '@/features/navigation/routes';
 import Layout from '@/components/Layout.jsx';
 import { PageFallback } from '@/App.jsx';
 
 const CrmHomePage = lazy(() => import('./pages/CrmHomePage'));
+const OpportunitiesPage = lazy(() => import('./pages/OpportunitiesPage'));
 const LeadDetailsPage = lazy(() => import('./pages/LeadDetailsPage.jsx'));
-
-const dispatchNavigateEvent = (page) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  const event = new CustomEvent('leadengine:navigate', { detail: page });
-  window.dispatchEvent(event);
-};
 
 const CrmLayoutShell = () => {
   const navigate = useNavigate();
 
-  const handleNavigate = useCallback((targetPage) => {
-    if (targetPage === 'crm') {
-      return;
-    }
-
-    dispatchNavigateEvent(targetPage);
-
-    if (targetPage === 'contacts') {
-      navigate('/contacts');
-      return;
-    }
-
-    navigate('/', { replace: targetPage === 'dashboard' });
+  const handleNavigate = useCallback((page) => {
+    const path = NAVIGATION_PAGES[page]?.path;
+    if (path) navigate(path);
   }, [navigate]);
 
   return (
@@ -46,6 +29,7 @@ const CrmModule = () => (
   <Routes>
     <Route element={<CrmLayoutShell />}>
       <Route index element={<CrmHomePage />} />
+      <Route path="opportunities" element={<OpportunitiesPage />} />
       <Route path="leads/:leadId/*" element={<LeadDetailsPage />} />
     </Route>
   </Routes>

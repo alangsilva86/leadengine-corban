@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 
 import { SendByContactSchema } from '@ticketz/contracts';
+import { requireTenant } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error-handler';
 import { sendToContact } from '../services/ticket-service';
 import { validateMessageSendRequest } from './messages/shared';
@@ -9,6 +10,7 @@ const router: Router = Router();
 
 router.post(
   '/contacts/:contactId/messages',
+  requireTenant,
   asyncHandler(async (req: Request, res: Response) => {
     const { contactId } = req.params;
     const validationResult = await validateMessageSendRequest({
@@ -24,7 +26,8 @@ router.post(
     const { parsed, payload, idempotencyKey } = validationResult;
 
     const response = await sendToContact({
-      operatorId: req.user?.id,
+      tenantId: req.user!.tenantId,
+      operatorId: req.user!.id,
       contactId,
       instanceId: parsed.instanceId,
       to: parsed.to,

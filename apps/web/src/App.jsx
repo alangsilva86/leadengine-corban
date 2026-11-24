@@ -3,6 +3,7 @@ import {
   RouterProvider,
   createBrowserRouter,
   Navigate,
+  Outlet,
   useNavigate,
   useRouteError,
   isRouteErrorResponse,
@@ -12,6 +13,7 @@ import './App.css';
 import { Button } from '@/components/ui/button.jsx';
 import AuthProvider, { useAuth } from './features/auth/AuthProvider.jsx';
 import LoginPage from './features/auth/Login.tsx';
+import { WhatsAppInstancesProvider } from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
 import { NAVIGATION_PAGES } from '@/features/navigation/routes.ts';
 
 const ContactsModule = lazy(() => import('./features/contacts/ContactsModule.jsx'));
@@ -132,8 +134,8 @@ const CrmBoundary = () => (
   </Suspense>
 );
 
-const AuthGate = ({ children }) => {
-  const { status, loading } = useAuth();
+const AuthenticatedWorkspace = () => {
+  const { status, loading, user, tenantId, refresh } = useAuth();
 
   if (status === 'checking' || loading) {
     return (
@@ -147,7 +149,21 @@ const AuthGate = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  return children;
+  if (status !== 'authenticated' || !user || !tenantId) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+        <p role="alert">Não foi possível validar a sessão.</p>
+        <Button onClick={refresh}>Tentar novamente</Button>
+        <Button variant="outline" asChild><a href="/logout">Sair</a></Button>
+      </main>
+    );
+  }
+
+  return (
+    <WhatsAppInstancesProvider key={`${tenantId}:${user.id}`} tenantId={tenantId} autoRefresh initialFetch>
+      <Outlet />
+    </WhatsAppInstancesProvider>
+  );
 };
 
 const LogoutRoute = () => {
@@ -174,110 +190,31 @@ const LogoutRoute = () => {
   return <PageFallback />;
 };
 
+const workspacePages = [
+  ['dashboard', <Dashboard />],
+  ['channels', <WhatsAppConnect />],
+  ['campaigns', <WhatsAppCampaigns />],
+  ['inbox', <ChatCommandCenter />],
+  ['settings', <Settings />],
+  ['baileys-logs', <BaileysLogs />],
+];
+
 const router = createBrowserRouter([
   {
-    path: '/',
-    element: (
-      <AuthGate>
-        <LayoutRoute currentPage={NAVIGATION_PAGES.dashboard.id}>
-          <Dashboard />
-        </LayoutRoute>
-      </AuthGate>
-    ),
+    element: <AuthenticatedWorkspace />,
     errorElement: <RouteErrorBoundary />,
+    children: [
+      ...workspacePages.map(([page, element]) => ({
+        path: NAVIGATION_PAGES[page].path,
+        element: <LayoutRoute currentPage={page} fullWidthContent={page === 'inbox'}>{element}</LayoutRoute>,
+      })),
+      { path: '/contacts/*', element: <ContactsBoundary /> },
+      { path: '/crm/*', element: <CrmBoundary /> },
+    ],
   },
-  {
-    path: '/channels',
-    element: (
-      <AuthGate>
-        <LayoutRoute currentPage={NAVIGATION_PAGES.channels.id}>
-          <WhatsAppConnect />
-        </LayoutRoute>
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/campaigns',
-    element: (
-      <AuthGate>
-        <LayoutRoute currentPage={NAVIGATION_PAGES.campaigns.id}>
-          <WhatsAppCampaigns />
-        </LayoutRoute>
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/inbox',
-    element: (
-      <AuthGate>
-        <LayoutRoute currentPage={NAVIGATION_PAGES.inbox.id} fullWidthContent>
-          <ChatCommandCenter />
-        </LayoutRoute>
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/settings',
-    element: (
-      <AuthGate>
-        <LayoutRoute currentPage={NAVIGATION_PAGES.settings.id}>
-          <Settings />
-        </LayoutRoute>
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/baileys-logs',
-    element: (
-      <AuthGate>
-        <LayoutRoute currentPage={NAVIGATION_PAGES['baileys-logs'].id}>
-          <BaileysLogs />
-        </LayoutRoute>
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/contacts/*',
-    element: (
-      <AuthGate>
-        <ContactsBoundary />
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/crm/*',
-    element: (
-      <AuthGate>
-        <CrmBoundary />
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/login',
-    element: <LoginPage />,
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '/logout',
-    element: (
-      <AuthGate>
-        <LogoutRoute />
-      </AuthGate>
-    ),
-    errorElement: <RouteErrorBoundary />,
-  },
-  {
-    path: '*',
-    element: <Navigate to="/" replace />,
-    errorElement: <RouteErrorBoundary />,
-  },
+  { path: '/login', element: <LoginPage />, errorElement: <RouteErrorBoundary /> },
+  { path: '/logout', element: <LogoutRoute /> },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]);
 
 function App() {

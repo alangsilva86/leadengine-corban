@@ -16,7 +16,7 @@ import { resolveProviderMessageId } from '../utils/messageIdentity.js';
 const DEFAULT_FILTERS = {
   scope: 'team',
   state: 'open',
-  window: 'in_window',
+  window: 'all',
   search: '',
   outcome: null,
   instanceId: null,

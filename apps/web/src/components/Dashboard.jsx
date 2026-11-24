@@ -2,15 +2,14 @@ import {
   MessageSquare,
   Phone,
   Mail,
-  Calendar,
   MoreVertical,
-  Sparkles,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import { Progress } from '@/components/ui/progress.jsx';
+import { Link } from 'react-router-dom';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
@@ -52,40 +51,7 @@ const getChannelIcon = (channel) => {
   return <Icon className="h-4 w-4" />;
 };
 
-const getOnboardingProgress = (onboarding) => {
-  if (!onboarding?.stages?.length) {
-    return {
-      currentIndex: 0,
-      total: 0,
-      progressValue: 0,
-      displayIndex: 0,
-      nextStage: null,
-      isComplete: false,
-    };
-  }
-
-  const total = onboarding.stages.length;
-  const activeStep = typeof onboarding.activeStep === 'number' ? onboarding.activeStep : 0;
-  const currentIndex = Math.min(activeStep, total - 1);
-  const displayIndex = Math.min(activeStep + 1, total);
-  const progressValue = Math.round((displayIndex / total) * 100);
-  const hasCampaign = Boolean(onboarding.activeCampaign);
-  const isComplete = hasCampaign && currentIndex >= total - 1;
-  const nextIndex = Math.min(currentIndex + 1, total - 1);
-  const nextStage = isComplete
-    ? 'Atenda seus leads na Inbox'
-    : onboarding.stages[nextIndex]?.label ?? onboarding.stages[currentIndex]?.label;
-
-  return { currentIndex, total, progressValue, displayIndex, nextStage, isComplete };
-};
-
-const heroStyle = {
-  background:
-    'radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 28%, transparent) 0%, transparent 55%), radial-gradient(circle at bottom right, color-mix(in srgb, var(--success) 22%, transparent) 0%, transparent 60%), color-mix(in srgb, var(--surface-overlay-strong) 78%, transparent)',
-  boxShadow: '0 24px 60px color-mix(in srgb, var(--color-border) 45%, transparent)',
-};
-
-const Dashboard = ({ onboarding, onStart }) => {
+const Dashboard = () => {
   const {
     stats,
     ticketsSeries,
@@ -107,96 +73,12 @@ const Dashboard = ({ onboarding, onStart }) => {
     refetchAll();
   };
 
-  const { total, progressValue, displayIndex, nextStage, isComplete } = getOnboardingProgress(onboarding);
-  const stageLabel = nextStage || 'Conclua as etapas';
-  const hasStarted = Boolean(onboarding?.selectedAgreement || onboarding?.whatsappStatus !== 'disconnected');
-  const primaryCtaLabel = hasStarted ? 'Continuar configuração' : 'Conectar meu primeiro número';
-
   return (
-    <div className="space-y-6">
-      <div
-        className="grid gap-6 rounded-[24px] border border-secondary p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
-        style={heroStyle}
-      >
-        <div className="grid max-w-xl gap-4">
-          <h1 className="text-3xl font-semibold text-foreground">Mudamos a forma de gerar demanda</h1>
-          <p className="text-base leading-relaxed text-muted-foreground">
-            Conecte o número que já conversa com os clientes, vincule origens comerciais quando necessário e acompanhe a
-            performance das campanhas em tempo real neste painel.
-          </p>
-          {total ? (
-            <div className="space-y-2 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet p-4">
-              <div className="flex items-center justify-between text-xs uppercase tracking-wide text-inbox-foreground-muted">
-                <span>Primeira configuração</span>
-                <span>
-                  {displayIndex} de {total}
-                </span>
-              </div>
-              <Progress value={progressValue} className="h-2" />
-              <p className="text-xs text-muted-foreground">
-                {isComplete ? 'Tudo pronto:' : 'Próximo passo:'}{' '}
-                <span className="font-medium text-foreground">{stageLabel}</span>
-              </p>
-            </div>
-          ) : null}
-          <div className="flex flex-wrap items-center gap-3">
-            <Button size="lg" onClick={onStart}>
-              <Sparkles className="h-4 w-4" />
-              {primaryCtaLabel}
-            </Button>
-            <Button variant="outline" size="lg">
-              <Calendar className="h-4 w-4" />
-              Relatório da semana
-            </Button>
-          </div>
-        </div>
-        {onboarding?.stages ? (
-          <div className="grid min-w-[220px] gap-3 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-strong p-4">
-            {onboarding.stages.map((stage, index) => {
-              const status =
-                index < onboarding.activeStep
-                  ? 'done'
-                  : index === onboarding.activeStep
-                  ? 'current'
-                  : 'todo';
-              const statusClasses = {
-                done: 'border-success/40 bg-success/15',
-                current: 'border-primary/50 bg-primary/15',
-                todo: 'border-surface-overlay-glass-border bg-surface-overlay-quiet',
-              };
-              const indexClasses = {
-                done: 'border-transparent bg-success text-success-strong-foreground',
-                current: 'border-transparent bg-primary text-primary-foreground',
-                todo: 'border-surface-overlay-glass-border bg-surface-overlay-quiet text-muted-foreground',
-              };
-              return (
-                <div
-                  key={stage.id}
-                  className={cn(
-                    'grid grid-cols-[auto,1fr] items-center gap-3 rounded-lg border p-3 text-sm transition-colors',
-                    statusClasses[status]
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold',
-                      indexClasses[status]
-                    )}
-                  >
-                    {index + 1}
-                  </span>
-                  <div>
-                    <span className="block font-medium text-foreground">{stage.label}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {status === 'done' ? 'Concluído' : status === 'current' ? 'Próxima etapa' : 'Aguardando'}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-      </div>
+    <div className="min-w-0 space-y-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Visão geral da operação</h1>
+        <Button asChild><Link to="/inbox">Abrir atendimentos</Link></Button>
+      </header>
 
       {errors.length > 0 ? (
         <Alert variant="destructive" className="border-destructive/40 bg-destructive/10">
@@ -220,8 +102,8 @@ const Dashboard = ({ onboarding, onStart }) => {
 
         <Card className="transition-shadow duration-200 hover:shadow-lg">
           <CardHeader>
-            <CardTitle>Leads e Conversões</CardTitle>
-            <CardDescription>Evolução mensal de leads e taxa de conversão</CardDescription>
+            <CardTitle>Aquisição de leads</CardTitle>
+            <CardDescription>Leads cadastrados por mês</CardDescription>
           </CardHeader>
           <CardContent>
             {leadsChartLoading ? (
@@ -235,16 +117,9 @@ const Dashboard = ({ onboarding, onStart }) => {
                     <YAxis allowDecimals={false} />
                     <Tooltip />
                     <Line type="monotone" dataKey="leads" stroke="var(--color-chart-2)" strokeWidth={2} name="Leads" />
-                    <Line
-                      type="monotone"
-                      dataKey="conversoes"
-                      stroke="var(--color-success)"
-                      strokeWidth={2}
-                      name="Conversões"
-                    />
                   </LineChart>
                 </ResponsiveContainer>
-                {leadsSeries.every((item) => item.leads === 0 && item.conversoes === 0) ? (
+                {leadsSeries.every((item) => item.leads === 0) ? (
                   <p className="mt-4 text-sm text-muted-foreground">
                     Ainda não há leads registrados para exibir nesta série temporal.
                   </p>

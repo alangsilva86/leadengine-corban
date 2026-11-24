@@ -128,18 +128,14 @@ export const safeResolveLeads = async (
   }
 };
 
-export const resolveTicketNotes = async (
-  tenantId: string,
-  tickets: Ticket[]
-): Promise<Map<string, TicketNote[]>> => {
-  const entries = await Promise.all(
-    tickets.map(async (ticket) => {
-      const notes = await listTicketNotes(tenantId, ticket.id);
-      return [ticket.id, notes] as const;
-    })
-  );
-
-  return new Map(entries);
+export const resolveTicketNotes = async (tenantId: string, tickets: Ticket[], actorId?: string) => {
+  const result = new Map<string, TicketNote[]>();
+  for (const note of await listTicketNotes(tenantId, tickets.map(ticket => ticket.id), actorId)) {
+    const notes = result.get(note.ticketId) ?? [];
+    notes.push(note);
+    result.set(note.ticketId, notes);
+  }
+  return result;
 };
 
 export const hydrateTicket = (
@@ -183,7 +179,8 @@ export const hydrateTicket = (
 export const resolveTicketHydrations = async (
   tenantId: string,
   tickets: Ticket[],
-  include: { contact: boolean; lead: boolean; notes: boolean; metrics: boolean }
+  include: { contact: boolean; lead: boolean; notes: boolean; metrics: boolean },
+  actorId?: string
 ): Promise<{
   conversations: Map<string, ConversationComputation>;
   contacts: Map<string, TicketContactSummary>;
@@ -196,7 +193,7 @@ export const resolveTicketHydrations = async (
   const [contacts, leads, notes] = await Promise.all([
     include.contact ? safeResolveContacts(tenantId, contactIds) : Promise.resolve(new Map()),
     include.lead || include.metrics ? safeResolveLeads(tenantId, contactIds) : Promise.resolve(new Map()),
-    include.notes ? resolveTicketNotes(tenantId, tickets) : Promise.resolve(new Map()),
+    include.notes ? resolveTicketNotes(tenantId, tickets, actorId) : Promise.resolve(new Map()),
   ]);
 
   return { conversations, contacts, leads, notes };

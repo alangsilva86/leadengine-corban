@@ -2,173 +2,67 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const prismaMock = {
-  tenant: {
-    findUnique: vi.fn(),
-    create: vi.fn(),
+const { prisma } = vi.hoisted(() => ({
+  prisma: {
+    tenant: { findUnique: vi.fn() },
+    user: { findFirst: vi.fn() },
+    authSession: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
+    $transaction: vi.fn(),
   },
-  user: {
-    findFirst: vi.fn(),
-    findUnique: vi.fn(),
-    create: vi.fn(),
-  },
-};
-
-const loggerMock = {
-  error: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-};
-
-vi.mock('../../lib/prisma', () => ({
-  prisma: prismaMock,
 }));
+vi.mock('../../lib/prisma', () => ({ prisma }));
+vi.mock('../../config/auth', () => ({ getJwtSecret: () => 'test-session-signing-key' }));
 
-vi.mock('../../config/logger', () => ({
-  logger: loggerMock,
-}));
+import { authRouter } from '../auth';
+
+const tenant = { id: 'tenant-1', slug: 'tenant-1', name: 'Tenant 1', isActive: true, settings: {} };
+const user = { id: 'user-1', tenantId: tenant.id, email: 'agent@example.com', name: 'Agente', role: 'AGENT', isActive: true, settings: {}, tenant };
+const app = express();
+app.use(express.json());
+app.use('/api/auth', authRouter);
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  prisma.$transaction.mockImplementation(callback => callback(prisma));
+});
 
 describe('auth routes', () => {
-  const ORIGINAL_SECRET = process.env.JWT_SECRET;
-
-  beforeEach(() => {
-    vi.resetModules();
-    Object.values(prismaMock.tenant).forEach((mock) => mock.mockReset());
-    Object.values(prismaMock.user).forEach((mock) => mock.mockReset());
-    process.env.JWT_SECRET = 'test-secret';
-  });
-
-  afterEach(() => {
-    if (ORIGINAL_SECRET === undefined) {
-      delete process.env.JWT_SECRET;
-    } else {
-      process.env.JWT_SECRET = ORIGINAL_SECRET;
-    }
-  });
-
-  const buildApp = async () => {
-    const { authRouter } = await import('../auth');
-    const app = express();
-    app.use(express.json());
-    app.use('/api/auth', authRouter);
-    return app;
-  };
-
-  it('logs in a user with valid credentials', async () => {
-    prismaMock.tenant.findUnique.mockResolvedValue({
-      id: 'tenant-1',
-      slug: 'tenant-1',
-      name: 'Tenant 1',
-      isActive: true,
-      settings: {},
-    });
-
-    const passwordHash = await bcrypt.hash('secret', 4);
-    prismaMock.user.findFirst.mockResolvedValue({
-      id: 'user-1',
-      tenantId: 'tenant-1',
-      email: 'agent@example.com',
-      name: 'Agent Smith',
-      role: 'ADMIN',
-      isActive: true,
-      passwordHash,
-      settings: {},
-    });
-
-    const app = await buildApp();
+  it('opens a server-owned session and caps the access lifetime', async () => {
+    prisma.tenant.findUnique.mockResolvedValue(tenant);
+    prisma.user.findFirst.mockResolvedValue({ ...user, passwordHash: await bcrypt.hash('secret', 4) });
+    prisma.authSession.create.mockImplementation(({ data }) => Promise.resolve(data));
     const response = await request(app).post('/api/auth/login').send({
-      email: 'agent@example.com',
-      password: 'secret',
-      tenantSlug: 'tenant-1',
+      email: user.email, password: 'secret', tenantSlug: tenant.slug, accessTtl: '365d',
     });
-
     expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.data.token.accessToken).toBeDefined();
-    expect(response.body.data.user.email).toBe('agent@example.com');
+    const { token, user: profile } = response.body.data;
+    expect(token.expiresIn).toBeLessThanOrEqual(3600);
+    expect(profile.role).toBe('AGENT');
+    expect(jwt.decode(token.accessToken)).toMatchObject({ sub: user.id, type: 'access', sid: expect.any(String) });
+    expect(prisma.authSession.create).toHaveBeenCalledTimes(1);
   });
 
-  it('registers a new tenant and admin user', async () => {
-    prismaMock.tenant.findUnique.mockResolvedValueOnce(null);
-    prismaMock.tenant.create.mockResolvedValue({
-      id: 'new-tenant',
-      name: 'New Tenant',
-      slug: 'new-tenant',
-      isActive: true,
-      settings: {},
-    });
-    prismaMock.user.findFirst.mockResolvedValue(null);
-    prismaMock.user.create.mockImplementation(async ({ data }) => ({
-      id: 'user-new',
-      tenantId: data.tenantId,
-      email: data.email,
-      name: data.name,
-      role: data.role,
-      isActive: true,
-      passwordHash: data.passwordHash,
-      settings: {},
+  it('rejects public registration', async () => {
+    const response = await request(app).post('/api/auth/register').send({ tenantSlug: tenant.slug, role: 'ADMIN' });
+    expect(response.status).toBe(403);
+    expect(prisma.tenant.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('rotates the nonce and derives permissions from the current role', async () => {
+    const token = jwt.sign({ sub: user.id, tenantId: tenant.id, sid: 'session-1', jti: 'nonce-1', type: 'refresh',
+      permissions: ['users:write'] }, 'test-session-signing-key', { expiresIn: '1h' });
+    const session = { id: 'session-1', refreshNonce: 'nonce-1', expiresAt: new Date(Date.now() + 3_600_000), user };
+    prisma.authSession.findFirst.mockResolvedValueOnce(session).mockResolvedValueOnce({ ...session, refreshNonce: 'rotated' });
+    prisma.authSession.updateMany.mockResolvedValue({ count: 1 });
+    const first = await request(app).post('/api/auth/token/refresh').send({ refreshToken: token });
+    expect(first.status).toBe(200);
+    expect(first.body.data.user.permissions).not.toContain('users:write');
+    expect(prisma.authSession.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ id: session.id, refreshNonce: 'nonce-1' }),
     }));
-
-    const app = await buildApp();
-    const response = await request(app).post('/api/auth/register').send({
-      name: 'Owner',
-      email: 'owner@example.com',
-      password: 's3cret',
-      tenantName: 'New Tenant',
-    });
-
-    expect(response.status).toBe(200);
-    expect(prismaMock.tenant.create).toHaveBeenCalledTimes(1);
-    expect(prismaMock.user.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          passwordHash: expect.any(String),
-          role: 'ADMIN',
-        }),
-      })
-    );
-    expect(response.body.data.user.role).toBe('ADMIN');
-  });
-
-  it('refreshes tokens using a refresh token', async () => {
-    const refreshToken = jwt.sign(
-      {
-        sub: 'user-1',
-        tenantId: 'tenant-1',
-        permissions: ['tickets:read'],
-        type: 'refresh',
-      },
-      'test-secret',
-      { expiresIn: '1h' }
-    );
-
-    prismaMock.user.findUnique.mockResolvedValue({
-      id: 'user-1',
-      tenantId: 'tenant-1',
-      email: 'agent@example.com',
-      name: 'Agent Smith',
-      role: 'AGENT',
-      isActive: true,
-      passwordHash: 'hash',
-      settings: {},
-      tenant: {
-        id: 'tenant-1',
-        name: 'Tenant 1',
-        slug: 'tenant-1',
-        isActive: true,
-        settings: {},
-      },
-    });
-
-    const app = await buildApp();
-    const response = await request(app).post('/api/auth/token/refresh').send({ refreshToken });
-
-    expect(response.status).toBe(200);
-    expect(response.body.data.token.accessToken).toBeDefined();
-    expect(prismaMock.user.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'user-1' } })
-    );
+    const second = await request(app).post('/api/auth/token/refresh').send({ refreshToken: token });
+    expect(second.status).toBe(401);
   });
 });

@@ -42,6 +42,7 @@ export {
   createOutboundMessage,
   updateMessage,
   findMessageByExternalId,
+  findMessageByIdempotencyKey,
   findPollVoteMessageCandidate,
   findOrCreateOpenTicketByChat,
   upsertMessageByExternalId,

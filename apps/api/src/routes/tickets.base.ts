@@ -185,6 +185,7 @@ router.get(
     const options =
       includeOptions || includeMetrics === true
         ? ({
+            actorId: req.user!.id,
             ...(includeOptions ? { include: includeOptions } : {}),
             ...(includeMetrics === true ? { includeMetrics: true } : {}),
           } satisfies ListTicketsOptions)
@@ -218,6 +219,7 @@ router.get(
     const include = sanitizeIncludeOptions(parseListParam(req.query.include));
     const tenantId = resolveRequestTenantId(req);
     const ticket = await queries.getTicketById(tenantId, ticketId, {
+      actorId: req.user!.id,
       include,
     });
 

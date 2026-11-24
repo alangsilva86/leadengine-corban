@@ -10,59 +10,20 @@ type PaginatedResponse = {
   total: number | null;
 };
 
-const fallbackLeads: LeadSummary[] = Array.from({ length: 12 }).map((_, index) => ({
-  id: `lead-demo-${index + 1}`,
-  name: `Lead exemplo ${index + 1}`,
-  stage: index % 3 === 0 ? 'qualification' : index % 3 === 1 ? 'proposal' : 'negotiation',
-  ownerId: index % 2 === 0 ? 'owner:me' : 'owner:team',
-  ownerName: index % 2 === 0 ? 'Você' : 'Equipe',
-  lastActivityAt: new Date(Date.now() - index * 3600 * 1000).toISOString(),
-  source: 'web',
-  channel: 'whatsapp',
-  potentialValue: 5000 + index * 250,
-  status: 'in_progress',
-}));
-
-const fetchLeadsPage = async (
-  filters: CrmFilterState,
-  cursor: string | null
-): Promise<PaginatedResponse> => {
-  try {
-    const params = new URLSearchParams({
-      filters: serializeCrmFilters(filters),
-    });
-
-    if (cursor) {
-      params.set('cursor', cursor);
-    }
-
-    const response = await apiGet(`/api/crm/leads?${params.toString()}`);
-    const payload = response?.data ?? response;
-
-    if (payload && typeof payload === 'object') {
-      const items = Array.isArray((payload as any).items) ? ((payload as any).items as LeadSummary[]) : [];
-      const nextCursor = typeof (payload as any).nextCursor === 'string' ? (payload as any).nextCursor : null;
-      const total = typeof (payload as any).total === 'number' ? (payload as any).total : null;
-
-      if (items.length > 0) {
-        return { items, nextCursor, total };
-      }
-    }
-  } catch (error) {
-    console.warn('[CRM] Falha ao carregar leads', error);
-  }
-
-  return {
-    items: fallbackLeads,
-    nextCursor: null,
-    total: fallbackLeads.length,
-  };
+const fetchLeadsPage = async (filters: CrmFilterState, cursor: string | null): Promise<PaginatedResponse> => {
+  const params = new URLSearchParams({ filters: serializeCrmFilters(filters) });
+  if (cursor) params.set('cursor', cursor);
+  const response = await apiGet(`/api/crm/leads?${params}`);
+  const payload = response?.data ?? response;
+  if (!Array.isArray(payload?.items)) throw new Error('Resposta inválida ao carregar leads.');
+  return { items: payload.items, total: payload.total ?? null, nextCursor: payload.nextCursor ?? null };
 };
 
 export const useCrmLeads = (filters: CrmFilterState) => {
   const query = useInfiniteQuery<PaginatedResponse>({
     queryKey: ['crm', 'leads', serializeCrmFilters(filters)],
     queryFn: ({ pageParam }) => fetchLeadsPage(filters, (pageParam as string | null) ?? null),
+    initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     staleTime: 15 * 1000,
     gcTime: 5 * 60 * 1000,

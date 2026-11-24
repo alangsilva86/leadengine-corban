@@ -31,6 +31,7 @@ services:
       - .env
     environment:
       NODE_ENV: ${NODE_ENV:-development}
+      HOST: 0.0.0.0
       PORT: ${PORT}
       FRONTEND_URL: ${FRONTEND_URL}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}

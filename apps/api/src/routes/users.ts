@@ -68,6 +68,7 @@ router.get(
 
 router.post(
   '/',
+  requireRoles('ADMIN'),
   body('name').isString().trim().isLength({ min: 3 }),
   body('email').isEmail().normalizeEmail(),
   body('role').isIn(['ADMIN', 'SUPERVISOR', 'AGENT']),
@@ -121,6 +122,7 @@ router.post(
 
 router.patch(
   '/:userId',
+  requireRoles('ADMIN'),
   param('userId').isString().trim().isLength({ min: 10 }),
   body('role').optional().isIn(['ADMIN', 'SUPERVISOR', 'AGENT']),
   body('isActive').optional().isBoolean(),
@@ -153,8 +155,15 @@ router.patch(
       data.isActive = req.body.isActive;
     }
 
+    if (req.user!.id === userId && (roleChanged || statusChanged)) {
+      throw new ConflictError('Você não pode alterar os privilégios ou o status da sua própria conta.');
+    }
+    if (roleChanged || statusChanged) {
+      data.sessions = { deleteMany: {} };
+    }
+
     const updated = await prisma.user.update({
-      where: { id: userId },
+      where: { id: userId, tenantId },
       data,
     });
 
@@ -194,6 +203,7 @@ router.patch(
 
 router.delete(
   '/:userId',
+  requireRoles('ADMIN'),
   param('userId').isString().trim().isLength({ min: 10 }),
   validateRequest,
   asyncHandler(async (req, res) => {
@@ -213,8 +223,8 @@ router.delete(
     }
 
     const updated = await prisma.user.update({
-      where: { id: userId },
-      data: { isActive: false },
+      where: { id: userId, tenantId },
+      data: { isActive: false, sessions: { deleteMany: {} } },
     });
 
     recordUserMutation(
