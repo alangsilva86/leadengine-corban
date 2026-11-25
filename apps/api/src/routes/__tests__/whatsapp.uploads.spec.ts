@@ -92,6 +92,34 @@ describe('WhatsApp uploads router', () => {
     expect(saveWhatsAppMediaMock).not.toHaveBeenCalled();
   });
 
+  it('keeps UTF-8 names sent in the fileName field', async () => {
+    saveWhatsAppMediaMock.mockResolvedValue({ mediaUrl: 'https://cdn.example.com/f.pdf', expiresInSeconds: 900 });
+
+    const app = await buildApp();
+    const response = await request(app)
+      .post('/api/whatsapp/uploads')
+      .field('fileName', 'relatório de crédito.pdf')
+      .attach('file', Buffer.from('%PDF-1.4'), { filename: 'upload.pdf', contentType: 'application/pdf' });
+
+    expect(response.status).toBe(201);
+    expect(response.body.fileName).toBe('relatório de crédito.pdf');
+    expect(saveWhatsAppMediaMock).toHaveBeenCalledWith(
+      expect.objectContaining({ originalName: 'relatório de crédito.pdf', mimeType: 'application/pdf' })
+    );
+  });
+
+  it('maps multer errors (file in an unexpected field) to FILE_UPLOAD_ERROR', async () => {
+    const app = await buildApp();
+
+    const response = await request(app)
+      .post('/api/whatsapp/uploads')
+      .attach('document', Buffer.from('file-content'), 'photo.jpg');
+
+    expect(response.status).toBe(400);
+    expect(response.body?.error?.code).toBe('FILE_UPLOAD_ERROR');
+    expect(saveWhatsAppMediaMock).not.toHaveBeenCalled();
+  });
+
   it('requires authentication', async () => {
     const app = await buildApp({ user: null });
 
