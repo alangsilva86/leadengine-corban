@@ -1,6 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { query, body } from 'express-validator';
 import { LeadSource, LeadStatus } from '@prisma/client';
+import {
+  LEAD_STAGES,
+  LEAD_STAGE_TO_LEGACY_LEAD_STATUS,
+  LEGACY_LEAD_STATUS_TO_LEAD_STAGE,
+  parseLeadStage,
+} from '../lib/lead-stages';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
@@ -50,6 +56,10 @@ const createLeadValidation = [
     .customSanitizer((value) => (typeof value === 'string' ? value.toUpperCase() : value))
     .custom((value) => Object.values(LeadStatus).includes(value))
     .withMessage(`status must be one of: ${Object.values(LeadStatus).join(', ')}`),
+  body('stage')
+    .optional()
+    .custom((value) => parseLeadStage(value, { legacy: false }) !== null)
+    .withMessage(`stage must be one of: ${LEAD_STAGES.join(', ')}`),
   body('value').optional().isFloat().withMessage('value must be a number').toFloat(),
   body('probability')
     .optional()
@@ -171,7 +181,14 @@ router.post(
     if (campaignId && !campaign) throw new NotFoundError('Campaign', campaignId);
     if (userId && !assignee) throw new NotFoundError('User', userId);
 
-    const status = isValidLeadStatus(req.body.status) ? req.body.status : LeadStatus.NEW;
+    // Funil único: `stage` é a fonte da verdade e `status` é espelhado a partir dela.
+    const requestedStage = parseLeadStage(req.body.stage, { legacy: false });
+    const status: LeadStatus = requestedStage
+      ? (LEAD_STAGE_TO_LEGACY_LEAD_STATUS[requestedStage] as LeadStatus)
+      : isValidLeadStatus(req.body.status)
+        ? req.body.status
+        : LeadStatus.NEW;
+    const stage = requestedStage ?? LEGACY_LEAD_STATUS_TO_LEAD_STAGE[status] ?? 'novo';
     const source = isValidLeadSource(req.body.source) ? req.body.source : undefined;
 
     if (!source) {
@@ -184,19 +201,20 @@ router.post(
         contactId,
         campaignId,
         userId,
+        stage,
         status,
         source,
         score: typeof req.body.score === 'object' && req.body.score !== null ? req.body.score : undefined,
         value: typeof req.body.value === 'number' ? req.body.value : undefined,
         probability: typeof req.body.probability === 'number' ? req.body.probability : undefined,
-        expectedCloseDate: parseDate(req.body.expectedCloseDate),
-        actualCloseDate: parseDate(req.body.actualCloseDate),
+        expectedCloseDate: parseDate(req.body.expectedCloseDate) ?? null,
+        actualCloseDate: parseDate(req.body.actualCloseDate) ?? null,
         lostReason: typeof req.body.lostReason === 'string' ? req.body.lostReason : undefined,
         tags: normalizeTags(req.body.tags) ?? [],
         customFields:
           typeof req.body.customFields === 'object' && req.body.customFields !== null ? req.body.customFields : undefined,
-        lastContactAt: parseDate(req.body.lastContactAt),
-        nextFollowUpAt: parseDate(req.body.nextFollowUpAt),
+        lastContactAt: parseDate(req.body.lastContactAt) ?? null,
+        nextFollowUpAt: parseDate(req.body.nextFollowUpAt) ?? null,
         notes: typeof req.body.notes === 'string' ? req.body.notes : undefined,
       },
       include: {

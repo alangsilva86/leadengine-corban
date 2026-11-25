@@ -40,25 +40,31 @@ const hasTicketStageColumn = async (client: PrismaClient): Promise<boolean> => {
   return Boolean(result[0]?.exists);
 };
 
-const ensureTicketStageEnum = async (client: PrismaClient): Promise<void> => {
+/**
+ * Valores do funil único do lead (espelho de `LEAD_STAGES` em @ticketz/contracts e do enum
+ * `LeadStage` do Prisma). A migração `20270223000100_unified_lead_stage` é a fonte oficial;
+ * este patch só existe para bancos antigos que nunca receberam a coluna `tickets.stage`.
+ */
+const LEAD_STAGE_VALUES = [
+  'novo',
+  'contato',
+  'qualificacao',
+  'proposta',
+  'documentacao',
+  'averbacao',
+  'liquidacao',
+  'ganho',
+  'perdido',
+  'reciclar',
+] as const;
+
+const ensureLeadStageEnum = async (client: PrismaClient): Promise<void> => {
+  const values = LEAD_STAGE_VALUES.map((value) => `'${value}'`).join(', ');
   await client.$executeRawUnsafe(`
     DO $$
     BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'TicketStage') THEN
-        CREATE TYPE "TicketStage" AS ENUM (
-          'novo',
-          'conectado',
-          'qualificacao',
-          'proposta',
-          'documentacao',
-          'documentos_averbacao',
-          'aguardando',
-          'aguardando_cliente',
-          'liquidacao',
-          'aprovado_liquidacao',
-          'reciclar',
-          'desconhecido'
-        );
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'LeadStage') THEN
+        CREATE TYPE "LeadStage" AS ENUM (${values});
       END IF;
     END $$;
   `);
@@ -67,7 +73,12 @@ const ensureTicketStageEnum = async (client: PrismaClient): Promise<void> => {
 const ensureTicketStageColumnAndIndex = async (client: PrismaClient): Promise<void> => {
   await client.$executeRawUnsafe(`
     ALTER TABLE "tickets"
-      ADD COLUMN IF NOT EXISTS "stage" "TicketStage" NOT NULL DEFAULT 'novo';
+      ADD COLUMN IF NOT EXISTS "stage" "LeadStage" NOT NULL DEFAULT 'novo';
+  `);
+
+  await client.$executeRawUnsafe(`
+    ALTER TABLE "tickets"
+      ADD COLUMN IF NOT EXISTS "legacy_stage" TEXT;
   `);
 
   await client.$executeRawUnsafe(`
@@ -76,6 +87,10 @@ const ensureTicketStageColumnAndIndex = async (client: PrismaClient): Promise<vo
   `);
 };
 
+/**
+ * Preenche a etapa a partir do antigo `metadata.pipelineStep`, já no vocabulário do funil único
+ * (mesmo mapeamento de LEGACY_TICKET_STAGE_TO_LEAD_STAGE).
+ */
 const backfillTicketStageFromMetadata = async (client: PrismaClient): Promise<void> => {
   await client.$executeRawUnsafe(`
     WITH normalized AS (
@@ -85,33 +100,43 @@ const backfillTicketStageFromMetadata = async (client: PrismaClient): Promise<vo
           trim(
             both '_' FROM lower(
               regexp_replace(
-                unaccent(COALESCE(metadata ->> 'pipelineStep', '')),
-                '[^a-z0-9]+',
+                translate(
+                  COALESCE(metadata ->> 'pipelineStep', ''),
+                  'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇç',
+                  'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCc'
+                ),
+                '[^a-zA-Z0-9]+',
                 '_',
                 'g'
               )
             )
-          )
+          ),
+          ''
         ) AS normalized_pipeline_step
       FROM "tickets"
     )
     UPDATE "tickets" AS t
-    SET "stage" = CASE normalized_pipeline_step
-      WHEN 'novo' THEN 'novo'::"TicketStage"
-      WHEN 'conectado' THEN 'conectado'::"TicketStage"
-      WHEN 'qualificacao' THEN 'qualificacao'::"TicketStage"
-      WHEN 'proposta' THEN 'proposta'::"TicketStage"
-      WHEN 'documentacao' THEN 'documentacao'::"TicketStage"
-      WHEN 'documentos_averbacao' THEN 'documentos_averbacao'::"TicketStage"
-      WHEN 'aguardando' THEN 'aguardando'::"TicketStage"
-      WHEN 'aguardando_cliente' THEN 'aguardando_cliente'::"TicketStage"
-      WHEN 'liquidacao' THEN 'liquidacao'::"TicketStage"
-      WHEN 'aprovado_liquidacao' THEN 'aprovado_liquidacao'::"TicketStage"
-      WHEN 'reciclar' THEN 'reciclar'::"TicketStage"
-      WHEN 'desconhecido' THEN 'desconhecido'::"TicketStage"
-      WHEN 'follow_up' THEN 'aguardando'::"TicketStage"
-      ELSE 'novo'::"TicketStage"
-    END
+    SET "legacy_stage" = n.normalized_pipeline_step,
+        "stage" = (CASE n.normalized_pipeline_step
+      WHEN 'novo' THEN 'novo'
+      WHEN 'desconhecido' THEN 'novo'
+      WHEN 'conectado' THEN 'contato'
+      WHEN 'contato' THEN 'contato'
+      WHEN 'aguardando' THEN 'contato'
+      WHEN 'follow_up' THEN 'contato'
+      WHEN 'qualificacao' THEN 'qualificacao'
+      WHEN 'proposta' THEN 'proposta'
+      WHEN 'documentacao' THEN 'documentacao'
+      WHEN 'aguardando_cliente' THEN 'documentacao'
+      WHEN 'documentos_averbacao' THEN 'averbacao'
+      WHEN 'averbacao' THEN 'averbacao'
+      WHEN 'liquidacao' THEN 'liquidacao'
+      WHEN 'aprovado_liquidacao' THEN 'ganho'
+      WHEN 'ganho' THEN 'ganho'
+      WHEN 'perdido' THEN 'perdido'
+      WHEN 'reciclar' THEN 'reciclar'
+      ELSE 'novo'
+    END)::"LeadStage"
     FROM normalized n
     WHERE t.id = n.id
       AND n.normalized_pipeline_step IS NOT NULL;
@@ -132,7 +157,7 @@ export const ensureTicketStageSupport = async (
   log(logger, 'warn', '[Storage] Ticket stage column missing — applying runtime patch');
 
   try {
-    await ensureTicketStageEnum(client);
+    await ensureLeadStageEnum(client);
     await ensureTicketStageColumnAndIndex(client);
     try {
       await backfillTicketStageFromMetadata(client);

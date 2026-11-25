@@ -183,13 +183,68 @@ test.describe('Corban com API e PostgreSQL', () => {
     const detail = `${endpoint}/${first.data.id}`;
     expect((await request.get(detail, { headers: other.headers })).status()).toBe(404);
     const update = (reason: string) => request.patch(detail, {
-      headers: admin.headers, data: { version: 1, stage: 'PREPARATION', nextAction: 'Conferir documentos', reason },
+      headers: admin.headers, data: { version: 1, stage: 'proposta', nextAction: 'Conferir documentos', reason },
     });
+    expect(first.data.stage).toBe('qualificacao');
     const updates = await Promise.all([update('Operador A'), update('Operador B')]);
     expect(updates.map(response => response.status()).sort()).toEqual([200, 409]);
     const stored = await (await request.get(detail, { headers: admin.headers })).json();
     expect(stored.data.version).toBe(2);
+    expect(stored.data.stage).toBe('proposta');
     expect(stored.data.activities).toHaveLength(2);
+    expect(stored.data.activities.map((activity: { stage: string }) => activity.stage)).toEqual(['proposta', 'qualificacao']);
+  });
+
+  test('funil único: a etapa do lead acompanha as conversas abertas do contato', async ({ request }) => {
+    const admin = await login(request);
+    const other = await login(request, 'admin@acme.test', 'acme-tenant');
+    const suffix = randomUUID().slice(0, 8);
+    const queue = await request.post(`${api}/api/queues`, { headers: admin.headers, data: { name: `Fila funil ${suffix}` } });
+    expect(queue.status()).toBe(201);
+    const queueId = (await queue.json()).data.id;
+    const contact = await request.post(`${api}/api/contacts`, { headers: admin.headers, data: { name: `Funil QA ${suffix}` } });
+    expect(contact.status()).toBe(201);
+    const contactId = (await contact.json()).data.id;
+    const lead = await request.post(`${api}/api/leads`, { headers: admin.headers, data: { contactId, source: 'WHATSAPP' } });
+    expect(lead.status()).toBe(201);
+    const leadId = (await lead.json()).data.id;
+    const ticket = await request.post(`${api}/api/tickets`, {
+      headers: admin.headers, data: { contactId, queueId, channel: 'WHATSAPP', subject: `Funil ${suffix}` },
+    });
+    expect(ticket.status()).toBe(201);
+    const ticketId = (await ticket.json()).data.id;
+    expect((await ticket.json()).data.stage).toBe('novo');
+
+    const setStage = (stage: string, headers = admin.headers) =>
+      request.patch(`${api}/api/crm/leads/${leadId}/stage`, { headers, data: { stage, reason: `QA ${stage}` } });
+    const ticketStage = async () =>
+      (await (await request.get(`${api}/api/tickets/${ticketId}`, { headers: admin.headers })).json()).data.stage;
+    const leadStage = async () =>
+      (await (await request.get(`${api}/api/crm/leads/${leadId}`, { headers: admin.headers })).json()).data.stage;
+
+    const moved = await setStage('proposta');
+    expect(moved.status()).toBe(200);
+    expect((await moved.json()).data).toMatchObject({ id: leadId, contactId, stage: 'proposta' });
+    expect(await ticketStage()).toBe('proposta');
+
+    const fromInbox = await request.put(`${api}/api/tickets/${ticketId}`, { headers: admin.headers, data: { stage: 'documentacao' } });
+    expect(fromInbox.status()).toBe(200);
+    expect((await fromInbox.json()).data.stage).toBe('documentacao');
+    expect(await leadStage()).toBe('documentacao');
+
+    const filters = encodeURIComponent(JSON.stringify({ stages: ['documentacao'], search: `Funil QA ${suffix}` }));
+    const filtered = await (await request.get(`${api}/api/crm/leads?filters=${filters}`, { headers: admin.headers })).json();
+    expect(filtered.data.items.map((item: { id: string }) => item.id)).toEqual([leadId]);
+    const timeline = await (await request.get(`${api}/api/crm/leads/${leadId}/timeline`, { headers: admin.headers })).json();
+    expect(timeline.data.filter((event: { type: string }) => event.type === 'status_change')).toHaveLength(2);
+
+    expect((await setStage('etapa-inexistente')).status()).toBe(400);
+    expect((await setStage('ganho', other.headers)).status()).toBe(404);
+    expect((await setStage('ganho')).status()).toBe(200);
+    const reopened = await setStage('proposta');
+    expect(reopened.status()).toBe(409);
+    expect((await reopened.json()).error.code).toBe('INVALID_STAGE_TRANSITION');
+    expect(await ticketStage()).toBe('ganho');
   });
 
   test('login e cadastro de oportunidade no navegador', async ({ page, request }) => {
@@ -241,10 +296,10 @@ test.describe('Corban com API e PostgreSQL', () => {
     const item = page.getByRole('listitem').filter({ hasText: label });
     await expect(item).toBeVisible();
     await item.getByRole('button', { name: 'Atualizar oportunidade' }).click();
-    await item.getByRole('combobox', { name: 'Etapa' }).selectOption('PREPARATION');
+    await item.getByRole('combobox', { name: 'Etapa' }).selectOption('proposta');
     await item.getByLabel('Motivo da atualização').fill('Dados revisados');
     await item.getByRole('button', { name: 'Salvar atualização' }).click();
-    await expect(item.getByText(/Preparação · Dados revisados/)).toBeVisible();
+    await expect(item.getByText(/Proposta · Dados revisados/)).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole('button', { name: 'Abrir navegação' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Oportunidades', exact: true })).toBeVisible();

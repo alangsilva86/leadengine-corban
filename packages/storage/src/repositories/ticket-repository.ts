@@ -988,6 +988,28 @@ export const findTicketsByContact = async (tenantId: string, contactId: string):
   return records.map(mapTicket);
 };
 
+/**
+ * Etapa inicial de um ticket novo: a etapa explícita, senão a etapa do lead do contato
+ * (o lead é o dono da etapa do funil), senão "novo".
+ */
+const resolveInitialTicketStage = async (
+  prisma: ReturnType<typeof getPrismaClient>,
+  tenantId: string,
+  contactId: string,
+  explicit?: TicketStage
+): Promise<TicketStage> => {
+  if (explicit) {
+    return explicit;
+  }
+
+  const lead = await prisma.lead.findFirst({
+    where: { tenantId, contactId },
+    select: { stage: true },
+  });
+
+  return (lead?.stage as TicketStage | undefined) ?? 'novo';
+};
+
 export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
   const prisma = getPrismaClient();
   const [contact, queue] = await Promise.all([
@@ -996,6 +1018,7 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
   ]);
   if (!contact) throw new NotFoundError('Contact', input.contactId);
   if (!queue) throw new NotFoundError('Queue', input.queueId);
+  const stage = await resolveInitialTicketStage(prisma, input.tenantId, input.contactId, input.stage);
   const metadataRecord = normalizeMetadataForWrite(input.metadata);
   const record = await prisma.ticket.create({
     data: {
@@ -1004,7 +1027,7 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
       queueId: input.queueId,
       status: 'OPEN',
       priority: input.priority ?? 'NORMAL',
-      stage: (input.stage ?? 'novo') as TicketStage,
+      stage,
       subject: input.subject ?? null,
       channel: input.channel,
       tags: input.tags ?? [],
@@ -1660,6 +1683,7 @@ export const findOrCreateOpenTicketByChat = async (
 
   if (!ticketRecord) {
     const queue = await ensurePassthroughQueue(input.tenantId);
+    const stage = await resolveInitialTicketStage(prisma, input.tenantId, contactRecord.id);
     ticketRecord = await prisma.ticket.create({
       data: {
         tenantId: input.tenantId,
@@ -1668,6 +1692,7 @@ export const findOrCreateOpenTicketByChat = async (
         channel: 'WHATSAPP',
         priority: 'NORMAL',
         status: 'OPEN',
+        stage,
         subject: displayName,
         metadata: {
           chatId: normalizedChatId,

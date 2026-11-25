@@ -1,11 +1,19 @@
 import { Router, type Request, type Response } from 'express';
-import { LeadSource, LeadStatus, type Prisma } from '@prisma/client';
+import { LeadSource, type Prisma } from '@prisma/client';
+import {
+  CLOSED_LEAD_STAGES,
+  LEAD_STAGES,
+  LEAD_STAGE_DEFINITIONS,
+  parseLeadStage,
+  type LeadStage,
+} from '../lib/lead-stages';
 import { NotFoundError, ValidationError } from '@ticketz/core';
 import { z } from 'zod';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { prisma } from '../lib/prisma';
 import { getDashboardSummary } from '../services/dashboard-summary';
+import { sendLeadStageError, setLeadStage } from '../services/leads/lead-stage-service';
 import { opportunitiesRouter } from './opportunities';
 
 const crmRouter = Router();
@@ -19,20 +27,29 @@ crmRouter.get('/dashboard', asyncHandler(async (req: Request, res: Response) => 
 
 const DAY = 86_400_000;
 const PAGE_SIZE = 50;
-const stages = {
-  qualification: ['NEW', 'CONTACTED', 'ENGAGED', 'QUALIFIED', 'NURTURING'],
-  proposal: ['PROPOSAL'],
-  negotiation: ['NEGOTIATION'],
-  'closed-won': ['CONVERTED'],
-  'closed-lost': ['LOST'],
-} as const satisfies Record<string, readonly LeadStatus[]>;
-type Stage = keyof typeof stages;
-const stageNames: Record<Stage, string> = {
-  qualification: 'Qualificação', proposal: 'Proposta', negotiation: 'Negociação',
-  'closed-won': 'Ganho', 'closed-lost': 'Perdido',
+/**
+ * Colunas do Kanban antigo (antes do funil único) → etapas do lead. Mantido só para que clientes
+ * antigos que ainda enviem esses ids em `filters.stages` continuem filtrando corretamente.
+ */
+const LEGACY_KANBAN_STAGE_FILTERS: Record<string, readonly LeadStage[]> = {
+  qualification: ['novo', 'contato', 'qualificacao', 'reciclar'],
+  proposal: ['proposta'],
+  negotiation: ['documentacao', 'averbacao', 'liquidacao'],
+  'closed-won': ['ganho'],
+  'closed-lost': ['perdido'],
 };
-const stageForStatus = (status: LeadStatus) => (Object.keys(stages) as Stage[])
-  .find((key) => (stages[key] as readonly LeadStatus[]).includes(status)) ?? 'qualification';
+const resolveStageFilter = (values: string[]): LeadStage[] => {
+  const resolved = new Set<LeadStage>();
+  for (const value of values) {
+    const legacyColumn = Object.prototype.hasOwnProperty.call(LEGACY_KANBAN_STAGE_FILTERS, value)
+      ? LEGACY_KANBAN_STAGE_FILTERS[value]
+      : undefined;
+    const stages = legacyColumn ?? [parseLeadStage(value)].filter((stage): stage is LeadStage => stage !== null);
+    stages.forEach((stage) => resolved.add(stage));
+  }
+  return [...resolved];
+};
+const openLeads: Prisma.LeadWhereInput = { stage: { notIn: [...CLOSED_LEAD_STAGES] } };
 
 const filterSchema = z.object({
   search: z.string().trim().max(120).optional(),
@@ -69,7 +86,6 @@ const leadScope = (tenantId: string): Prisma.LeadWhereInput => ({
 
 const filteredLeads = (tenantId: string, userId: string, raw: unknown): Prisma.LeadWhereInput => {
   const filters = parseFilters(raw);
-  const status = filters.stages?.flatMap((stage) => stages[stage as Stage] ?? []);
   const from = toDate(filters.dateRange?.from);
   const to = toDate(filters.dateRange?.to);
   const sourceMap = { web: 'WEBSITE', ads: 'PAID_ADS', organic: 'ORGANIC', social: 'SOCIAL_MEDIA' } as const;
@@ -78,7 +94,7 @@ const filteredLeads = (tenantId: string, userId: string, raw: unknown): Prisma.L
     sourceMap[entry as keyof typeof sourceMap] ?? entry.toUpperCase()
   ).filter((entry) => validSources.has(entry)) as LeadSource[];
   const and: Prisma.LeadWhereInput[] = [leadScope(tenantId)];
-  if (filters.stages?.length) and.push({ status: { in: status ?? [] } });
+  if (filters.stages?.length) and.push({ stage: { in: resolveStageFilter(filters.stages) } });
   if (filters.search) and.push({ contact: { fullName: { contains: filters.search, mode: 'insensitive' } } });
   if (filters.owners?.length) and.push({ userId: { in: filters.owners.map(id => id === 'owner:me' ? userId : id) } });
   if (filters.origins?.length) and.push({ source: { in: expandSources(filters.origins) } });
@@ -91,12 +107,12 @@ const filteredLeads = (tenantId: string, userId: string, raw: unknown): Prisma.L
 };
 
 const leadSelect = {
-  id: true, status: true, value: true, source: true, updatedAt: true,
+  id: true, stage: true, status: true, value: true, source: true, updatedAt: true,
   contact: { select: { id: true, fullName: true } },
   assignee: { select: { id: true, name: true } },
 } satisfies Prisma.LeadSelect;
 const summarize = (lead: Prisma.LeadGetPayload<{ select: typeof leadSelect }>) => ({
-  id: lead.id, name: lead.contact.fullName, contactId: lead.contact.id, stage: stageForStatus(lead.status),
+  id: lead.id, name: lead.contact.fullName, contactId: lead.contact.id, stage: lead.stage as LeadStage,
   ownerId: lead.assignee?.id ?? null, ownerName: lead.assignee?.name ?? null, lastActivityAt: lead.updatedAt,
   source: lead.source.toLowerCase(), channel: ['WHATSAPP', 'EMAIL', 'PHONE', 'WEBSITE'].includes(lead.source) ? lead.source.toLowerCase() : null,
   potentialValue: lead.value,
@@ -127,16 +143,62 @@ crmRouter.get('/leads/:leadId', asyncHandler(async (req: Request, res: Response)
   res.json({ success: true, data: { ...summarize(lead), notes: lead.notes } });
 }));
 
+const stageInput = z.object({
+  stage: z.string().trim().min(1).max(40),
+  reason: z.string().trim().max(500).nullish(),
+});
+
+/**
+ * PATCH /api/crm/leads/:leadId/stage — muda a etapa do lead (funil único).
+ * Também alinha a etapa de todas as conversas abertas do contato (Inbox).
+ */
+crmRouter.patch('/leads/:leadId/stage', asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, id: actorId } = req.user!;
+  const leadId = req.params.leadId ?? '';
+  const parsed = stageInput.safeParse(req.body ?? {});
+  const stage = parsed.success ? parseLeadStage(parsed.data.stage, { legacy: false }) : null;
+  if (!parsed.success || !stage) {
+    res.locals.errorCode = 'VALIDATION_ERROR';
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: parsed.success
+          ? `Etapa inválida. Use uma destas: ${LEAD_STAGES.join(', ')}.`
+          : 'Informe a etapa (stage) e, se quiser, um motivo (reason) de até 500 caracteres.',
+      },
+    });
+    return;
+  }
+
+  const scoped = { AND: [{ id: leadId }, leadScope(tenantId)] } satisfies Prisma.LeadWhereInput;
+  const existing = await prisma.lead.findFirst({ where: scoped, select: { id: true } });
+  if (!existing) {
+    sendLeadStageError(res, new NotFoundError('Lead', leadId));
+    return;
+  }
+
+  try {
+    await setLeadStage({ tenantId, leadId, stage, actorId, reason: parsed.data.reason ?? null, source: 'crm' });
+  } catch (error) {
+    if (sendLeadStageError(res, error)) return;
+    throw error;
+  }
+
+  const lead = await prisma.lead.findFirst({ where: scoped, select: leadSelect });
+  if (!lead) throw new NotFoundError('Lead', leadId);
+  res.json({ success: true, data: summarize(lead) });
+}));
+
 crmRouter.get('/metrics', asyncHandler(async (req: Request, res: Response) => {
   const { tenantId, id } = req.user!;
   const filters = filteredLeads(tenantId, id, req.query.filters);
   const now = new Date();
   const since = new Date(now.getTime() - 7 * DAY);
-  const open: Prisma.LeadWhereInput = { status: { notIn: ['CONVERTED', 'LOST'] } };
   const [active, newLeads, stalled] = await Promise.all([
-    prisma.lead.count({ where: { AND: [filters, open] } }),
+    prisma.lead.count({ where: { AND: [filters, openLeads] } }),
     prisma.lead.count({ where: { AND: [filters, { createdAt: { gte: since, lte: now } }] } }),
-    prisma.lead.count({ where: { AND: [filters, open, { updatedAt: { lt: since } }] } }),
+    prisma.lead.count({ where: { AND: [filters, openLeads, { updatedAt: { lt: since } }] } }),
   ]);
   const summary = [
     { id: 'activeLeads', label: 'Leads ativos', value: active },
@@ -157,13 +219,13 @@ crmRouter.get('/aging', asyncHandler(async (req: Request, res: Response) => {
     { id: '15+', label: '15+ dias', min: 15, max: null },
   ];
   const groups = await Promise.all(ages.map(({ min, max }) => prisma.lead.groupBy({
-    by: ['status'], where: { AND: [where, { updatedAt: {
+    by: ['stage'], where: { AND: [where, { updatedAt: {
       lte: new Date(now - min * DAY), ...(max !== null ? { gt: new Date(now - max * DAY) } : {}),
     } }] }, _count: { _all: true },
   })));
-  const buckets = ages.flatMap((age, i) => (Object.keys(stages) as Stage[]).map(stage => ({
-    stageId: stage, stageName: stageNames[stage], bucketId: age.id, bucketLabel: age.label,
-    leadCount: (groups[i] ?? []).filter(row => stageForStatus(row.status) === stage).reduce((total, row) => total + row._count._all, 0),
+  const buckets = ages.flatMap((age, i) => LEAD_STAGES.map(stage => ({
+    stageId: stage, stageName: LEAD_STAGE_DEFINITIONS[stage].label, bucketId: age.id, bucketLabel: age.label,
+    leadCount: (groups[i] ?? []).filter(row => row.stage === stage).reduce((total, row) => total + row._count._all, 0),
   })));
   res.json({ success: true, data: { buckets, generatedAt: new Date(now) } });
 }));

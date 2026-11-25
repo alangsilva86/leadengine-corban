@@ -44,6 +44,7 @@ async function main() {
 
   const seededTenants: TenantRecord[] = [];
   let demoAgentUser: UserRecord | null = null;
+  let demoQueueId: string | null = null;
 
   for (const seed of tenantSeeds) {
     const tenant = await prisma.tenant.upsert({
@@ -167,6 +168,7 @@ async function main() {
     console.log('✅ Usuários criados para:', tenant.name);
     if (seed.id === 'demo-tenant') {
       demoAgentUser = agentUser;
+      demoQueueId = defaultQueue.id;
     }
   }
 
@@ -175,10 +177,11 @@ async function main() {
     throw new Error('Demo tenant not seeded.');
   }
 
-  if (!demoAgentUser) {
-    throw new Error('Demo agent user not seeded.');
+  if (!demoAgentUser || !demoQueueId) {
+    throw new Error('Demo agent user/queue not seeded.');
   }
   const agentUser = demoAgentUser;
+  const demoQueue = demoQueueId;
 
   // Criar tags base para contatos
   const tagDefinitions = [
@@ -707,14 +710,16 @@ async function main() {
 
   console.log('✅ Campanha demo criada:', demoCampaign.name);
 
-  // Criar leads demo
+  // Criar leads demo — funil único do lead: `stage` é o dono da etapa e `status` é espelhado
+  // (LEAD_STAGE_TO_LEGACY_LEAD_STATUS em @ticketz/contracts).
   const lead1 = await prisma.lead.create({
     data: {
       tenantId: demoTenant.id,
       contactId: contact1.id,
       campaignId: demoCampaign.id,
       userId: agentUser.id,
-      status: 'CONTACTED',
+      stage: 'qualificacao',
+      status: 'QUALIFIED',
       source: 'WHATSAPP',
       score: {
         total: 92,
@@ -742,7 +747,8 @@ async function main() {
       tenantId: demoTenant.id,
       contactId: contact2.id,
       campaignId: demoCampaign.id,
-      status: 'NEW',
+      stage: 'proposta',
+      status: 'PROPOSAL',
       source: 'WHATSAPP',
       score: {
         total: 88,
@@ -856,16 +862,86 @@ async function main() {
       },
       {
         tenantId: demoTenant.id,
+        leadId: lead1.id,
+        userId: agentUser.id,
+        type: 'STATUS_CHANGED',
+        title: 'Etapa alterada: Em contato → Qualificação',
+        description: 'Margem consultada no convênio',
+        metadata: { from: 'contato', to: 'qualificacao', source: 'crm', seed: true },
+        occurredAt: new Date(Date.now() - 20 * 60 * 1000), // 20 min atrás
+      },
+      {
+        tenantId: demoTenant.id,
         leadId: lead2.id,
         type: 'CREATED',
         title: 'Lead criado',
         description: 'Lead importado da campanha SAEC Goiânia',
-        occurredAt: new Date(),
+        occurredAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3 horas atrás
+      },
+      {
+        tenantId: demoTenant.id,
+        leadId: lead2.id,
+        userId: agentUser.id,
+        type: 'STATUS_CHANGED',
+        title: 'Etapa alterada: Novo → Proposta',
+        description: 'Simulação enviada ao cliente',
+        metadata: { from: 'novo', to: 'proposta', source: 'crm', seed: true },
+        occurredAt: new Date(Date.now() - 10 * 60 * 1000), // 10 min atrás
       },
     ],
   });
 
   console.log('✅ Atividades de lead criadas');
+
+  // Conversa aberta do lead em "proposta": o ticket espelha a etapa do lead (funil único).
+  const existingSeedTicket = await prisma.ticket.findFirst({
+    where: { tenantId: demoTenant.id, contactId: contact2.id, status: { in: ['OPEN', 'PENDING', 'ASSIGNED'] } },
+    select: { id: true },
+  });
+  if (!existingSeedTicket) {
+    await prisma.ticket.create({
+      data: {
+        tenantId: demoTenant.id,
+        contactId: contact2.id,
+        queueId: demoQueue,
+        status: 'OPEN',
+        priority: 'NORMAL',
+        stage: lead2.stage,
+        subject: 'Carlos Henrique — simulação de consignado',
+        channel: 'WHATSAPP',
+        metadata: { seed: true },
+      },
+    });
+  }
+
+  // Oportunidade (proposta de consignado) no mesmo vocabulário de etapas.
+  const seedOpportunityKey = '7f1c2a9e-4b6d-4c8e-9a1f-3d5e7b9c1a20';
+  await prisma.opportunity.upsert({
+    where: { tenantId_intentKey: { tenantId: demoTenant.id, intentKey: seedOpportunityKey } },
+    update: {},
+    create: {
+      tenantId: demoTenant.id,
+      contactId: contact2.id,
+      leadId: lead2.id,
+      ownerId: agentUser.id,
+      intentKey: seedOpportunityKey,
+      agreementRef: 'Convênio SAEC Goiânia',
+      employmentRef: 'Matrícula 1920',
+      productRef: 'Consignado — margem livre',
+      stage: 'proposta',
+      version: 2,
+      nextAction: 'Confirmar aceite da simulação',
+      nextActionAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      activities: {
+        create: [
+          { version: 1, stage: 'qualificacao', reason: 'Oportunidade registrada', actorId: agentUser.id },
+          { version: 2, stage: 'proposta', reason: 'Simulação enviada', actorId: agentUser.id },
+        ],
+      },
+    },
+  });
+
+  console.log('✅ Conversa e oportunidade demo criadas');
 
   console.log('🎉 Seed concluído com sucesso!');
   console.log('');
@@ -874,7 +950,7 @@ async function main() {
   console.log('   👤 Agente: agente@ticketz.com / agent123');
   console.log('   🏢 Tenant: demo-tenant');
   console.log('   📞 Contatos: 2');
-  console.log('   🎯 Leads: 2');
+  console.log('   🎯 Leads: 2 (Qualificação e Proposta)');
   console.log('   📊 Campanha: 1');
 }
 

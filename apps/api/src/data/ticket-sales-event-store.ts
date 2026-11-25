@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { SalesStage } from '@ticketz/core';
+import type { LeadStage } from '../lib/lead-stages';
 
 export type TicketSalesEventType = 'simulation.created' | 'proposal.created' | 'deal.created';
 
@@ -8,7 +8,7 @@ export type TicketSalesEvent = {
   tenantId: string;
   ticketId: string;
   type: TicketSalesEventType;
-  stage: SalesStage;
+  stage: LeadStage;
   payload: Record<string, unknown>;
   actorId: string | null;
   createdAt: Date;
@@ -48,7 +48,7 @@ export const appendTicketSalesEvent = async ({
   tenantId: string;
   ticketId: string;
   type: TicketSalesEventType;
-  stage: SalesStage;
+  stage: LeadStage;
   payload?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   actorId?: string | null;

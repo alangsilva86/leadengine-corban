@@ -45,12 +45,69 @@ export interface paths {
     /** Atualiza role ou status de um usuário existente */
     patch: operations["updateUser"];
   };
+  "/api/crm/leads/{leadId}/stage": {
+    /**
+     * Altera a etapa do lead (funil único)
+     * @description Caminho único de escrita da etapa. Em uma transação valida a transição (qualquer etapa → qualquer etapa, exceto: `ganho` é final e `perdido` só vai para `reciclar`), grava `stage`, espelha o `LeadStatus` legado para integrações, registra uma atividade STATUS_CHANGED (timeline `status_change`) e alinha a etapa de todas as conversas abertas (OPEN/PENDING/ASSIGNED) do contato, emitindo `tickets.updated` para cada uma e `leads.updated` para o tenant. `PUT /api/tickets/{id}` com `stage` usa o mesmo caminho quando o contato tem lead.
+     */
+    patch: operations["updateLeadStage"];
+  };
 }
 
 export type webhooks = Record<string, never>;
 
 export interface components {
   schemas: {
+    /**
+     * @description Etapa do funil único do lead (fonte: packages/contracts/src/lead-stages.ts). Rótulos: novo=Novo, contato=Em contato, qualificacao=Qualificação, proposta=Proposta, documentacao=Documentação, averbacao=Averbação, liquidacao=Liquidação, ganho=Ganho, perdido=Perdido, reciclar=Reciclar. Leads, tickets (`stage`) e oportunidades (`stage`) usam este enum. Tickets e oportunidades ainda aceitam valores legados na entrada e os normalizam.
+     * @example proposta
+     * @enum {string}
+     */
+    LeadStage: "novo" | "contato" | "qualificacao" | "proposta" | "documentacao" | "averbacao" | "liquidacao" | "ganho" | "perdido" | "reciclar";
+    UpdateLeadStageRequest: {
+      stage: components["schemas"]["LeadStage"];
+      /** @description Motivo exibido na timeline do lead (e gravado como `lostReason` em `perdido`). */
+      reason?: string | null;
+    };
+    /** @description Item de `GET /api/crm/leads`. */
+    CrmLeadItem: {
+      id: string;
+      name: string;
+      contactId: string;
+      stage: components["schemas"]["LeadStage"];
+      ownerId?: string | null;
+      ownerName?: string | null;
+      /** Format: date-time */
+      lastActivityAt?: string;
+      /** @example whatsapp */
+      source?: string;
+      channel?: string | null;
+      potentialValue?: number | null;
+      /**
+       * @description Situação derivada do LeadStatus espelhado.
+       * @enum {string}
+       */
+      status: "new" | "engaged" | "in_progress" | "won" | "lost";
+    };
+    CrmLeadResponse: {
+      /** @enum {boolean} */
+      success: true;
+      data: components["schemas"]["CrmLeadItem"];
+    };
+    LeadStageTransitionErrorResponse: {
+      /** @enum {boolean} */
+      success: false;
+      error: {
+        /** @enum {string} */
+        code: "INVALID_STAGE_TRANSITION" | "STAGE_CONFLICT";
+        /** @example Este lead já foi ganho e não pode ir para "Proposta". */
+        message: string;
+        details?: {
+          from?: components["schemas"]["LeadStage"];
+          to?: components["schemas"]["LeadStage"];
+        };
+      };
+    };
     /** @description Metadados opcionais enviados pelo consumidor para rastreabilidade. */
     RequestMeta: {
       /** @description Identificador fornecido pelo cliente para correlacionar requisições. */
@@ -1147,6 +1204,54 @@ export interface operations {
       404: {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  /**
+   * Altera a etapa do lead (funil único)
+   * @description Caminho único de escrita da etapa. Em uma transação valida a transição (qualquer etapa → qualquer etapa, exceto: `ganho` é final e `perdido` só vai para `reciclar`), grava `stage`, espelha o `LeadStatus` legado para integrações, registra uma atividade STATUS_CHANGED (timeline `status_change`) e alinha a etapa de todas as conversas abertas (OPEN/PENDING/ASSIGNED) do contato, emitindo `tickets.updated` para cada uma e `leads.updated` para o tenant. `PUT /api/tickets/{id}` com `stage` usa o mesmo caminho quando o contato tem lead.
+   */
+  updateLeadStage: {
+    parameters: {
+      path: {
+        leadId: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateLeadStageRequest"];
+      };
+    };
+    responses: {
+      /** @description Etapa alterada; devolve o lead no mesmo formato dos itens de `GET /api/crm/leads`. */
+      200: {
+        content: {
+          "application/json": components["schemas"]["CrmLeadResponse"];
+        };
+      };
+      /** @description Etapa ausente ou fora de LeadStage (valores legados não são aceitos nesta rota). */
+      400: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Requisição não autenticada. */
+      401: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Lead inexistente no tenant autenticado. */
+      404: {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Transição não permitida (`INVALID_STAGE_TRANSITION`) ou a etapa mudou durante a edição (`STAGE_CONFLICT`). */
+      409: {
+        content: {
+          "application/json": components["schemas"]["LeadStageTransitionErrorResponse"];
         };
       };
     };

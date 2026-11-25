@@ -8,7 +8,10 @@ export type MessageType = $Enums.MessageType | 'TEMPLATE';
 export type MessageDirection = $Enums.MessageDirection;
 export type LeadStatus = $Enums.LeadStatus;
 export type LeadSource = $Enums.LeadSource;
-export type TicketStage = $Enums.TicketStage;
+/** Etapa do funil único do lead (`LeadStage`). */
+export type LeadStage = $Enums.LeadStage;
+/** Tickets espelham a etapa do lead do contato — mesmo vocabulário (`LeadStage`). */
+export type TicketStage = LeadStage;
 
 export type SortOrder = 'asc' | 'desc';
 
@@ -186,6 +189,8 @@ export interface Lead {
   contactId: string;
   campaignId?: string | undefined;
   userId?: string | undefined;
+  /** Etapa do funil único (dono da etapa). `status` é espelhado a partir dela. */
+  stage?: LeadStage | undefined;
   status: LeadStatus;
   source: LeadSource;
   score?: Record<string, unknown> | null | undefined;

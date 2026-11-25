@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import { Prisma, OpportunityStage } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { canTransitionLeadStage, parseLeadStage, type LeadStage } from '../lib/lead-stages';
 import { ConflictError, NotFoundError, ValidationError } from '@ticketz/core';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
@@ -13,16 +14,20 @@ const createInput = z.object({
   contactId: reference, leadId: reference.optional(), agreementRef: reference,
   employmentRef: reference, productRef: reference, nextAction, nextActionAt,
 });
+/** Oportunidades usam o funil único do lead (LeadStage). Valores legados (PREPARATION…) são normalizados. */
+const stageSchema = z.string().trim().min(1).max(40).transform((value, ctx) => {
+  const parsed = parseLeadStage(value);
+  if (!parsed) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Etapa inválida.' });
+    return z.NEVER;
+  }
+  return parsed;
+});
+const DEFAULT_OPPORTUNITY_STAGE: LeadStage = 'qualificacao';
 const updateInput = z.object({
-  version: z.number().int().positive(), stage: z.nativeEnum(OpportunityStage),
+  version: z.number().int().positive(), stage: stageSchema,
   nextAction, nextActionAt, reason: z.string().trim().min(1).max(200),
 });
-const transitions = {
-  QUALIFICATION: ['QUALIFICATION', 'PREPARATION', 'CLOSED'],
-  PREPARATION: ['PREPARATION', 'QUALIFICATION', 'FOLLOW_UP', 'CLOSED'],
-  FOLLOW_UP: ['FOLLOW_UP', 'PREPARATION', 'CLOSED'],
-  CLOSED: ['CLOSED'],
-} satisfies Record<OpportunityStage, OpportunityStage[]>;
 
 const opportunitySelect = {
   id: true, contactId: true, leadId: true, ownerId: true, agreementRef: true,
@@ -65,7 +70,8 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
       data: {
         tenantId, contactId, leadId: leadId ?? null, ownerId, intentKey, agreementRef, employmentRef,
         productRef, nextAction, nextActionAt: nextActionAt ?? null,
-        activities: { create: { version: 1, stage: 'QUALIFICATION', reason: 'Oportunidade registrada', actorId: ownerId } },
+        stage: DEFAULT_OPPORTUNITY_STAGE,
+        activities: { create: { version: 1, stage: DEFAULT_OPPORTUNITY_STAGE, reason: 'Oportunidade registrada', actorId: ownerId } },
       },
       select: opportunitySelect,
     });
@@ -102,7 +108,7 @@ router.patch('/:opportunityId', asyncHandler(async (req: Request, res: Response)
     const existing = await tx.opportunity.findFirst({ where: { id, tenantId }, select: { stage: true, version: true } });
     if (!existing) throw new NotFoundError('Opportunity', id);
     if (existing.version !== version) throw new ConflictError('A oportunidade mudou. Atualize antes de salvar novamente.');
-    if (!(transitions[existing.stage] as readonly OpportunityStage[]).includes(stage)) {
+    if (!canTransitionLeadStage(existing.stage as LeadStage, stage)) {
       throw new ConflictError('Esta transição de etapa não é permitida.');
     }
     const updated = await tx.opportunity.updateMany({

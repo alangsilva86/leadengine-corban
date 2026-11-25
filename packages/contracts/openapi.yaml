@@ -15,6 +15,9 @@ tags:
     description: Operações relacionadas ao envio de mensagens outbound.
   - name: users
     description: Operações de gestão de usuários e convites por tenant.
+  - name: crm
+    description: >-
+      Funil único do lead — a mesma lista de etapas (LeadStage) no Inbox, no CRM e nas Oportunidades.
 paths:
   /api/tickets/{ticketId}/messages:
     post:
@@ -351,8 +354,161 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/crm/leads/{leadId}/stage:
+    patch:
+      operationId: updateLeadStage
+      summary: Altera a etapa do lead (funil único)
+      description: >-
+        Caminho único de escrita da etapa. Em uma transação valida a transição
+        (qualquer etapa → qualquer etapa, exceto: `ganho` é final e `perdido` só vai para `reciclar`),
+        grava `stage`, espelha o `LeadStatus` legado para integrações, registra uma atividade
+        STATUS_CHANGED (timeline `status_change`) e alinha a etapa de todas as conversas abertas
+        (OPEN/PENDING/ASSIGNED) do contato, emitindo `tickets.updated` para cada uma e
+        `leads.updated` para o tenant. `PUT /api/tickets/{id}` com `stage` usa o mesmo caminho quando o
+        contato tem lead.
+      tags: [crm]
+      parameters:
+        - name: leadId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLeadStageRequest'
+      responses:
+        '200':
+          description: Etapa alterada; devolve o lead no mesmo formato dos itens de `GET /api/crm/leads`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrmLeadResponse'
+        '400':
+          description: Etapa ausente ou fora de LeadStage (valores legados não são aceitos nesta rota).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Requisição não autenticada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Lead inexistente no tenant autenticado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >-
+            Transição não permitida (`INVALID_STAGE_TRANSITION`) ou a etapa mudou durante a edição
+            (`STAGE_CONFLICT`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadStageTransitionErrorResponse'
 components:
   schemas:
+    LeadStage:
+      type: string
+      description: >-
+        Etapa do funil único do lead (fonte: packages/contracts/src/lead-stages.ts). Rótulos:
+        novo=Novo, contato=Em contato, qualificacao=Qualificação, proposta=Proposta,
+        documentacao=Documentação, averbacao=Averbação, liquidacao=Liquidação, ganho=Ganho,
+        perdido=Perdido, reciclar=Reciclar. Leads, tickets (`stage`) e oportunidades (`stage`) usam
+        este enum. Tickets e oportunidades ainda aceitam valores legados na entrada e os normalizam.
+      enum: [novo, contato, qualificacao, proposta, documentacao, averbacao, liquidacao, ganho, perdido, reciclar]
+      example: proposta
+    UpdateLeadStageRequest:
+      type: object
+      required: [stage]
+      properties:
+        stage:
+          $ref: '#/components/schemas/LeadStage'
+        reason:
+          type: string
+          maxLength: 500
+          nullable: true
+          description: Motivo exibido na timeline do lead (e gravado como `lostReason` em `perdido`).
+      additionalProperties: false
+    CrmLeadItem:
+      type: object
+      description: Item de `GET /api/crm/leads`.
+      required: [id, name, contactId, stage, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        contactId:
+          type: string
+        stage:
+          $ref: '#/components/schemas/LeadStage'
+        ownerId:
+          type: string
+          nullable: true
+        ownerName:
+          type: string
+          nullable: true
+        lastActivityAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          example: whatsapp
+        channel:
+          type: string
+          nullable: true
+        potentialValue:
+          type: number
+          nullable: true
+        status:
+          type: string
+          enum: [new, engaged, in_progress, won, lost]
+          description: Situação derivada do LeadStatus espelhado.
+      additionalProperties: false
+    CrmLeadResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: '#/components/schemas/CrmLeadItem'
+      additionalProperties: false
+    LeadStageTransitionErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [INVALID_STAGE_TRANSITION, STAGE_CONFLICT]
+            message:
+              type: string
+              example: Este lead já foi ganho e não pode ir para "Proposta".
+            details:
+              type: object
+              properties:
+                from:
+                  $ref: '#/components/schemas/LeadStage'
+                to:
+                  $ref: '#/components/schemas/LeadStage'
+              additionalProperties: false
+          additionalProperties: false
+      additionalProperties: false
     RequestMeta:
       type: object
       description: Metadados opcionais enviados pelo consumidor para rastreabilidade.

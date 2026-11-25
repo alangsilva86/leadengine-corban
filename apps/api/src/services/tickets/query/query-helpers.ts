@@ -102,6 +102,7 @@ export const safeResolveLeads = async (
 
       leadByContact.set(record.contactId, {
         id: record.id,
+        stage: record.stage,
         status: record.status,
         value: record.value ?? undefined,
         probability: record.probability ?? undefined,
@@ -149,7 +150,10 @@ export const hydrateTicket = (
   leads: Map<string, TicketLeadSummary>,
   notes: Map<string, TicketNote[]>
 ): TicketHydrated => {
-  const pipelineStep = typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : ticket.stage ?? null;
+  // Funil único: a etapa do ticket (espelho da etapa do lead) é a fonte da verdade; o antigo
+  // `metadata.pipelineStep` só vale para tickets sem etapa.
+  const pipelineStep =
+    ticket.stage ?? (typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : null);
   const qualityScore = stats && stats.totalMessages > 0 ? Math.round(((stats.totalMessages - stats.failedCount) / stats.totalMessages) * 100) : null;
 
   const hydrated: TicketHydrated = {

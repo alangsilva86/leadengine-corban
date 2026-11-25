@@ -6,6 +6,7 @@ import type {
   TicketTimelineSnapshot,
   TicketWindowSnapshot,
 } from '../../../types/tickets';
+import { DEFAULT_LEAD_STAGE, toLeadStage } from '../../../lib/lead-stages';
 import { listMessages as storageListMessages } from '@ticketz/storage';
 
 type ConversationComputation = {
@@ -272,8 +273,7 @@ export const calculateInboxMetrics = (
     totalMessages += stats.totalMessages;
     totalOutboundMessages += stats.timeline.outboundCount;
 
-    const stageKey = ticket.stage ?? 'desconhecido';
-    const stage = typeof ticket.metadata?.pipelineStep === 'string' ? ticket.metadata.pipelineStep : stageKey;
+    const stage = ticket.stage ?? DEFAULT_LEAD_STAGE;
     if (stats.durationMinutes !== null) {
       const bucket = handleTimeByStageAccumulator.get(stage) ?? [];
       bucket.push(stats.durationMinutes);
@@ -290,8 +290,9 @@ export const calculateInboxMetrics = (
     handleTimeByStage[stage] = Math.round(average * 100) / 100;
   }
 
-  const proposals = Array.from(leads.values()).filter((lead) => lead.status === 'PROPOSAL').length;
-  const converted = Array.from(leads.values()).filter((lead) => lead.status === 'CONVERTED').length;
+  const leadStage = (lead: TicketLeadSummary) => lead.stage ?? toLeadStage(lead.status);
+  const proposals = Array.from(leads.values()).filter((lead) => leadStage(lead) === 'proposta').length;
+  const converted = Array.from(leads.values()).filter((lead) => leadStage(lead) === 'ganho').length;
   const proposalToCcbRate = proposals > 0 ? Math.round((converted / proposals) * 1000) / 1000 : null;
 
   const errorRatePerThousand = totalMessages > 0 ? Math.round(((failedMessages / totalMessages) * 1000) * 100) / 100 : null;

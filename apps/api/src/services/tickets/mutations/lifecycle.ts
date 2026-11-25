@@ -15,6 +15,40 @@ import { emitTicketEvent, buildTicketRealtimeEnvelope, emitTicketRealtimeEnvelop
 import { resolveWhatsAppInstanceId } from '../shared/whatsapp';
 import { handleDatabaseError, isForeignKeyViolation } from '../shared/prisma-helpers';
 import { OPEN_STATUSES } from '../constants';
+import { prisma } from '../../../lib/prisma';
+import { setLeadStage } from '../../leads/lead-stage-service';
+
+export type UpdateTicketOptions = {
+  /** Usuário que fez a alteração (registrado na atividade do lead quando a etapa muda). */
+  actorId?: string | null;
+};
+
+/**
+ * Funil único: a etapa pertence ao lead. Se o contato do ticket tem lead, a mudança de etapa passa
+ * por `setLeadStage` (valida a transição, atualiza o lead e todas as conversas abertas do contato).
+ * Sem lead, apenas o ticket é atualizado.
+ */
+const syncLeadStageFromTicket = async (
+  tenantId: string,
+  ticketId: string,
+  stage: NonNullable<UpdateTicketDTO['stage']>,
+  actorId: string | null
+): Promise<void> => {
+  const current = await storageFindTicketById(tenantId, ticketId);
+  if (!current) {
+    throw new NotFoundError('Ticket', ticketId);
+  }
+
+  const lead = await prisma.lead.findFirst({
+    where: { tenantId, contactId: current.contactId, contact: { tenantId } },
+    select: { id: true },
+  });
+  if (!lead) {
+    return;
+  }
+
+  await setLeadStage({ tenantId, leadId: lead.id, stage, actorId, source: 'inbox' });
+};
 
 export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
   const existingTickets = await findTicketsByContact(input.tenantId, input.contactId);
@@ -60,9 +94,14 @@ export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
 export const updateTicket = async (
   tenantId: string,
   ticketId: string,
-  input: UpdateTicketDTO
+  input: UpdateTicketDTO,
+  options: UpdateTicketOptions = {}
 ): Promise<Ticket> => {
   let updated: Ticket | null = null;
+
+  if (input.stage) {
+    await syncLeadStageFromTicket(tenantId, ticketId, input.stage, options.actorId ?? null);
+  }
 
   try {
     updated = await storageUpdateTicket(tenantId, ticketId, input);

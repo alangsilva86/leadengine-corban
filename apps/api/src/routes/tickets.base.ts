@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, param } from 'express-validator';
-import { SalesStage } from '@ticketz/core';
+import { LEAD_STAGES, parseLeadStage, type LeadStage } from '../lib/lead-stages';
 import type {
   CreateTicketDTO,
   UpdateTicketDTO,
@@ -18,6 +18,11 @@ import {
 } from '../services/ticket-service';
 import { resolveRequestTenantId } from '../services/tenant-service';
 import {
+  InvalidLeadStageTransitionError,
+  LeadStageConflictError,
+  sendLeadStageError,
+} from '../services/leads/lead-stage-service';
+import {
   ensureTicketId,
   isUuidOrCuid,
   paginationValidation,
@@ -32,7 +37,36 @@ import {
 const router: Router = Router();
 const { queries, lifecycle } = ticketService;
 
-const allowedStageValues = Object.values(SalesStage);
+/**
+ * Etapa do ticket = etapa do funil único do lead (LeadStage). Valores legados (antigo TicketStage,
+ * LeadStatus ou OpportunityStage) continuam aceitos e são normalizados.
+ */
+const stageValidation = () =>
+  body('stage')
+    .optional()
+    .custom((value) => {
+      if (!parseLeadStage(value)) {
+        throw new Error(`stage must be one of: ${LEAD_STAGES.join(', ')}`);
+      }
+      return true;
+    })
+    .customSanitizer((value) => parseLeadStage(value) ?? value);
+
+const normalizeStageFilter = (values: string[] | undefined): LeadStage[] | undefined => {
+  if (!values || values.length === 0) {
+    return undefined;
+  }
+
+  const stages = new Set<LeadStage>();
+  for (const value of values) {
+    const stage = parseLeadStage(value);
+    if (stage) {
+      stages.add(stage);
+    }
+  }
+
+  return stages.size > 0 ? Array.from(stages) : undefined;
+};
 
 const includeLookup: Record<string, TicketIncludeOption> = {
   contact: 'contact',
@@ -89,7 +123,7 @@ const createTicketValidation = [
   body('subject').optional().isString().isLength({ max: 200 }),
   body('channel').isIn(['WHATSAPP', 'EMAIL', 'SMS', 'VOICE', 'CHAT', 'SOCIAL']),
   body('priority').optional().isIn(['LOW', 'NORMAL', 'HIGH', 'URGENT']),
-  body('stage').optional().isIn(allowedStageValues),
+  stageValidation(),
   body('tags').optional().isArray(),
   body('metadata').optional().isObject(),
 ];
@@ -101,7 +135,7 @@ const updateTicketValidation = [
   body('subject').optional().isString().isLength({ max: 200 }),
   body('userId').optional().isUUID(),
   body('queueId').optional().isUUID(),
-  body('stage').optional().isIn(allowedStageValues),
+  stageValidation(),
   body('tags').optional().isArray(),
   body('metadata').optional().isObject(),
   body('closeReason').optional().isString().isLength({ max: 500 }),
@@ -130,7 +164,7 @@ router.get(
       queueId: parseListParam(req.query.queueId),
       userId: parseListParam(req.query.userId),
       channel: parseListParam(req.query.channel) as TicketFilters['channel'],
-      stage: parseListParam(req.query.stage) as TicketFilters['stage'],
+      stage: normalizeStageFilter(parseListParam(req.query.stage)),
       tags: parseListParam(req.query.tags),
       dateFrom: parseDateParam(req.query.dateFrom),
       dateTo: parseDateParam(req.query.dateTo),
@@ -278,7 +312,19 @@ router.put(
       closeReason: req.body.closeReason,
     };
 
-    const ticket = await lifecycle.updateTicket(tenantId, ticketId, updateData);
+    let ticket;
+    try {
+      ticket = await lifecycle.updateTicket(tenantId, ticketId, updateData, { actorId: req.user?.id ?? null });
+    } catch (error) {
+      // Etapa inválida para o lead do contato (ex.: lead ganho) → 409 INVALID_STAGE_TRANSITION.
+      if (
+        (error instanceof InvalidLeadStageTransitionError || error instanceof LeadStageConflictError) &&
+        sendLeadStageError(res, error)
+      ) {
+        return;
+      }
+      throw error;
+    }
 
     res.json({
       success: true,

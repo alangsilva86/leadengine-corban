@@ -76,19 +76,18 @@ enum AiAssistantMode {
   HUMANO
 }
 
-enum TicketStage {
+/// Funil único do lead (Inbox, CRM e Oportunidades). Fonte: packages/contracts/src/lead-stages.ts
+enum LeadStage {
   novo
-  conectado
+  contato
   qualificacao
   proposta
   documentacao
-  documentos_averbacao
-  aguardando
-  aguardando_cliente
+  averbacao
   liquidacao
-  aprovado_liquidacao
+  ganho
+  perdido
   reciclar
-  desconhecido
 }
 
 model User {
@@ -505,7 +504,10 @@ model Ticket {
   userId             String?
   status             TicketStatus   @default(OPEN)
   priority           TicketPriority @default(NORMAL)
-  stage              TicketStage    @default(novo)
+  /// Espelha a etapa do lead do contato (Lead.stage) enquanto o ticket está aberto.
+  stage              LeadStage      @default(novo)
+  /// Valor do antigo enum TicketStage antes da migração para o funil único (somente leitura).
+  legacyStage        String?        @map("legacy_stage")
   subject            String?
   channel            ChannelType
   lastMessageAt      DateTime?
@@ -648,6 +650,8 @@ model Lead {
   contactId         String
   campaignId        String?
   userId            String?
+  /// Dono da etapa do funil. `status` é espelhado a partir dela (LEAD_STAGE_TO_LEGACY_LEAD_STATUS).
+  stage             LeadStage  @default(novo)
   status            LeadStatus @default(NEW)
   source            LeadSource
   score             Json?
@@ -674,14 +678,8 @@ model Lead {
 
   @@unique([tenantId, contactId], map: "leads_tenant_contact_unique")
   @@unique([tenantId, id])
+  @@index([tenantId, stage, updatedAt])
   @@map("leads")
-}
-
-enum OpportunityStage {
-  QUALIFICATION
-  PREPARATION
-  FOLLOW_UP
-  CLOSED
 }
 
 model Opportunity {
@@ -694,7 +692,9 @@ model Opportunity {
   agreementRef String
   employmentRef String
   productRef   String
-  stage        OpportunityStage @default(QUALIFICATION)
+  stage        LeadStage        @default(qualificacao)
+  /// Valor do antigo enum OpportunityStage antes da migração para o funil único (somente leitura).
+  legacyStage  String?          @map("legacy_stage")
   version      Int              @default(1)
   nextAction   String
   nextActionAt DateTime?
@@ -718,7 +718,9 @@ model OpportunityActivity {
   opportunityId String
   version       Int
   actorId       String
-  stage         OpportunityStage
+  stage         LeadStage
+  /// Valor do antigo enum OpportunityStage antes da migração para o funil único (somente leitura).
+  legacyStage   String?          @map("legacy_stage")
   reason        String
   createdAt     DateTime         @default(now())
 

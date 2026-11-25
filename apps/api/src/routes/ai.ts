@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { body, query } from 'express-validator';
+import { getLeadStageLabel } from '../lib/lead-stages';
 import { asyncHandler } from '../middleware/error-handler';
 import { requireTenant } from '../middleware/auth';
 import { validateRequest } from '../middleware/validation';
@@ -718,6 +719,7 @@ const buildLeadProfileFromTicket = (ticket: unknown): Record<string, unknown> | 
   }
   if (isNonEmptyString(ticket.stage)) {
     profile.stage = ticket.stage;
+    profile.stageLabel = getLeadStageLabel(ticket.stage);
   }
   if (ticket.value !== undefined && ticket.value !== null) {
     profile.value = ticket.value;

@@ -25,7 +25,7 @@ export type TicketContactSummary = {
   } | null;
 };
 
-export type TicketLeadSummary = Pick<Lead, 'id' | 'status' | 'value' | 'probability' | 'source' | 'tags'> & {
+export type TicketLeadSummary = Pick<Lead, 'id' | 'stage' | 'status' | 'value' | 'probability' | 'source' | 'tags'> & {
   expectedCloseDate?: Date | null;
   lastContactAt?: Date | null;
   nextFollowUpAt?: Date | null;

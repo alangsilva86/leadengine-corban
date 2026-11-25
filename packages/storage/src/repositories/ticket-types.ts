@@ -9,7 +9,10 @@ export type MessageDirection = $Enums.MessageDirection;
 export type ContactStatus = $Enums.ContactStatus;
 export type ContactLifecycleStage = $Enums.ContactLifecycleStage;
 export type ContactSource = $Enums.ContactSource;
-export type TicketStage = $Enums.TicketStage;
+/** Etapa do funil único do lead (`LeadStage`). Tickets espelham a etapa do lead do contato. */
+export type LeadStage = $Enums.LeadStage;
+/** @deprecated Use `LeadStage` — mantido como alias para compatibilidade. */
+export type TicketStage = LeadStage;
 export type ContactPhoneType = $Enums.ContactPhoneType;
 export type ContactEmailType = $Enums.ContactEmailType;
 export type InteractionType = $Enums.InteractionType;

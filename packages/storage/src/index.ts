@@ -57,6 +57,7 @@ export type {
 } from './repositories/ticket-repository';
 
 export type {
+  LeadStage,
   TicketStage,
 } from './repositories/ticket-types';
 
