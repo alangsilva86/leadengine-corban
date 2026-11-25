@@ -15,9 +15,19 @@ vi.mock('@/lib/api.js', () => ({
   API_BASE_URL: '',
 }));
 
+const typingIndicatorMock = vi.hoisted(() => ({
+  agentsTyping: [],
+  viewersByTicket: {},
+  broadcastTyping: () => {},
+  stopTyping: () => {},
+  registerTypingEvent: () => {},
+  registerViewersEvent: () => {},
+}));
+const useTypingIndicatorMock = vi.hoisted(() => vi.fn(() => typingIndicatorMock));
+
 vi.mock('../useTypingIndicator.js', () => ({
   __esModule: true,
-  default: () => ({ agentsTyping: [], broadcastTyping: vi.fn() }),
+  default: useTypingIndicatorMock,
 }));
 
 const useRealtimeTicketsMock = vi.fn((options = {}) => {
@@ -133,5 +143,18 @@ describe('useChatController realtime message handling', () => {
       const ids = result.current.conversation.messages.map((message) => message.id);
       expect(ids).toEqual([initialMessage.id, newMessage.id]);
     });
+  });
+
+  // Antes o controller nunca passava onTyping: os eventos `ticket:typing` chegavam e eram descartados.
+  it('forwards teammates typing/viewers events to the typing indicator (ignoring the current user)', async () => {
+    const wrapper = ({ children }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+
+    renderHook(() => useChatController({ tenantId: 'tenant-1', currentUser: { id: 'agent-1' } }), { wrapper });
+
+    await waitFor(() => expect(useRealtimeTicketsMock.lastOptions).toBeDefined());
+    expect(useTypingIndicatorMock).toHaveBeenCalledWith(expect.objectContaining({ currentUserId: 'agent-1' }));
+    expect(useRealtimeTicketsMock.lastOptions.onTyping).toBe(typingIndicatorMock.registerTypingEvent);
+    expect(useRealtimeTicketsMock.lastOptions.onViewers).toBe(typingIndicatorMock.registerViewersEvent);
   });
 });

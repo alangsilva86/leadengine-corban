@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button.jsx';
 import { cn } from '@/lib/utils.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import useInstancePresentation from '../../../hooks/useInstancePresentation.js';
-import { buildInitialsFromName, toSentenceCase } from '../utils/presentation.js';
+import { toSentenceCase } from '../utils/presentation.js';
+import { getPersonInitials } from '@/lib/initials';
 
 /**
  * Quem é o cliente: avatar, nome e "+55 11 9xxxx · via {número}".
@@ -24,7 +25,7 @@ const HeaderIdentity = ({ name, phone, instanceId, isWhatsApp = true, typingLabe
       ) : null}
       <span className={cn('relative size-9 shrink-0', onBack ? 'hidden @md:inline-flex' : 'inline-flex')} aria-hidden>
         <span className="inline-flex size-9 items-center justify-center rounded-full bg-surface-sunken text-sm font-semibold text-muted-foreground">
-          {buildInitialsFromName(name, '') || <User className="size-4" />}
+          {getPersonInitials(name, '') || <User className="size-4" />}
         </span>
         {isWhatsApp ? (
           <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-background bg-whatsapp" />

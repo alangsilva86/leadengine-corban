@@ -301,7 +301,7 @@ export const normalizeRateUsage = (rawRate: unknown): NormalizedRateUsage => {
   };
 };
 
-export const mergeMetricsSources = (...sources: unknown[]): Record<string, unknown> => {
+const mergeMetricsSources = (...sources: unknown[]): Record<string, unknown> => {
   return sources.reduce<Record<string, unknown>>((acc, source) => {
     if (isPlainObject(source)) {
       return { ...acc, ...source };

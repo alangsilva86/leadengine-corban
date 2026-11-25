@@ -23,6 +23,4 @@ const DEFAULT_AI_MODE = AI_MODE_OPTIONS[0].value;
 
 const isValidAiMode = (value) => AI_MODE_OPTIONS.some((option) => option.value === value);
 
-const getAiModeOption = (value) => AI_MODE_OPTIONS.find((option) => option.value === value) ?? AI_MODE_OPTIONS[0];
-
-export { AI_MODE_OPTIONS, DEFAULT_AI_MODE, getAiModeOption, isValidAiMode };
+export { AI_MODE_OPTIONS, DEFAULT_AI_MODE, isValidAiMode };

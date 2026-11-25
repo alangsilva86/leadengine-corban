@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
-import { formatDocument, maskPhoneInput, toE164 } from '../utils/format.js';
+import { formatDocument } from '../utils/format.js';
+import { maskPhoneInput, toE164 } from '@/lib/phone';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

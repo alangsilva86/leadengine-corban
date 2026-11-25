@@ -175,4 +175,36 @@ describe('Composer', () => {
     renderComposer({ ticketId: 'ticket-a' });
     expect(getMessageInput()).toHaveValue('Rascunho da conversa A');
   });
+  describe('presença de outros atendentes (prevenção de colisão)', () => {
+    it('avisa a equipe que estou digitando — resposta ou nota — e que parei ao enviar', async () => {
+      const { props } = renderComposer({ ticketId: 'ticket-1' });
+      const user = userEvent.setup();
+
+      await user.type(getMessageInput(), 'Oi');
+      expect(props.onTyping).toHaveBeenLastCalledWith({ mode: 'reply', hasText: true });
+
+      await user.keyboard('{Enter}');
+      expect(props.onTyping).toHaveBeenLastCalledWith({ hasText: false });
+
+      await user.click(screen.getByRole('tab', { name: /Nota interna/ }));
+      await user.type(screen.getByRole('textbox', { name: 'Nota interna para a equipe' }), 'x');
+      expect(props.onTyping).toHaveBeenLastCalledWith({ mode: 'note', hasText: true });
+    });
+
+    it('mostra "Ana está digitando…" acima do composer', () => {
+      renderComposer({ teammatesTyping: [{ userId: 'ana', userName: 'Ana Souza', ticketId: 'ticket-1', mode: 'reply' }] });
+
+      expect(screen.getByTestId('teammates-presence')).toHaveTextContent('Ana está digitando…');
+    });
+
+    it('rotula nota interna e mostra quem só está com a conversa aberta', () => {
+      const { rerender } = renderComposer({
+        teammatesTyping: [{ userId: 'ana', userName: 'Ana', ticketId: 'ticket-1', mode: 'note' }],
+      });
+      expect(screen.getByTestId('teammates-presence')).toHaveTextContent('Ana está escrevendo uma nota interna…');
+
+      rerender(<Composer ticketId="ticket-1" teammatesViewing={[{ userId: 'bruno', userName: 'Bruno Lima' }]} />);
+      expect(screen.getByTestId('teammates-presence')).toHaveTextContent('Bruno também está nesta conversa');
+    });
+  });
 });

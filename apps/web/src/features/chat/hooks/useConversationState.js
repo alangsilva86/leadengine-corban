@@ -12,7 +12,7 @@ const asDate = (value) => {
 };
 
 /** "Hoje", "Ontem", "24 de novembro", "24 de novembro de 2025". */
-export const getDayLabel = (date) => {
+const getDayLabel = (date) => {
   if (!date) return 'Sem data';
   if (isToday(date)) return 'Hoje';
   if (isYesterday(date)) return 'Ontem';

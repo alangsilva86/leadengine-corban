@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const pairingPhoneSchema = z
+const pairingPhoneSchema = z
   .object({
     phone: z
       .string({ required_error: 'Informe o telefone que receberá o código.' })
@@ -10,7 +10,7 @@ export const pairingPhoneSchema = z
   })
   .transform(({ phone }) => ({ phone }));
 
-export const createInstanceSchema = z
+const createInstanceSchema = z
   .object({
     name: z
       .string({ required_error: 'Informe um nome para o número.' })

@@ -8,16 +8,16 @@ import type { LeadSummary } from '../../state/leads';
 import {
   IDLE_TONE_CLASS,
   buildInboxHref,
-  formatBRL,
   formatDateTime,
-  formatRelativeShort,
   getIdleTone,
-  getInitials,
   getSourceIcon,
   getSourceLabel,
 } from '../../utils/labels';
 import type { LeadStage } from '../../utils/lead-stage';
 import LeadStageMenu from '../lead-stage/LeadStageMenu';
+import { formatBRL } from '@/lib/currency';
+import { formatRelativeShort } from '@/lib/relative-time';
+import { getInitials } from '@/lib/initials';
 
 type LeadCardProps = {
   lead: LeadSummary;

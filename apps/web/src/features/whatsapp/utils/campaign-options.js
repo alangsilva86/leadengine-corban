@@ -19,7 +19,7 @@ export const WHATSAPP_CAMPAIGN_PRODUCTS = [
   },
 ];
 
-export const WHATSAPP_CAMPAIGN_STRATEGIES = [
+const WHATSAPP_CAMPAIGN_STRATEGIES = [
   {
     value: 'reactive_inbound',
     label: 'Inbound reativo',

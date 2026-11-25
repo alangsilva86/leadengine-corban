@@ -278,7 +278,7 @@ const getTicketCustomerName = (ticket: DashboardTicket | null | undefined): stri
   );
 };
 
-export const buildChannelDistribution = (channelCounts: Map<ChannelKey, number>): ChannelDistributionEntry[] => {
+const buildChannelDistribution = (channelCounts: Map<ChannelKey, number>): ChannelDistributionEntry[] => {
   const entries = Array.from(channelCounts.entries());
   const total = entries.reduce((sum, [, count]) => sum + count, 0);
   if (!total) {
@@ -328,7 +328,7 @@ export const channelPresentation = (value: string) => {
   return { name: channelLabels[channel], color: channelColors[channel] };
 };
 
-export const processTickets = (ticketsData: DashboardTicketsResponse | null | undefined): TicketInsights => {
+const processTickets = (ticketsData: DashboardTicketsResponse | null | undefined): TicketInsights => {
   const items = Array.isArray(ticketsData?.items) ? ticketsData.items : [];
   const dayBuckets = createDayBuckets();
   const channelCounts = new Map<ChannelKey, number>();
@@ -429,7 +429,7 @@ const buildMonthlySeries = (leads: DashboardLead[]): LeadSeriesEntry[] => {
   }));
 };
 
-export const processLeads = (
+const processLeads = (
   leadsData: DashboardLeadsResponse | null | undefined,
   dashboardMetrics: DashboardOverviewMetrics | null | undefined
 ): LeadInsights => {

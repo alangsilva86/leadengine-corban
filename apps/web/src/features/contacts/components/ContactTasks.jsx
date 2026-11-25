@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button.jsx';
 import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
-import { formatDateTime, formatRelativeShort } from '@/features/crm/utils/labels';
+import { formatDateTime } from '@/features/crm/utils/labels';
+import { formatRelativeShort } from '@/lib/relative-time';
 
 const isCompleted = (task) => task?.status === 'COMPLETED';
 

@@ -3,7 +3,8 @@ import { Check, ChevronDown, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { cn } from '@/lib/utils.js';
-import { TONE_DOT_CLASSES, toSentenceCase } from '../utils/presentation.js';
+import { TONE_DOT_CLASSES } from '@/lib/tones';
+import { toSentenceCase } from '../utils/presentation.js';
 
 const STATUS_LABELS = {
   connected: 'Conectado',

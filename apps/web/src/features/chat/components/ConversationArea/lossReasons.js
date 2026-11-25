@@ -11,6 +11,4 @@ export const LOSS_REASON_HELPERS = LOSS_REASONS.reduce((acc, item) => {
   return acc;
 }, {});
 
-export const resolveLossReasonLabel = (value) => LOSS_REASON_HELPERS[value] ?? null;
-
 export default LOSS_REASONS;

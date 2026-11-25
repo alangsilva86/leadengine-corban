@@ -18,12 +18,13 @@ import { DashboardStatsWidget } from './dashboard/widgets/DashboardStatsWidget';
 import { TicketsDailyWidget } from './dashboard/widgets/TicketsDailyWidget';
 import { ChannelDistributionWidget } from './dashboard/widgets/ChannelDistributionWidget';
 import { chartAxis, chartGrid, chartTooltip } from './dashboard/widgets/chart-theme';
+import { TONE_SOFT_CLASSES } from '@/lib/tones';
 
 const STATUS_LABELS = { open: 'Aberta', pending: 'Pendente', resolved: 'Encerrada' };
 const STATUS_STYLES = {
-  open: 'bg-primary-soft text-primary-soft-foreground',
-  pending: 'bg-warning-soft text-warning-soft-foreground',
-  resolved: 'bg-surface-sunken text-muted-foreground',
+  open: TONE_SOFT_CLASSES.primary,
+  pending: TONE_SOFT_CLASSES.warning,
+  resolved: TONE_SOFT_CLASSES.neutral,
 };
 const PRIORITY_LABELS = { high: 'Prioridade alta', medium: null, low: null };
 const CHANNEL_ICONS = { whatsapp: MessageSquare, email: Mail, phone: Phone, chat: MessageSquare, sms: MessageSquare, social: Sparkles };

@@ -15,9 +15,7 @@ const normalizeString = (value: unknown): NullableString => {
   return text.length > 0 ? text : null;
 };
 
-export const normalizeTextValue = (value: unknown): NullableString => normalizeString(value);
-
-export const normalizeCurrencyValue = (value: unknown): NullableNumber => {
+const normalizeCurrencyValue = (value: unknown): NullableNumber => {
   if (value === null || value === undefined) {
     return null;
   }
@@ -54,7 +52,7 @@ export const normalizeCurrencyValue = (value: unknown): NullableNumber => {
   return Number.isNaN(amount) ? null : amount;
 };
 
-export const normalizeIntegerValue = (value: unknown): NullableNumber => {
+const normalizeIntegerValue = (value: unknown): NullableNumber => {
   if (value === null || value === undefined) {
     return null;
   }

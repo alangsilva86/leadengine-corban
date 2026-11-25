@@ -8,7 +8,7 @@ import { Archive, CheckCircle2, CircleDashed, Clock3, HelpCircle, Mail, MessageC
  */
 
 /** Classes de "chip" por tom — somente tokens semânticos. */
-export const TONE_CHIP_CLASSES = {
+const TONE_CHIP_CLASSES = {
   neutral: 'border-border bg-surface-sunken text-muted-foreground',
   info: 'border-border bg-surface-sunken text-foreground',
   primary: 'border-transparent bg-primary-soft text-primary-soft-foreground',
@@ -18,29 +18,9 @@ export const TONE_CHIP_CLASSES = {
   whatsapp: 'border-transparent bg-whatsapp-soft text-whatsapp-soft-foreground',
 };
 
-export const TONE_TEXT_CLASSES = {
-  neutral: 'text-muted-foreground',
-  info: 'text-foreground',
-  primary: 'text-primary',
-  success: 'text-success-soft-foreground',
-  warning: 'text-warning-soft-foreground',
-  danger: 'text-danger-soft-foreground',
-};
-
-export const TONE_DOT_CLASSES = {
-  neutral: 'bg-subtle-foreground',
-  muted: 'bg-subtle-foreground',
-  info: 'bg-info',
-  primary: 'bg-primary',
-  success: 'bg-success',
-  warning: 'bg-warning',
-  danger: 'bg-danger',
-  whatsapp: 'bg-whatsapp',
-};
-
 export const resolveToneChipClass = (tone) => TONE_CHIP_CLASSES[tone] ?? TONE_CHIP_CLASSES.neutral;
 
-export const STATUS_PRESENTATION = {
+const STATUS_PRESENTATION = {
   OPEN: { label: 'Aberta', tone: 'info', icon: CircleDashed },
   PENDING: { label: 'Pendente', tone: 'warning', icon: Clock3 },
   ASSIGNED: { label: 'Em atendimento', tone: 'info', icon: UserCheck },
@@ -129,17 +109,6 @@ export const getFirstName = (value) => {
   return first || null;
 };
 
-export const buildInitialsFromName = (value, fallback = '?') => {
-  if (typeof value !== 'string' || !value.trim()) return fallback;
-  // Nome que é só telefone não vira iniciais ("+9"): usa o fallback.
-  if (!/\p{L}/u.test(value)) return fallback;
-  const parts = value.trim().split(/\s+/).filter((part) => /\p{L}/u.test(part));
-  if (parts.length === 0) return fallback;
-  const first = parts[0][0] ?? '';
-  const last = parts.length > 1 ? parts[parts.length - 1][0] ?? '' : '';
-  return `${first}${last}`.toUpperCase() || fallback;
-};
-
 /** Preenche variáveis conhecidas de modelos e respostas rápidas ({{nome}}). */
 export const fillTemplatePlaceholders = (text, { contactName } = {}) => {
   if (typeof text !== 'string') return '';
@@ -191,7 +160,7 @@ export const resolveLastActivityAt = (ticket) => {
 };
 
 // Meta de primeira resposta: acima disso, "Aguardando há …" fica em tom de alerta.
-export const RESPONSE_TARGET_MINUTES = 15;
+const RESPONSE_TARGET_MINUTES = 15;
 
 /** Cliente esperando resposta? Devolve há quanto tempo e se passou da meta. */
 export const resolveWaitingState = (ticket, now = Date.now()) => {

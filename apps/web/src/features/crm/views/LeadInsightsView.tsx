@@ -8,11 +8,12 @@ import { cn } from '@/lib/utils.js';
 import useCrmMetrics from '../hooks/useCrmMetrics';
 import useCrmLeads from '../hooks/useCrmLeads';
 import { formatDeltaLabel, formatMetricValue } from '../utils/metrics-format';
-import { formatBRL, formatCount } from '../utils/labels';
+import { formatCount } from '../utils/labels';
 import { LEAD_STAGES, LEAD_STAGE_DEFINITIONS, LEAD_STAGE_TONE_CLASSES } from '../utils/lead-stage';
 import { useCrmViewContext, useCrmViewState } from '../state/view-context';
 import type { CrmViewType } from '../state/view-context';
 import emitCrmTelemetry from '../utils/telemetry';
+import { formatBRL } from '@/lib/currency';
 
 /**
  * Painel: só indicadores que a API realmente calcula (sem SLA/1ª resposta inventados)

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DragDropContext, type BeforeCapture, type DropResult } from '@hello-pangea/dnd';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
@@ -26,6 +26,11 @@ type KanbanBoardProps = {
    * Sem esta prop o quadro fica só de leitura.
    */
   onMoveLead?: (lead: LeadSummary, toStage: LeadStage, source: 'kanban' | 'menu') => Promise<unknown> | void;
+  /**
+   * Quando muda (ex.: filtros serializados), o quadro rola de novo até a primeira etapa com leads.
+   * Atualizações de dados com a mesma chave não mexem na rolagem do usuário.
+   */
+  autoScrollKey?: string;
 };
 
 const DRAG_INSTRUCTIONS =
@@ -37,9 +42,52 @@ const SHORT_BLOCK_REASON: Partial<Record<LeadStage, string>> = {
   perdido: 'Só pode ir para Reciclar',
 };
 
-const KanbanBoard = ({ stages, exits = [], leadsByStage, metricsByStage, isLoading = false, onOpenLead, onMoveLead }: KanbanBoardProps) => {
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Rola o quadro até a coluna, se ela não estiver inteira à vista. */
+const scrollColumnIntoView = (viewport: HTMLElement, stageId: string) => {
+  const column = viewport.querySelector<HTMLElement>(`[data-stage-column="${stageId}"]`);
+  if (!column) return;
+  const viewportRect = viewport.getBoundingClientRect();
+  const columnRect = column.getBoundingClientRect();
+  if (columnRect.left >= viewportRect.left && columnRect.right <= viewportRect.right) return;
+  const left = Math.max(0, viewport.scrollLeft + columnRect.left - viewportRect.left - 4);
+  const behavior: ScrollBehavior = prefersReducedMotion() ? 'auto' : 'smooth';
+  if (typeof viewport.scrollTo === 'function') viewport.scrollTo({ left, behavior });
+  else viewport.scrollLeft = left;
+};
+
+const KanbanBoard = ({
+  stages,
+  exits = [],
+  leadsByStage,
+  metricsByStage,
+  isLoading = false,
+  onOpenLead,
+  onMoveLead,
+  autoScrollKey = '',
+}: KanbanBoardProps) => {
   const [dragFrom, setDragFrom] = useState<LeadStage | null>(null);
   const readOnly = !onMoveLead;
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const scrolledForKeyRef = useRef<string | null>(null);
+
+  const firstStageWithLeads = useMemo(
+    () => stages.find((stage) => (leadsByStage[stage.id]?.length ?? 0) > 0)?.id ?? null,
+    [leadsByStage, stages]
+  );
+
+  // Ao abrir (e a cada troca de filtro), mostra a primeira etapa com leads: com leads só
+  // nas etapas finais, o quadro abria em colunas vazias e parecia que o funil estava vazio.
+  useEffect(() => {
+    if (isLoading || !firstStageWithLeads || scrolledForKeyRef.current === autoScrollKey) return;
+    scrolledForKeyRef.current = autoScrollKey;
+    const viewport = viewportRef.current;
+    if (viewport) scrollColumnIntoView(viewport, firstStageWithLeads);
+  }, [autoScrollKey, firstStageWithLeads, isLoading]);
 
   const leadIndex = useMemo(() => {
     const index = new Map<string, LeadSummary>();
@@ -106,7 +154,7 @@ const KanbanBoard = ({ stages, exits = [], leadsByStage, metricsByStage, isLoadi
 
   return (
     <DragDropContext onBeforeCapture={handleBeforeCapture} onDragEnd={handleDragEnd} dragHandleUsageInstructions={DRAG_INSTRUCTIONS}>
-      <ScrollArea orientation="horizontal" className="-mx-1">
+      <ScrollArea orientation="horizontal" className="-mx-1" viewportRef={viewportRef}>
         <div className="flex items-start gap-3 px-1 pb-3" data-crm-board data-dragging={dragFrom ? 'true' : undefined}>
           {stages.map((stage) => (
             <StageColumn

@@ -29,8 +29,6 @@ import {
   resolveWindowState,
 } from './utils/presentation.js';
 
-export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
-
 /**
  * Uma única ação principal, pelo estado da conversa:
  * sem responsável → "Assumir conversa"; IA no comando → "Assumir da IA";

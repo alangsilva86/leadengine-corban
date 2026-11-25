@@ -169,4 +169,35 @@ describe('LeadKanbanView', () => {
     expect(wonCard).not.toHaveAttribute('data-rfd-drag-handle-draggable-id');
     expect(apiPatchMock).not.toHaveBeenCalled();
   });
+
+  it('compacta etapas vazias (continuam alvos de soltar) e rola até a primeira etapa com leads', async () => {
+    serverLeads = [lead('l1', 'Ana Souza', 'averbacao')];
+    const scrollTo = vi.fn();
+    const rect = (left: number, width: number) => ({ left, right: left + width, top: 0, bottom: 100, width, height: 100, x: left, y: 0, toJSON: () => ({}) });
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute('data-slot') === 'scroll-area-viewport') return rect(0, 390) as DOMRect;
+      const stage = this.getAttribute('data-stage-column');
+      // 5 colunas compactas (64 px + 12 px de espaço) antes de Averbação.
+      if (stage === 'averbacao') return rect(5 * 76, 264) as DOMRect;
+      return rect(0, 0) as DOMRect;
+    });
+    // jsdom não implementa `Element.scrollTo`.
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', { value: scrollTo, configurable: true, writable: true });
+
+    renderBoard();
+    await screen.findByText('Ana Souza');
+
+    for (const stage of ['novo', 'contato', 'qualificacao', 'proposta', 'documentacao', 'liquidacao']) {
+      expect(column(stage)).toHaveAttribute('data-compact', 'true');
+      expect(column(stage).querySelector('[data-rfd-droppable-id]')).toHaveAttribute('data-rfd-droppable-id', stage);
+    }
+    expect(column('averbacao')).not.toHaveAttribute('data-compact');
+    expect(within(column('novo')).getByRole('heading')).toHaveTextContent('0 leads em Novo');
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(1));
+    expect(scrollTo).toHaveBeenCalledWith({ left: 5 * 76 - 4, behavior: 'smooth' });
+
+    rectSpy.mockRestore();
+    delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
+  });
 });

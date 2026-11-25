@@ -15,9 +15,10 @@ import { normalizeCrmFilters } from '../utils/filter-serialization';
 import type { CrmFilterState, CrmSavedView } from '../state/types';
 import { CrmViewProvider, isCrmViewType, useCrmViewContext } from '../state/view-context';
 import type { CrmViewType } from '../state/view-context';
-import { LEAD_SOURCES, formatBRL } from '../utils/labels';
+import { LEAD_SOURCES } from '../utils/labels';
 import { LEAD_STAGE_DEFINITIONS, LEAD_STAGE_FILTER_OPTIONS } from '../utils/lead-stage';
 import emitCrmTelemetry from '../utils/telemetry';
+import { formatBRL } from '@/lib/currency';
 
 const EMPTY_FILTERS: CrmFilterState = {
   stages: [],

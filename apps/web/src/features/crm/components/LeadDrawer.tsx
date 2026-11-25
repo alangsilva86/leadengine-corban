@@ -28,7 +28,7 @@ import LeadTimeline from './lead-drawer/LeadTimeline';
 import LeadActionList from './lead-drawer/LeadActionList';
 import useCrmPermissions from '../state/permissions';
 import { useCrmViewContext } from '../state/view-context';
-import { formatBRL } from '../utils/labels';
+import { formatBRL } from '@/lib/currency';
 import { getLeadStageLabel } from '../utils/lead-stage';
 
 type LeadDrawerProps = {

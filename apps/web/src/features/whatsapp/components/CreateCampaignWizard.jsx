@@ -27,7 +27,7 @@ import {
 } from './campaign-wizard/constants.js';
 import { NumberStatusDot } from './numbers/NumberStatusBadge';
 import SafetyTipsPopover from './SafetyTips';
-import { formatWhatsAppNumber } from '../lib/formatting';
+import { formatWhatsAppNumber } from '@/lib/phone';
 import { resolveInstancePhone, selectPreferredInstance } from '../lib/instances';
 import { getNumberStatus } from '../lib/numberStatus';
 

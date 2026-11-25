@@ -1,6 +1,6 @@
 import { extractPhoneDigits, normalizePhoneE164, PHONE_MAX_DIGITS, PHONE_MIN_DIGITS } from '@ticketz/shared';
 
-import { formatPhoneNumber } from '@/lib/utils.js';
+import { formatPhoneNumber } from '@/lib/phone';
 
 const toRecord = (value) => (value && typeof value === 'object' ? value : {});
 

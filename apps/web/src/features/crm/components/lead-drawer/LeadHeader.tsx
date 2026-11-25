@@ -1,15 +1,15 @@
 import type { ReactNode } from 'react';
 import type { LeadDetail } from '../../state/leads';
 import {
-  formatBRL,
   formatDateTime,
-  formatRelativeShort,
   getSourceIcon,
   getSourceLabel,
   IDLE_TONE_CLASS,
   getIdleTone,
 } from '../../utils/labels';
-import { formatPhone } from '@/features/contacts/utils/format.js';
+import { formatPhone } from '@/lib/phone';
+import { formatBRL } from '@/lib/currency';
+import { formatRelativeShort } from '@/lib/relative-time';
 
 type LeadHeaderProps = {
   lead: LeadDetail;

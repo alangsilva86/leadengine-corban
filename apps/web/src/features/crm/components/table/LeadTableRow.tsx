@@ -9,15 +9,15 @@ import type { LeadSummary } from '../../state/leads';
 import {
   IDLE_TONE_CLASS,
   buildInboxHref,
-  formatBRL,
   formatDateTime,
-  formatRelativeShort,
   getIdleTone,
-  getInitials,
   getSourceIcon,
   getSourceLabel,
 } from '../../utils/labels';
 import LeadStageBadge from '../lead-stage/LeadStageBadge';
+import { formatBRL } from '@/lib/currency';
+import { formatRelativeShort } from '@/lib/relative-time';
+import { getInitials } from '@/lib/initials';
 
 type LeadTableRowProps = {
   lead: LeadSummary;

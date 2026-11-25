@@ -26,7 +26,7 @@ import { apiGet, apiPatch, apiPost } from '@/lib/api.js';
 
 const DEFAULT_PAGE_SIZE = 50;
 
-export const buildContactsQueryKey = (filters) => ['contacts', 'list', { filters }];
+const buildContactsQueryKey = (filters) => ['contacts', 'list', { filters }];
 
 const normalizeFilters = (filters = {}) => {
   const entries = Object.entries(filters)
@@ -70,7 +70,7 @@ const buildQueryString = (filters = {}) => {
 };
 
 /** A API devolve { items, total, page, limit, totalPages, hasNext } (sem objeto `pagination`). */
-export const parsePaginatedPayload = (payload, fallbackLimit = DEFAULT_PAGE_SIZE) => {
+const parsePaginatedPayload = (payload, fallbackLimit = DEFAULT_PAGE_SIZE) => {
   const data = payload?.data ?? payload ?? {};
   const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
   const meta = data?.pagination ?? data ?? {};

@@ -46,7 +46,7 @@ const StageItem = ({ option, onSelect }: { option: LeadStageOption; onSelect: (s
  * Itens "Mover para…" com todas as etapas do funil e as saídas (marcando a atual).
  * Transições proibidas pelo contrato aparecem desabilitadas, com o motivo no rodapé.
  */
-export const LeadStageMenuItems = ({ stage, onSelect }: LeadStageMenuItemsProps) => {
+const LeadStageMenuItems = ({ stage, onSelect }: LeadStageMenuItemsProps) => {
   const current = normalizeLeadStage(stage);
   const options = getLeadStageOptions(current);
   const blockedReason = options.find((option) => option.disabled)?.reason ?? null;

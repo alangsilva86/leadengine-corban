@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils.js';
  * Boas práticas para reduzir o risco de bloqueio do número pelo WhatsApp.
  * Tom direto e sem alarmismo; não promete limites nem notas que a API não fornece.
  */
-export const SAFETY_TIPS = [
+const SAFETY_TIPS = [
   {
     title: 'Aqueça números novos aos poucos',
     description: 'Nos primeiros dias, converse com poucas pessoas e aumente o volume gradualmente.',
@@ -27,7 +27,7 @@ export const SAFETY_TIPS = [
   },
 ] as const;
 
-export const SafetyTipsList = ({ className }: { className?: string }) => (
+const SafetyTipsList = ({ className }: { className?: string }) => (
   <ol className={cn('space-y-3', className)}>
     {SAFETY_TIPS.map((tip, index) => (
       <li key={tip.title} className="flex gap-3">

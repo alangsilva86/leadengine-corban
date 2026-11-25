@@ -1,3 +1,4 @@
+import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
@@ -26,7 +27,7 @@ const buildFetchMock = () => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
 
-    if (url.endsWith('/api/integrations/meta/offline-conversions/config') && (!init || init.method === 'GET')) {
+    if (url.endsWith('/api/integrations/meta/offline-conversions/config') && (!init?.method || init.method === 'GET')) {
       return new Response(
         JSON.stringify({ success: true, data: state.config }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -86,7 +87,14 @@ describe('MetaSettingsTab', () => {
     expect(screen.getByDisplayValue('set-123')).toBeInTheDocument();
     expect(screen.getByDisplayValue('pixel-123')).toBeInTheDocument();
     expect(screen.getByText(/Última validação:/i)).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith('/api/integrations/meta/offline-conversions/config', undefined);
+    // Regressão: a leitura passa pelo cliente autenticado (antes era um `fetch` cru → 401).
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/integrations\/meta\/offline-conversions\/config$/),
+      expect.objectContaining({
+        credentials: 'include',
+        headers: expect.objectContaining({ 'x-tenant-id': expect.any(String) }),
+      })
+    );
   });
 
   it('permite salvar alterações e envia segredos quando editados', async () => {
@@ -145,17 +153,18 @@ describe('MetaSettingsTab', () => {
 
     const errorFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.endsWith('/api/integrations/meta/offline-conversions/config') && (!init || init.method === 'GET')) {
+      if (url.endsWith('/api/integrations/meta/offline-conversions/config') && (!init?.method || init.method === 'GET')) {
         return new Response(JSON.stringify({ success: true, data: fallbackConfig }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
       }
       if (url.endsWith('/api/integrations/meta/offline-conversions/config') && init?.method === 'PUT') {
-        return new Response(JSON.stringify({ message: 'Falha ao validar credenciais' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        // Formato de erro real da API (`error-handler`): { success: false, error: { code, message } }.
+        return new Response(
+          JSON.stringify({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Falha ao validar credenciais' } }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
       }
       return new Response(JSON.stringify({ success: false }), { status: 404 });
     });

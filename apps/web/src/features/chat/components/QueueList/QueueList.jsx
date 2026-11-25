@@ -78,10 +78,14 @@ const QueueList = ({
 }) => {
   const listRef = useRef(null);
   const now = useMinuteClock();
-  const typingTicketIds = useMemo(
-    () => new Set((typingAgents ?? []).map((agent) => agent?.ticketId).filter(Boolean)),
-    [typingAgents],
-  );
+  // Outro atendente digitando em uma conversa da lista (prevenção de colisão): ticketId → atendente.
+  const typingByTicketId = useMemo(() => {
+    const map = new Map();
+    (typingAgents ?? []).forEach((agent) => {
+      if (agent?.ticketId && !map.has(agent.ticketId)) map.set(agent.ticketId, agent);
+    });
+    return map;
+  }, [typingAgents]);
   const selectionCount = Array.isArray(selectedTicketIds) ? selectedTicketIds.length : 0;
   const selectionMode = selectionCount > 0;
   const selectionLabel = selectionCount === 1 ? '1 conversa selecionada' : `${selectionCount} conversas selecionadas`;
@@ -217,7 +221,7 @@ const QueueList = ({
             <QueueListItem
               key={ticket.id}
               ticket={ticket}
-              typing={typingTicketIds.has(ticket.id)}
+              typingAgent={typingByTicketId.get(ticket.id) ?? null}
               selected={ticket.id === selectedTicketId}
               selectedForBulk={selectedTicketIds.includes(ticket.id)}
               selectionMode={selectionMode}

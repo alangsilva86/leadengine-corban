@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { apiGet } from '@/lib/api.js';
 import useDebouncedValue from '../hooks/useDebouncedValue.js';
-import { formatPhone, maskPhoneInput, toE164 } from '../utils/format.js';
+import { formatPhone, maskPhoneInput, toE164 } from '@/lib/phone';
 
 const DEFAULT_VALUES = {
   name: '',

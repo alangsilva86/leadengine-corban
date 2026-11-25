@@ -5,10 +5,11 @@ const DEFAULT_POLL_INTERVAL_MS = 15_000;
 const isDocumentHidden = () => typeof document !== 'undefined' && document.hidden === true;
 
 /**
- * Atualiza a lista de números por polling só quando o tempo real não está conectado.
- * - Com o socket conectado, as mudanças chegam por eventos; o polling fica parado.
+ * Atualiza a lista de números por polling enquanto a aba está visível.
+ * - O polling continua mesmo com o socket conectado: a API só emite eventos de criação, remoção e
+ *   sincronização; mudanças de status vindas do broker (conectou, caiu, QR expirou) não geram evento.
  * - Com a aba oculta (e `pauseWhenHidden`), os ciclos são pulados; ao voltar, a lista é recarregada.
- * - Se o socket cair, recarrega na hora e retoma o polling.
+ * - Se o socket cair, recarrega na hora.
  */
 export const useInstancesAutoRefresh = ({
   api,
@@ -19,7 +20,7 @@ export const useInstancesAutoRefresh = ({
   realtimeConnected = false,
 }) => {
   useEffect(() => {
-    if (!autoRefresh || realtimeConnected || !api?.loadInstances) {
+    if (!autoRefresh || !api?.loadInstances) {
       return undefined;
     }
     const interval = setInterval(() => {
@@ -29,7 +30,7 @@ export const useInstancesAutoRefresh = ({
       void api.loadInstances({ reason: 'auto' });
     }, DEFAULT_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [api, autoRefresh, pauseWhenHidden, realtimeConnected]);
+  }, [api, autoRefresh, pauseWhenHidden]);
 
   // Tempo real caiu: recarrega imediatamente em vez de esperar o próximo ciclo.
   const wasConnectedRef = useRef(realtimeConnected);

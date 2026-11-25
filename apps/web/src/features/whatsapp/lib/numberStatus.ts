@@ -150,7 +150,7 @@ export interface GetNumberStatusOptions {
   qrExpired?: boolean;
 }
 
-export const getNumberStatusByKey = (key: NumberStatusKey): NumberStatus => ({
+const getNumberStatusByKey = (key: NumberStatusKey): NumberStatus => ({
   key,
   ...STATUS_TABLE[key],
 });

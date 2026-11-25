@@ -74,7 +74,3 @@ export const clearInstancesCache = (): void => {
   sessionStorage.removeItem(getCacheKey());
 };
 
-export const cacheConstants = {
-  INSTANCES_CACHE_KEY,
-  INSTANCES_CACHE_VERSION,
-};

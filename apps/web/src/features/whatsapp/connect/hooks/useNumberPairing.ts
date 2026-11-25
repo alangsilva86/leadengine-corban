@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useQrImageSource from '../../hooks/useQrImageSource.js';
 import { useInstancesStore } from '../../state/instancesStore';
 import { resolveWhatsAppError } from '../../lib/errors';
-import { extractPhoneDigits } from '../../lib/formatting';
+import { extractWhatsAppDigits } from '@/lib/phone';
 
 /** Quando a API não informa a validade do QR, renovamos no ritmo do próprio WhatsApp (~20s). */
 export const QR_FALLBACK_TTL_SECONDS = 20;
@@ -174,7 +174,7 @@ const useNumberPairing = ({ deps, instanceId, active, method, connected }: UseNu
   const requestPairingCode = useCallback(
     async (phoneInput: string) => {
       if (!instanceId) return;
-      const digits = extractPhoneDigits(phoneInput);
+      const digits = extractWhatsAppDigits(phoneInput);
       if (!digits || digits.length < 10) {
         setCodePhase('error');
         setCodeError('Informe o número com DDD, por exemplo (11) 91234-5678.');

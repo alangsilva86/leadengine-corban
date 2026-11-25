@@ -148,12 +148,6 @@ const useAiControlPanel = ({
   };
 };
 
-export {
-  AI_MODE_OPTIONS,
-  DEFAULT_AI_MODE,
-  AI_HANDOFF_CONFIDENCE_THRESHOLD,
-  AI_CONFIDENCE_TONES,
-  isValidAiMode,
-};
+export { AI_MODE_OPTIONS, DEFAULT_AI_MODE, isValidAiMode };
 
 export default useAiControlPanel;

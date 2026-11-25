@@ -335,4 +335,4 @@ export const createCoreSlice = (
   },
 });
 
-export { DEFAULT_CONFIG, hasConfigChanged };
+export { DEFAULT_CONFIG };

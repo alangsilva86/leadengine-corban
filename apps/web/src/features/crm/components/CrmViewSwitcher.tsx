@@ -21,20 +21,18 @@ type CrmViewSwitcherProps = {
 type ViewOption = { id: CrmViewType; label: string; icon: ComponentType<{ className?: string }> };
 
 /** Visões do dia a dia. */
-export const PRIMARY_VIEWS: ViewOption[] = [
+const PRIMARY_VIEWS: ViewOption[] = [
   { id: 'kanban', label: 'Funil', icon: KanbanSquare },
   { id: 'list', label: 'Lista', icon: List },
   { id: 'calendar', label: 'Agenda', icon: CalendarRange },
 ];
 
 /** Visões de análise, agrupadas em "Mais visões". */
-export const SECONDARY_VIEWS: ViewOption[] = [
+const SECONDARY_VIEWS: ViewOption[] = [
   { id: 'timeline', label: 'Atividades', icon: ListTree },
   { id: 'aging', label: 'Envelhecimento', icon: Hourglass },
   { id: 'insights', label: 'Painel', icon: Activity },
 ];
-
-export const ALL_VIEWS = [...PRIMARY_VIEWS, ...SECONDARY_VIEWS];
 
 const CrmViewSwitcher = ({ onViewChange, className }: CrmViewSwitcherProps) => {
   const {

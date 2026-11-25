@@ -13,17 +13,9 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 
 import { NumberStatusDot } from './numbers/NumberStatusBadge';
-import { formatNumber, statusMeta } from '../utils/campaign-helpers.js';
+import { CAMPAIGN_STATUS_BADGE_VARIANT, formatNumber, statusMeta } from '../utils/campaign-helpers.js';
 import { findCampaignProduct } from '../utils/campaign-options.js';
-import { formatRelativeTime } from '../lib/formatting';
-
-const STATUS_BADGE = {
-  active: 'success',
-  paused: 'warning',
-  draft: 'secondary',
-  ended: 'secondary',
-  archived: 'secondary',
-};
+import { formatRelativeTime } from '@/lib/relative-time';
 
 const normalize = (value) =>
   `${value ?? ''}`
@@ -82,7 +74,7 @@ const CampaignCard = ({ campaign, number = null, busyAction = null, onPause, onR
           </h3>
           {showName ? <p className="truncate text-xs text-muted-foreground">{campaign.name}</p> : null}
         </div>
-        <Badge variant={STATUS_BADGE[campaign.status] ?? 'secondary'} className="shrink-0">
+        <Badge variant={CAMPAIGN_STATUS_BADGE_VARIANT[campaign.status] ?? 'secondary'} className="shrink-0">
           {status.label}
         </Badge>
       </header>

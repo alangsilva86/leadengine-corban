@@ -292,10 +292,6 @@ export const DEFAULT_QUICK_ACTIONS: CommandActionDefinition[] = [
   },
 ];
 
-export const PRIMARY_ACTION_IDS = DEFAULT_QUICK_ACTIONS.filter(
-  (action) => action.intent === 'primary',
-).map((action) => action.id);
-
 export const ACTIONS_BY_ID = DEFAULT_QUICK_ACTIONS.reduce<Record<CommandActionId, CommandActionDefinition>>(
   (accumulator, action) => {
     accumulator[action.id] = action;

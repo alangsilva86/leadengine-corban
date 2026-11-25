@@ -1,3 +1,4 @@
+import { formatCurrencyBRL } from '@/lib/currency';
 import type { CrmMetricTrend, CrmMetricUnit } from '../state/metrics';
 
 const numberFormatter = new Intl.NumberFormat('pt-BR', {
@@ -13,12 +14,6 @@ const percentageFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'percent',
   maximumFractionDigits: 1,
   minimumFractionDigits: 0,
-});
-
-const currencyFormatter = new Intl.NumberFormat('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-  maximumFractionDigits: 0,
 });
 
 const minutesToDuration = (minutes: number) => {
@@ -43,7 +38,7 @@ export const formatMetricValue = (value: number, unit: CrmMetricUnit): string =>
     case 'percentage':
       return percentageFormatter.format(value / 100);
     case 'currency':
-      return currencyFormatter.format(value);
+      return formatCurrencyBRL(value);
     case 'duration':
       return minutesToDuration(value);
     default:
@@ -67,7 +62,7 @@ export const formatDeltaLabel = (delta: number | null | undefined, unit: CrmMetr
       return delta > 0 ? `+${formatted}` : delta < 0 ? `-${formatted}` : formatted;
     }
     case 'currency': {
-      const formatted = currencyFormatter.format(Math.abs(delta));
+      const formatted = formatCurrencyBRL(Math.abs(delta));
       return delta > 0 ? `+${formatted}` : delta < 0 ? `-${formatted}` : formatted;
     }
     case 'duration': {

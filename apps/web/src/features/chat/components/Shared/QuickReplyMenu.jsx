@@ -19,7 +19,7 @@ export const DEFAULT_QUICK_REPLIES = [
   { id: 'thanks', label: 'Agradecimento', text: 'Obrigado pelo retorno, {{nome}}! Qualquer dúvida, é só chamar.' },
 ];
 
-export const sanitizeQuickReply = (reply) => {
+const sanitizeQuickReply = (reply) => {
   if (!reply) return null;
   const label = reply.label?.trim();
   const text = reply.text?.trim();

@@ -8,9 +8,8 @@ import { ScrollArea } from '@/components/ui/scroll-area.jsx';
 import { fetchCampaigns } from '../connect/services/campaignService';
 import { resolveWhatsAppError } from '../lib/errors';
 import { formatTimestampLabel } from '../lib/formatting';
-import { statusMeta } from '../utils/campaign-helpers.js';
+import { CAMPAIGN_STATUS_BADGE_VARIANT, statusMeta } from '../utils/campaign-helpers.js';
 
-const STATUS_BADGE = { active: 'success', paused: 'warning', draft: 'secondary', ended: 'secondary', archived: 'secondary' };
 const ALL_STATUSES = ['active', 'paused', 'draft', 'ended'];
 
 /**
@@ -85,7 +84,7 @@ const CampaignHistoryDialog = ({ open, onOpenChange, campaign, numbersById }) =>
                         {item.updatedAt ? ` · atualizada em ${formatTimestampLabel(item.updatedAt)}` : ''}
                       </p>
                     </div>
-                    <Badge variant={STATUS_BADGE[item.status] ?? 'secondary'} className="shrink-0">
+                    <Badge variant={CAMPAIGN_STATUS_BADGE_VARIANT[item.status] ?? 'secondary'} className="shrink-0">
                       {statusMeta[item.status]?.label ?? 'Rascunho'}
                     </Badge>
                   </li>

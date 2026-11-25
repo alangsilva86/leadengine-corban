@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-export const APP_NAME = 'Lead Engine';
+const APP_NAME = 'Lead Engine';
 
 /** Define o título da aba como "<página> · Lead Engine" enquanto o componente estiver montado. */
 export function useDocumentTitle(title) {

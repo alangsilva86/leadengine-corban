@@ -1,140 +1,44 @@
-import { getAuthToken } from '@/lib/auth.js';
-import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-const resolveSocketUrl = () => {
-  if (typeof window !== 'undefined' && window.location) {
-    return window.location.origin;
-  }
-  return 'http://localhost:3000';
-};
+import { useRealtimeEvent, useRealtimeRoom } from '@/lib/realtime/useRealtime.js';
 
-const registerHandler = (socket, event, handler) => {
-  if (!socket || typeof socket.on !== 'function') {
-    return;
-  }
+const CONTACT_EVENTS = [
+  'contacts.created',
+  'contacts.updated',
+  'contacts.tasks.updated',
+  'contacts.timeline.updated',
+];
 
-  socket.on(event, handler);
-};
-
-const unregisterHandler = (socket, event, handler) => {
-  if (!socket || typeof socket.off !== 'function') {
-    return;
-  }
-
-  socket.off(event, handler);
-};
-
+/** Invalida as consultas de contatos quando chegam eventos pela conexão compartilhada. */
 export const useContactsLiveUpdates = ({ contactId, enabled = true } = {}) => {
   const queryClient = useQueryClient();
-  const socketRef = useRef(null);
 
-  useEffect(() => {
-    if (!enabled) {
-      return undefined;
-    }
+  useRealtimeRoom('contact', contactId, { enabled });
 
-    let active = true;
-
-    const initialize = async () => {
-      try {
-        const { io } = await import('socket.io-client');
-        if (!active) {
-          return;
-        }
-
-        const socket = io(resolveSocketUrl(), {
-          path: '/socket.io',
-          auth: (callback) => callback({ token: getAuthToken() }),
-          transports: ['websocket', 'polling'],
-          autoConnect: true,
-        });
-
-        socketRef.current = socket;
-
-        const invalidateList = () => {
-          queryClient.invalidateQueries({ queryKey: ['contacts'] });
-        };
-
-        const invalidateDetails = () => {
-          if (!contactId) {
-            return;
-          }
-          queryClient.invalidateQueries({ queryKey: ['contacts', 'details', contactId] });
-        };
-
-        const invalidateTimeline = () => {
-          if (!contactId) {
-            return;
-          }
-          queryClient.invalidateQueries({ queryKey: ['contacts', 'interactions', contactId] });
-        };
-
-        const invalidateTasks = () => {
-          if (!contactId) {
-            return;
-          }
-          queryClient.invalidateQueries({ queryKey: ['contacts', 'tasks', contactId] });
-        };
-
-        socket.on('connect', () => {
-          if (contactId) {
-            socket.emit('join-contact', contactId);
-          }
-        });
-
-        socket.on('disconnect', () => {
-          if (contactId) {
-            socket.emit('leave-contact', contactId);
-          }
-        });
-
-        const handleCreated = () => {
-          invalidateList();
-        };
-        const handleUpdated = () => {
-          invalidateList();
-          invalidateDetails();
-        };
-        const handleTasksUpdated = () => {
-          invalidateTasks();
-        };
-        const handleTimelineUpdated = () => {
-          invalidateTimeline();
-        };
-
-        registerHandler(socket, 'contacts.created', handleCreated);
-        registerHandler(socket, 'contacts.updated', handleUpdated);
-        registerHandler(socket, 'contacts.tasks.updated', handleTasksUpdated);
-        registerHandler(socket, 'contacts.timeline.updated', handleTimelineUpdated);
-
-        socketRef.current.cleanupHandlers = () => {
-          unregisterHandler(socket, 'contacts.created', handleCreated);
-          unregisterHandler(socket, 'contacts.updated', handleUpdated);
-          unregisterHandler(socket, 'contacts.tasks.updated', handleTasksUpdated);
-          unregisterHandler(socket, 'contacts.timeline.updated', handleTimelineUpdated);
-        };
-      } catch (error) {
-        console.warn('Failed to initialize contacts socket connection', error);
+  useRealtimeEvent(
+    CONTACT_EVENTS,
+    (_payload, event) => {
+      const invalidate = (queryKey) => queryClient.invalidateQueries({ queryKey });
+      switch (event) {
+        case 'contacts.created':
+          invalidate(['contacts']);
+          break;
+        case 'contacts.updated':
+          invalidate(['contacts']);
+          if (contactId) invalidate(['contacts', 'details', contactId]);
+          break;
+        case 'contacts.tasks.updated':
+          if (contactId) invalidate(['contacts', 'tasks', contactId]);
+          break;
+        case 'contacts.timeline.updated':
+          if (contactId) invalidate(['contacts', 'interactions', contactId]);
+          break;
+        default:
+          break;
       }
-    };
-
-    initialize();
-
-    return () => {
-      active = false;
-      const socket = socketRef.current;
-      if (socket) {
-        if (contactId) {
-          socket.emit?.('leave-contact', contactId);
-        }
-        socket.cleanupHandlers?.();
-        socket.removeAllListeners?.();
-        socket.disconnect?.();
-      }
-      socketRef.current = null;
-    };
-  }, [contactId, enabled, queryClient]);
+    },
+    { enabled }
+  );
 };
 
 export default useContactsLiveUpdates;

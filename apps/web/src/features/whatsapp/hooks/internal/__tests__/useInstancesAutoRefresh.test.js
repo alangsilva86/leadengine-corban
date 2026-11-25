@@ -30,10 +30,10 @@ describe('useInstancesAutoRefresh', () => {
     expect(api.loadInstances).toHaveBeenCalledWith({ reason: 'auto' });
   });
 
-  it('não faz polling enquanto o tempo real está conectado', () => {
+  it('continua o polling com o tempo real conectado (status do broker não chega por evento)', () => {
     renderHook(() => useInstancesAutoRefresh({ ...baseProps(), realtimeConnected: true }));
     vi.advanceTimersByTime(60_000);
-    expect(api.loadInstances).not.toHaveBeenCalled();
+    expect(api.loadInstances).toHaveBeenCalledTimes(4);
   });
 
   it('pula os ciclos com a aba oculta', () => {
@@ -52,7 +52,7 @@ describe('useInstancesAutoRefresh', () => {
     expect(api.loadInstances).toHaveBeenCalledWith({ forceRefresh: true, reason: 'manual' });
   });
 
-  it('recarrega na hora e retoma o polling quando o tempo real cai', () => {
+  it('recarrega na hora quando o tempo real cai', () => {
     const { rerender } = renderHook((props) => useInstancesAutoRefresh(props), {
       initialProps: { ...baseProps(), realtimeConnected: true },
     });

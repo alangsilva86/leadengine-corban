@@ -10,7 +10,7 @@ const hasInternalSla = (ticket) =>
   Boolean(ticket?.metadata?.internalSla || ticket?.metadata?.jro || ticket?.sla?.internal);
 
 /** Chip de tempo — só quando há algo útil a dizer. */
-export const resolveTimeChip = ({ ticket, jro, windowState, waiting }) => {
+const resolveTimeChip = ({ ticket, jro, windowState, waiting }) => {
   // O prazo interno só vale quando configurado (a janela de 24 h não é prazo de resposta).
   if (hasInternalSla(ticket) && jro?.deadline && typeof jro.msRemaining === 'number') {
     if (jro.msRemaining < 0) {

@@ -67,7 +67,7 @@ const PAGES_BY_PATH = Object.values(NAVIGATION_PAGES)
   .filter((page) => page.path && page.id !== 'whatsapp' && page.id !== 'baileys-logs')
   .sort((a, b) => b.path.length - a.path.length);
 
-export const resolveCurrentPage = (pathname) =>
+const resolveCurrentPage = (pathname) =>
   PAGES_BY_PATH.find((page) => (page.path === '/' ? pathname === '/' : pathname === page.path || pathname.startsWith(`${page.path}/`))) ??
   null;
 

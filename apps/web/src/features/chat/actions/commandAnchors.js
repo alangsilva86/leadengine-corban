@@ -5,7 +5,7 @@ export const CONVERSATION_ACTION_IDS = {
   phone: 'conversation-action-phone',
 };
 
-export const COMMAND_ACTION_ANCHOR_ALIASES = {
+const COMMAND_ACTION_ANCHOR_ALIASES = {
   'assign-owner': [CONVERSATION_ACTION_IDS.assign],
   'quick-followup': [CONVERSATION_ACTION_IDS.scheduleFollowUp],
   'register-result': [CONVERSATION_ACTION_IDS.registerResult],

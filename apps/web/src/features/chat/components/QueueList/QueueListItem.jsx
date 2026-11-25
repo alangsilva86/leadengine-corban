@@ -8,7 +8,6 @@ import { useDraftPreview } from '../../hooks/useComposerDraft.js';
 import InstanceBadge from '../Shared/InstanceBadge.jsx';
 import { getTicketLeadStagePresentation } from '../../utils/leadStage.js';
 import {
-  buildInitialsFromName,
   formatListTimestamp,
   isWhatsAppTicket,
   resolveLastActivityAt,
@@ -17,6 +16,7 @@ import {
   resolveTicketPreview,
   resolveWaitingState,
 } from '../ConversationArea/utils/presentation.js';
+import { getPersonInitials } from '@/lib/initials';
 
 const ContactAvatar = ({ name, whatsapp }) => (
   <span className="relative inline-flex size-9 shrink-0">
@@ -24,7 +24,7 @@ const ContactAvatar = ({ name, whatsapp }) => (
       aria-hidden
       className="inline-flex size-9 items-center justify-center rounded-full bg-surface-sunken text-xs font-semibold text-muted-foreground"
     >
-      {buildInitialsFromName(name, '') || <User className="size-4" />}
+      {getPersonInitials(name, '') || <User className="size-4" />}
     </span>
     {whatsapp ? (
       <span
@@ -49,7 +49,7 @@ const AssigneeAvatar = ({ assignee }) => {
           aria-label={`Responsável: ${label}`}
           role="img"
         >
-          {buildInitialsFromName(assignee.name, '') || <User className="size-3" />}
+          {getPersonInitials(assignee.name, '') || <User className="size-3" />}
         </span>
       </TooltipTrigger>
       <TooltipContent side="left">Responsável: {label}</TooltipContent>
@@ -65,12 +65,18 @@ const AssigneeAvatar = ({ assignee }) => {
  * O checkbox de seleção é irmão do botão (nunca aninhado) e aparece no hover/foco
  * ou quando já existe seleção.
  */
+/** Prévia substituída enquanto outro atendente escreve nesta conversa (nome do colega, nunca do cliente). */
+const formatTeammateTyping = (agent) => {
+  const name = typeof agent?.userName === 'string' && agent.userName.trim() ? agent.userName.trim().split(/\s+/)[0] : 'Alguém da equipe';
+  return agent?.mode === 'note' ? `${name} escrevendo nota…` : `${name} digitando…`;
+};
+
 const QueueListItem = ({
   ticket,
   selected = false,
   selectedForBulk = false,
   selectionMode = false,
-  typing = false,
+  typingAgent = null,
   currentUser = null,
   now,
   onSelect,
@@ -153,8 +159,10 @@ const QueueListItem = ({
             ) : null}
           </span>
           <span className="flex min-w-0 items-center gap-1.5">
-            {typing ? (
-              <span className="min-w-0 flex-1 truncate text-sm italic text-primary">digitando…</span>
+            {typingAgent ? (
+              <span className="min-w-0 flex-1 truncate text-sm italic text-primary" data-testid="queue-item-typing">
+                {formatTeammateTyping(typingAgent)}
+              </span>
             ) : draftText ? (
               <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                 <span className="font-medium text-danger-soft-foreground">Rascunho:</span> {draftText}

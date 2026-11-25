@@ -1,4 +1,4 @@
-import { format, formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -17,6 +17,7 @@ import {
   Upload,
   Users,
 } from 'lucide-react';
+import { toDate } from '@/lib/relative-time';
 
 /**
  * Rótulos pt-BR para os identificadores que chegam da API do CRM.
@@ -73,51 +74,10 @@ export const getTimelineEventIcon = (type: string | null | undefined): LucideIco
 // Formatação
 // ---------------------------------------------------------------------------
 
-const currencyFormatter = new Intl.NumberFormat('pt-BR', {
-  style: 'currency',
-  currency: 'BRL',
-  maximumFractionDigits: 0,
-});
-
-export const formatBRL = (value: number | null | undefined) => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value === 0) {
-    return null;
-  }
-  return currencyFormatter.format(value);
-};
-
 export const formatCount = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
 
 export const pluralize = (count: number, singular: string, plural: string) =>
   `${formatCount(count)} ${count === 1 ? singular : plural}`;
-
-export const toDate = (value: string | number | Date | null | undefined) => {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isFinite(date.getTime()) ? date : null;
-};
-
-/** "agora", "há 5 min", "há 3 h", "há 2 d", depois a data curta ("12 de jun."). */
-export const formatRelativeShort = (value: string | number | Date | null | undefined, now = Date.now()) => {
-  const date = toDate(value);
-  if (!date) return null;
-  const diffMinutes = Math.max(0, Math.floor((now - date.getTime()) / 60_000));
-  if (diffMinutes < 1) return 'agora';
-  if (diffMinutes < 60) return `há ${diffMinutes} min`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  if (diffHours < 24) return `há ${diffHours} h`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 30) return `há ${diffDays} d`;
-  return format(date, "d 'de' MMM", { locale: ptBR });
-};
-
-export const formatRelativeLong = (value: string | number | Date | null | undefined) => {
-  const date = toDate(value);
-  if (!date) return null;
-  return formatDistanceToNow(date, { addSuffix: true, locale: ptBR });
-};
 
 export const formatDateTime = (value: string | number | Date | null | undefined) => {
   const date = toDate(value);
@@ -141,14 +101,6 @@ export const IDLE_TONE_CLASS: Record<IdleTone, string> = {
   default: 'text-muted-foreground',
   warning: 'text-warning-soft-foreground',
   danger: 'text-danger-soft-foreground',
-};
-
-export const getInitials = (name: string | null | undefined, fallback = '?') => {
-  if (!name) return fallback;
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return fallback;
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
 /** Link para abrir a conversa do contato no Inbox (o Inbox resolve o ticket a partir do contato). */

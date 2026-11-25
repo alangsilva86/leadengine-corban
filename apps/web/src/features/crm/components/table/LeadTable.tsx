@@ -6,8 +6,9 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { cn } from '@/lib/utils.js';
 import LeadTableRow from './LeadTableRow';
 import type { LeadSummary } from '../../state/leads';
-import { formatCount, toDate } from '../../utils/labels';
+import { formatCount } from '../../utils/labels';
 import { getLeadStageOrder } from '../../utils/lead-stage';
+import { toDate } from '@/lib/relative-time';
 
 type SortKey = 'name' | 'stage' | 'lastActivityAt' | 'potentialValue';
 type SortState = { key: SortKey; direction: 'asc' | 'desc' } | null;

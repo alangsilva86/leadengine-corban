@@ -11,6 +11,7 @@ import {
   RefreshCcw,
   Trophy,
 } from 'lucide-react';
+import { TONE_DOT_CLASSES, TONE_SOFT_CLASSES } from '@/lib/tones';
 import {
   LEAD_PIPELINE_STAGES,
   LEAD_STAGES,
@@ -32,7 +33,7 @@ import {
  */
 
 export type { LeadStage, LeadStageTone };
-export { LEAD_PIPELINE_STAGES, LEAD_STAGES, LEAD_STAGE_DEFINITIONS, canTransitionLeadStage, isLeadStage };
+export { LEAD_PIPELINE_STAGES, LEAD_STAGES, LEAD_STAGE_DEFINITIONS, canTransitionLeadStage };
 
 /** Saídas do funil (Ganho, Perdido, Reciclar), na ordem do contrato. */
 export const LEAD_EXIT_STAGES: readonly LeadStage[] = LEAD_STAGES.filter((stage) => LEAD_STAGE_DEFINITIONS[stage].exit);
@@ -68,43 +69,43 @@ type ToneClasses = {
 /** Tom do contrato → classes semânticas do design system (nunca cores da paleta). */
 export const LEAD_STAGE_TONE_CLASSES: Record<LeadStageTone, ToneClasses> = {
   neutral: {
-    chip: 'bg-surface-sunken text-muted-foreground',
-    dot: 'bg-subtle-foreground',
+    chip: TONE_SOFT_CLASSES.neutral,
+    dot: TONE_DOT_CLASSES.neutral,
     text: 'text-muted-foreground',
     border: 'border-border-strong',
     badge: 'secondary',
   },
   info: {
-    chip: 'bg-info-soft text-info-soft-foreground',
-    dot: 'bg-info',
+    chip: TONE_SOFT_CLASSES.info,
+    dot: TONE_DOT_CLASSES.info,
     text: 'text-info-soft-foreground',
     border: 'border-info',
     badge: 'info',
   },
   primary: {
-    chip: 'bg-primary-soft text-primary-soft-foreground',
-    dot: 'bg-primary',
+    chip: TONE_SOFT_CLASSES.primary,
+    dot: TONE_DOT_CLASSES.primary,
     text: 'text-primary-soft-foreground',
     border: 'border-primary',
     badge: 'primary',
   },
   warning: {
-    chip: 'bg-warning-soft text-warning-soft-foreground',
-    dot: 'bg-warning',
+    chip: TONE_SOFT_CLASSES.warning,
+    dot: TONE_DOT_CLASSES.warning,
     text: 'text-warning-soft-foreground',
     border: 'border-warning',
     badge: 'warning',
   },
   success: {
-    chip: 'bg-success-soft text-success-soft-foreground',
-    dot: 'bg-success',
+    chip: TONE_SOFT_CLASSES.success,
+    dot: TONE_DOT_CLASSES.success,
     text: 'text-success-soft-foreground',
     border: 'border-success',
     badge: 'success',
   },
   danger: {
-    chip: 'bg-danger-soft text-danger-soft-foreground',
-    dot: 'bg-danger',
+    chip: TONE_SOFT_CLASSES.danger,
+    dot: TONE_DOT_CLASSES.danger,
     text: 'text-danger-soft-foreground',
     border: 'border-danger',
     badge: 'destructive',
@@ -192,17 +193,8 @@ export const getLeadStagePresentation = (value: unknown): LeadStagePresentation 
 
 export const getLeadStageLabel = (value: unknown) => LEAD_STAGE_DEFINITIONS[normalizeLeadStage(value)].label;
 
-export const getLeadStageBadgeVariant = (value: unknown): LeadStageBadgeVariant =>
-  LEAD_STAGE_TONE_CLASSES[LEAD_STAGE_DEFINITIONS[normalizeLeadStage(value)].tone].badge;
-
 /** Posição no funil (1..10) — para ordenar listas por etapa. */
 export const getLeadStageOrder = (value: unknown) => LEAD_STAGE_DEFINITIONS[normalizeLeadStage(value)].order;
-
-/** Etapa de saída que encerra o lead (Ganho ou Perdido). */
-export const isClosedLeadStage = (value: unknown) => {
-  const stage = parseLeadStage(value);
-  return stage ? LEAD_STAGE_DEFINITIONS[stage].terminal : false;
-};
 
 /** Frase curta explicando por que a mudança não é permitida (ou `null` quando é). */
 export const getLeadStageTransitionBlockReason = (from: LeadStage, to: LeadStage): string | null => {

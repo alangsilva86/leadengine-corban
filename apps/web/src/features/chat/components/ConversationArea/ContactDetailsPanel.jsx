@@ -8,8 +8,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { Copy as CopyIcon, Phone as PhoneIcon, MessageCircle, Mail } from 'lucide-react';
 
 import { Button } from '@/components/ui/button.jsx';
@@ -17,7 +15,7 @@ import { Input } from '@/components/ui/input.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { useClipboard } from '@/hooks/use-clipboard.js';
-import { cn, formatPhoneNumber } from '@/lib/utils.js';
+import { cn } from '@/lib/utils.js';
 
 import { formatDateTime } from '../../utils/datetime.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
@@ -28,6 +26,8 @@ import LeadStageBadge from '@/features/crm/components/lead-stage/LeadStageBadge'
 import LeadStageMenu, { LeadStageChip } from '@/features/crm/components/lead-stage/LeadStageMenu';
 import LeadStageTrack from '@/features/crm/components/lead-stage/LeadStageTrack';
 import { LEAD_PIPELINE_STAGES, LEAD_STAGE_DEFINITIONS } from '@/features/crm/utils/lead-stage';
+import { formatPhoneNumber } from '@/lib/phone';
+import { formatRelativeLong } from '@/lib/relative-time';
 
 const CHANNEL_TONE_CLASSES = {
   whatsapp: 'bg-whatsapp-soft text-whatsapp-soft-foreground',
@@ -46,19 +46,6 @@ const parseDateValue = (value) => {
     return null;
   }
   return date;
-};
-
-const formatRelativeTime = (value) => {
-  const date = parseDateValue(value);
-  if (!date) {
-    return null;
-  }
-
-  try {
-    return formatDistanceToNow(date, { addSuffix: true, locale: ptBR });
-  } catch {
-    return null;
-  }
 };
 
 const getLastInteractionTimestamp = (timeline) => {
@@ -226,7 +213,7 @@ const LeadStageSection = ({ stage, onStageChange, pendingStage }) => {
 const ContactSummary = ({ ticket }) => {
   const timeline = ticket?.timeline ?? ticket?.metadata?.timeline ?? null;
   const lastTimestamp = useMemo(() => getLastInteractionTimestamp(timeline), [timeline]);
-  const relativeTime = useMemo(() => formatRelativeTime(lastTimestamp), [lastTimestamp]);
+  const relativeTime = useMemo(() => formatRelativeLong(lastTimestamp), [lastTimestamp]);
   const directionActor = timeline?.lastDirection ?? null;
 
   const channel = ticket?.channel ?? ticket?.metadata?.channel ?? ticket?.metadata?.origin ?? null;

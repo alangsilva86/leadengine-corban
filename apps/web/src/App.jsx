@@ -32,9 +32,6 @@ const WhatsAppCampaigns = lazy(() => import('./features/whatsapp/campaigns/index
 const ChatCommandCenter = lazy(() => import('./features/chat/containers/ChatCommandCenterContainer.tsx'));
 const Settings = lazy(() => import('./components/Settings.jsx'));
 
-/** Mantido por compatibilidade com módulos que importam o fallback daqui. */
-export const PageFallback = () => <PageSkeleton />;
-
 const FullScreenStatus = ({ title, children }) => (
   <main className="flex min-h-svh flex-col items-center justify-center gap-4 bg-background p-6 text-center">
     <BrandMark className="size-10" />

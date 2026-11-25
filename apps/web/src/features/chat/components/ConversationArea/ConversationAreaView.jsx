@@ -58,6 +58,8 @@ export const ConversationAreaView = ({ timeline, composer, header, currentUser =
     onSend,
     onCreateNote,
     onTyping,
+    teammatesTyping = [],
+    teammatesViewing = [],
     aiState,
     isSending = false,
     sendError,
@@ -219,6 +221,8 @@ export const ConversationAreaView = ({ timeline, composer, header, currentUser =
               onSend={onSend}
               onCreateNote={onCreateNote}
               onTyping={onTyping}
+              teammatesTyping={teammatesTyping}
+              teammatesViewing={teammatesViewing}
               isSending={isSending}
               sendError={sendError}
               aiError={aiState?.error ?? null}

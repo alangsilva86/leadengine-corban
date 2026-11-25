@@ -1,5 +1,7 @@
+import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import AiSettingsTab from '../AiSettingsTab';
 
@@ -28,7 +30,7 @@ const buildFetchMock = () => {
     if (typeof input === 'string' || input instanceof URL) {
       const url = input.toString();
 
-      if (url.endsWith('/api/ai/config') && (!init || init.method === 'GET')) {
+      if (url.endsWith('/api/ai/config') && (!init?.method || init.method === 'GET')) {
         return new Response(JSON.stringify(getResponse), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -83,11 +85,10 @@ describe('AiSettingsTab', () => {
 
     await waitFor(() => expect(screen.getByText('Configurações da IA')).toBeInTheDocument());
 
-    const trigger = screen.getByRole('combobox', { name: /modo padrão/i });
-    fireEvent.mouseDown(trigger);
-
-    const iaAutoOption = await screen.findByRole('option', { name: 'IA Auto' });
-    fireEvent.click(iaAutoOption);
+    // O Select (Radix) abre com eventos de ponteiro, não com `mouseDown`.
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('combobox', { name: /modo padrão/i }));
+    await user.click(await screen.findByRole('option', { name: 'IA Auto' }));
 
     const salvar = screen.getByRole('button', { name: /Salvar ajustes/i });
     await act(async () => {
@@ -105,6 +106,9 @@ describe('AiSettingsTab', () => {
       const [, init] = putCall!;
       const body = JSON.parse(init?.body as string);
       expect(body.defaultMode).toBe('IA_AUTO');
+      // Regressão: a chamada passa pelo cliente autenticado (antes era um `fetch` cru → 401).
+      expect(init?.credentials).toBe('include');
+      expect(init?.headers).toMatchObject({ 'x-tenant-id': expect.any(String) });
     });
   });
 });

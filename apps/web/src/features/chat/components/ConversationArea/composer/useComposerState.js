@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useComposerDraft } from '../../../hooks/useComposerDraft.js';
 
-export const MAX_ATTACHMENTS = 3;
-export const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_BYTES = 16 * 1024 * 1024;
 export const ACCEPTED_FILE_TYPES =
   'image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip';
 

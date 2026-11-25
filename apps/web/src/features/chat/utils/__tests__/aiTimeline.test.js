@@ -5,8 +5,11 @@ import {
   sanitizeAiTimeline,
   parseMessageRole,
   getTimelineEntryContent,
+  MAX_AI_TIMELINE_ITEMS,
 } from '../aiTimeline.js';
 
+// Ímpares = cliente (inbound/user); pares = agente (outbound). Atenção: `overrides.payload`
+// substitui o payload inteiro (o `...overrides` final vence o merge acima).
 const createEntry = (id, overrides = {}) => ({
   id: `entry-${id}`,
   type: 'message',
@@ -50,7 +53,7 @@ describe('aiTimeline utils', () => {
     const result = buildAiContextTimeline(timeline);
 
     expect(result).toEqual([
-      { content: 'Mensagem 1', role: 'outbound' },
+      { content: 'Mensagem 1', role: 'user' },
       { content: 'Fallback de texto', role: 'agent' },
       { content: 'Conteúdo alternativo', role: 'system' },
     ]);
@@ -72,8 +75,11 @@ describe('aiTimeline utils', () => {
 
     const result = buildAiMessagesPayload(items);
 
-    expect(result.length).toBe(51);
-    expect(result[0]).toEqual({ role: 'assistant', content: 'Mensagem 3' });
+    // 55 itens → janela dos últimos 50 (Mensagem 6…52 + 3 avulsos); os 2 avulsos sem texto saem.
+    expect(result.length).toBe(48);
+    expect(result.length).toBeLessThanOrEqual(MAX_AI_TIMELINE_ITEMS);
+    expect(result[0]).toEqual({ role: 'assistant', content: 'Mensagem 6' });
+    expect(result[1]).toEqual({ role: 'user', content: 'Mensagem 7' });
     expect(result[result.length - 1]).toEqual({ role: 'system', content: 'Mensagem válida' });
   });
 
@@ -99,9 +105,9 @@ describe('aiTimeline utils', () => {
         timestamp: '2024-01-01T12:00:00.000Z',
         payload: {
           id: 'payload-1',
-          direction: 'outbound',
-          author: 'Agente',
-          role: 'outbound',
+          direction: 'inbound',
+          author: 'Cliente',
+          role: 'user',
           content: 'Mensagem 1',
           channel: 'whatsapp',
           attachments: [{ id: 'file-1' }],
@@ -112,15 +118,22 @@ describe('aiTimeline utils', () => {
         type: 'message',
         timestamp: '2024-01-02T12:00:00.000Z',
         payload: {
-          id: 'payload-2',
-          direction: 'agent',
-          author: 'Agente',
+          id: null,
+          direction: null,
+          author: null,
           role: null,
           content: 'Conteúdo via text',
-          channel: 'whatsapp',
+          channel: null,
+          attachments: undefined,
         },
       },
-      { id: 'raw', value: 'mantém valor bruto' },
+      // Item sem `payload` vira o próprio payload — a API (`getEntryPayload`) lê os dois formatos igual.
+      {
+        id: 'raw',
+        type: null,
+        timestamp: null,
+        payload: { id: 'raw', value: 'mantém valor bruto' },
+      },
     ]);
   });
 

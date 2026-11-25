@@ -3,18 +3,11 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, Loader2 } from 'lucide-react';
 import { apiGet } from '@/lib/api.js';
+import { TONE_DOT_CLASSES } from '@/lib/tones';
 import { cn } from '@/lib/utils.js';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
 import { useInstancesStore } from '@/features/whatsapp/state/store/index.ts';
 import { resolveNormalizedInstanceStatus } from '@/features/whatsapp/lib/instances.ts';
-
-const TONE_DOT = {
-  success: 'bg-success',
-  warning: 'bg-warning',
-  danger: 'bg-danger',
-  neutral: 'bg-subtle-foreground',
-  pending: 'bg-subtle-foreground',
-};
 
 const isHealthyPayload = (payload) => {
   const raw = typeof payload === 'string' ? payload : payload?.status ?? payload?.state ?? payload?.health;
@@ -88,7 +81,7 @@ export function ConnectionStatus({ canManageChannels = false }) {
           {summary.tone === 'pending' ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
           ) : (
-            <span className={cn('size-2 rounded-full', TONE_DOT[summary.tone])} aria-hidden="true" />
+            <span className={cn('size-2 rounded-full', TONE_DOT_CLASSES[summary.tone])} aria-hidden="true" />
           )}
           <span className="hidden sm:inline">{summary.label}</span>
         </button>

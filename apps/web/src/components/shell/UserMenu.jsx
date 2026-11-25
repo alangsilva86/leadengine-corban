@@ -14,19 +14,14 @@ import {
 } from '@/components/ui/dropdown-menu.jsx';
 import { SidebarMenuButton } from '@/components/ui/sidebar.jsx';
 import { ROLE_LABELS } from '@/features/navigation/routes.ts';
+import { getInitials } from '@/lib/initials';
 
-const getInitials = (name) => {
-  if (typeof name !== 'string' || !name.trim()) return '?';
-  const parts = name.trim().split(/\s+/);
-  return `${parts[0][0] ?? ''}${parts.length > 1 ? parts[parts.length - 1][0] : ''}`.toUpperCase();
-};
-
-export const UserAvatar = ({ name, className = '' }) => (
+const UserAvatar = ({ name, className = '' }) => (
   <span
     aria-hidden="true"
     className={`flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-semibold text-primary-soft-foreground ${className}`}
   >
-    {getInitials(name)}
+    {getInitials(name, { singleWordLetters: 1 })}
   </span>
 );
 

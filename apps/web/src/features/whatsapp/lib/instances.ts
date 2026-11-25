@@ -1,13 +1,13 @@
 import { normalizeWhatsAppStatus } from '@leadengine/wa-status';
 import { normalizeQrPayload as normalizeQrPayloadContract } from '@ticketz/wa-contracts/v1/qr';
 import { extractQrPayload } from '../utils/qr.js';
-import { extractPhoneDigits } from './formatting';
+import { extractWhatsAppDigits } from '@/lib/phone';
 import { getNumberStatus } from './numberStatus';
 
 export const looksLikeWhatsAppJid = (value: unknown): value is string =>
   typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
 
-export const VISIBLE_INSTANCE_STATUSES = new Set([
+const VISIBLE_INSTANCE_STATUSES = new Set([
   'connected',
   'connecting',
   'reconnecting',
@@ -31,7 +31,7 @@ export const pickStringValue = (...values: unknown[]): string | null => {
   return null;
 };
 
-export const readTenantString = (value: unknown): string | null => {
+const readTenantString = (value: unknown): string | null => {
   if (typeof value === 'string') {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
@@ -88,7 +88,7 @@ const pickTenantId = (record: unknown, { allowIdFallback = false } = {}): string
   return null;
 };
 
-export const resolveTenantId = (record: unknown): string | null => {
+const resolveTenantId = (record: unknown): string | null => {
   if (!record || typeof record !== 'object') {
     return readTenantString(record);
   }
@@ -141,7 +141,7 @@ export const resolveTenantId = (record: unknown): string | null => {
   return null;
 };
 
-export const resolveTenantDisplayName = (record: unknown): string | null => {
+const resolveTenantDisplayName = (record: unknown): string | null => {
   if (!record || typeof record !== 'object') {
     return readTenantString(record);
   }
@@ -229,7 +229,7 @@ export const extractInstanceFromPayload = (
   return null;
 };
 
-export const formatInstanceDisplayId = (value: string | null | undefined): string => {
+const formatInstanceDisplayId = (value: string | null | undefined): string => {
   if (typeof value !== 'string') {
     return '';
   }
@@ -440,7 +440,7 @@ export const normalizeInstancesCollection = (
   return order.map((id) => map.get(id)).filter(Boolean) as NormalizedInstance[];
 };
 
-export const unwrapWhatsAppResponse = (payload: unknown): unknown => {
+const unwrapWhatsAppResponse = (payload: unknown): unknown => {
   if (!payload) {
     return {};
   }
@@ -691,14 +691,14 @@ export const resolveInstancePhone = (instance: unknown): string => {
     if (typeof candidate === 'string') {
       const trimmed = candidate.trim();
       if (trimmed.length > 0) {
-        return looksLikeWhatsAppJid(trimmed) ? extractPhoneDigits(trimmed) ?? '' : trimmed;
+        return looksLikeWhatsAppJid(trimmed) ? extractWhatsAppDigits(trimmed) ?? '' : trimmed;
       }
     }
   }
 
   // Identificadores técnicos (JID) só servem como fonte dos dígitos — nunca são exibidos crus.
   for (const candidate of [record.jid, record.session]) {
-    const digits = extractPhoneDigits(candidate);
+    const digits = extractWhatsAppDigits(candidate);
     if (digits) {
       return digits;
     }

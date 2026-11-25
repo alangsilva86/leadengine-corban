@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.j
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { getFriendlyErrorMessage } from '@/lib/errors.js';
 import useCrmPermissions from '@/features/crm/state/permissions';
-import { buildInboxHref, formatRelativeShort } from '@/features/crm/utils/labels';
+import { buildInboxHref } from '@/features/crm/utils/labels';
 import ContactSummary from '../components/ContactSummary.jsx';
 import ContactTimeline from '../components/ContactTimeline.jsx';
 import ContactTasks from '../components/ContactTasks.jsx';
@@ -35,7 +35,8 @@ import {
   useContactTasksQuery,
   useUpdateContactMutation,
 } from '../hooks/useContactsApi.js';
-import { formatPhone } from '../utils/format.js';
+import { formatPhone } from '@/lib/phone';
+import { formatRelativeShort } from '@/lib/relative-time';
 
 const TabCount = ({ value }) =>
   typeof value === 'number' && value > 0 ? (

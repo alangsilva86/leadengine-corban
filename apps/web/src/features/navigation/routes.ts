@@ -56,7 +56,7 @@ export type NavigationSection = {
 };
 
 /** Ordem por frequência de uso: atendimento primeiro, gestão depois, configuração por último. */
-export const NAVIGATION_SECTIONS: readonly NavigationSection[] = [
+const NAVIGATION_SECTIONS: readonly NavigationSection[] = [
   { id: 'work', items: ['inbox', 'contacts', 'crm', 'dashboard'] },
   { id: 'manage', label: 'Gestão', items: ['campaigns'] },
   { id: 'configure', label: 'Configurar', items: ['channels', 'settings'] },

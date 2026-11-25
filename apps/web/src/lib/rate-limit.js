@@ -42,7 +42,3 @@ export const computeBackoffDelay = (attempt = 1, { baseMs = DEFAULT_BASE_DELAY_M
   return Math.min(max, delay);
 };
 
-export const RATE_LIMIT_DEFAULTS = {
-  baseDelayMs: DEFAULT_BASE_DELAY_MS,
-  maxDelayMs: DEFAULT_MAX_DELAY_MS,
-};

@@ -6,7 +6,7 @@ const sanitizeDigits = (value) => {
   return String(value).replace(/\D/g, '');
 };
 
-export const PHONE_ACTIONS = {
+const PHONE_ACTIONS = {
   CALL: 'call',
   WHATSAPP: 'whatsapp',
   SMS: 'sms',

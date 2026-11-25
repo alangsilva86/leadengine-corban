@@ -1,4 +1,5 @@
 import { CircleDollarSign, ClipboardList, FileText, History } from 'lucide-react';
+import { formatCurrencyBRL } from '@/lib/currency';
 import { formatMessageTime } from './utils/presentation.js';
 
 const TYPE_ICONS = {
@@ -7,8 +8,6 @@ const TYPE_ICONS = {
   deal: CircleDollarSign,
 };
 
-const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-
 const toNumber = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
@@ -16,7 +15,7 @@ const toNumber = (value) => {
 };
 
 /** Resumo legível de uma simulação/proposta (nunca JSON cru). */
-export const summarizeSnapshot = (snapshot) => {
+const summarizeSnapshot = (snapshot) => {
   if (!snapshot || typeof snapshot !== 'object') return null;
   const bank = snapshot.bank?.label ?? snapshot.bank?.name ?? (typeof snapshot.bank === 'string' ? snapshot.bank : null);
   const term = toNumber(snapshot.term ?? snapshot.prazo);
@@ -24,8 +23,14 @@ export const summarizeSnapshot = (snapshot) => {
   const net = toNumber(snapshot.netAmount ?? snapshot.netValue ?? snapshot.valorLiquido);
   const parts = [
     bank,
-    term && installment ? `${term}x de ${currency.format(installment)}` : term ? `${term}x` : installment ? `parcela ${currency.format(installment)}` : null,
-    net ? `líquido ${currency.format(net)}` : null,
+    term && installment
+      ? `${term}x de ${formatCurrencyBRL(installment, { cents: true })}`
+      : term
+        ? `${term}x`
+        : installment
+          ? `parcela ${formatCurrencyBRL(installment, { cents: true })}`
+          : null,
+    net ? `líquido ${formatCurrencyBRL(net, { cents: true })}` : null,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(' · ') : null;
 };

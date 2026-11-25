@@ -12,6 +12,12 @@ export const useLiveUpdatesService = () => {
 
   const onEvent = useCallback(
     (event: unknown) => {
+      // Sincronização com o broker: não traz um número específico, então recarrega a lista inteira.
+      if (event && typeof event === 'object' && (event as { type?: unknown }).type === 'synced') {
+        store.getState().requestLoad({ reason: 'realtime' });
+        return;
+      }
+
       const parsed = parseRealtimeEvent(event);
       if (!parsed) {
         return;

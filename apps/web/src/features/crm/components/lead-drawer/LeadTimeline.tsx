@@ -1,12 +1,8 @@
 import { History } from 'lucide-react';
 import { EmptyState } from '@/components/page';
 import type { LeadTimelineEvent } from '../../state/leads';
-import {
-  formatDateTime,
-  formatRelativeShort,
-  getTimelineEventIcon,
-  getTimelineEventLabel,
-} from '../../utils/labels';
+import { formatDateTime, getTimelineEventIcon, getTimelineEventLabel } from '../../utils/labels';
+import { formatRelativeShort } from '@/lib/relative-time';
 
 type LeadTimelineProps = {
   events: LeadTimelineEvent[];

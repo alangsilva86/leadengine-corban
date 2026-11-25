@@ -64,6 +64,26 @@ describe('useRealtimeTickets', () => {
     unmount();
   });
 
+  it("invokes onViewers when receiving a 'ticket:viewers' event", async () => {
+    const onViewers = vi.fn();
+
+    const { unmount } = renderHook(() =>
+      useRealtimeTickets({ enabled: true, tenantId: 'tenant-123', onViewers })
+    );
+
+    await waitFor(() => {
+      expect(handlers['ticket:viewers']).toBeTypeOf('function');
+    });
+
+    act(() => {
+      handlers['ticket:viewers']?.({ ticketId: 'ticket-1', viewers: [{ userId: 'user-456', userName: 'Bruno' }] });
+    });
+
+    expect(onViewers).toHaveBeenCalledWith({ ticketId: 'ticket-1', viewers: [{ userId: 'user-456', userName: 'Bruno' }] });
+
+    unmount();
+  });
+
   it('avoids duplicate callbacks when message updates use aliased events', async () => {
     const onMessageUpdated = vi.fn();
     const logSpy = vi.spyOn(console, 'info').mockImplementation(() => {});

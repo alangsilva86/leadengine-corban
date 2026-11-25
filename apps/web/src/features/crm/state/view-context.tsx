@@ -130,7 +130,7 @@ type CrmViewContextValue = {
 
 const Context = createContext<CrmViewContextValue | undefined>(undefined);
 
-export const CRM_VIEW_TYPES: CrmViewType[] = ['kanban', 'list', 'calendar', 'timeline', 'aging', 'insights'];
+const CRM_VIEW_TYPES: CrmViewType[] = ['kanban', 'list', 'calendar', 'timeline', 'aging', 'insights'];
 
 export const isCrmViewType = (value: unknown): value is CrmViewType =>
   typeof value === 'string' && (CRM_VIEW_TYPES as string[]).includes(value);

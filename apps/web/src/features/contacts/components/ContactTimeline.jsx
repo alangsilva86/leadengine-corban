@@ -1,7 +1,8 @@
 import { Globe, History, Mail, MessageCircle, MoreHorizontal, Phone } from 'lucide-react';
 import { EmptyState, ErrorState } from '@/components/page';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
-import { formatDateTime, formatRelativeShort } from '@/features/crm/utils/labels';
+import { formatDateTime } from '@/features/crm/utils/labels';
+import { formatRelativeShort } from '@/lib/relative-time';
 
 export const INTERACTION_CHANNELS = [
   { value: 'WHATSAPP', label: 'WhatsApp', icon: MessageCircle },

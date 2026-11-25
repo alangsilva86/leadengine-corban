@@ -6,6 +6,9 @@ import { Switch } from '@/components/ui/switch.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { AlertCircle, Loader2, Save } from 'lucide-react';
+import { apiGet, apiPut } from '@/lib/api.js';
+
+const META_CONFIG_PATH = '/api/integrations/meta/offline-conversions/config';
 
 type MetaOfflineConfig = {
   offlineEventSetId: string | null;
@@ -99,16 +102,8 @@ const MetaSettingsTab = () => {
       setError(null);
       setStatusMessage(null);
       try {
-        const response = await fetch('/api/integrations/meta/offline-conversions/config');
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null);
-          const message =
-            (payload && typeof payload === 'object' && payload !== null && 'message' in payload
-              ? (payload as { message?: string }).message
-              : null) ?? `Falha ao carregar configurações (${response.status})`;
-          throw new Error(message);
-        }
-        const payload = await response.json();
+        // `apiGet` envia o token e o tenant — um `fetch` cru voltava 401 fora dos testes.
+        const payload = await apiGet(META_CONFIG_PATH);
         const data = (payload?.data ?? DEFAULT_CONFIG) as MetaOfflineConfig;
         if (!mounted) return;
         setConfig({ ...DEFAULT_CONFIG, ...data });
@@ -207,22 +202,7 @@ const MetaSettingsTab = () => {
     }
 
     try {
-      const response = await fetch('/api/integrations/meta/offline-conversions/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        const message =
-          (body && typeof body === 'object' && body !== null && 'message' in body
-            ? (body as { message?: string }).message
-            : null) ?? 'Não foi possível salvar as configurações Meta.';
-        throw new Error(message);
-      }
-
-      const result = await response.json();
+      const result = await apiPut(META_CONFIG_PATH, payload);
       const data = (result?.data ?? DEFAULT_CONFIG) as MetaOfflineConfig;
       setConfig({ ...DEFAULT_CONFIG, ...data });
       setForm({
@@ -263,7 +243,7 @@ const MetaSettingsTab = () => {
               Configure as credenciais para enviar eventos offline ao Meta Ads Manager e acompanhe o status da integração.
             </CardDescription>
             {lastValidationText && (
-              <p className="text-xs textForegroundMuted">Última validação: {lastValidationText}</p>
+              <p className="text-xs text-muted-foreground">Última validação: {lastValidationText}</p>
             )}
             {config.lastValidationError && (
               <p className="flex items-center gap-2 text-xs text-destructive">
@@ -371,7 +351,7 @@ const MetaSettingsTab = () => {
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <Label htmlFor="reprocess-unmatched">Reprocessar contatos sem correspondência</Label>
-                    <p className="text-xs textForegroundMuted">
+                    <p className="text-xs text-muted-foreground">
                       Reenvia eventos que não tiveram correspondência de cliente.
                     </p>
                   </div>
@@ -385,7 +365,7 @@ const MetaSettingsTab = () => {
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
                     <Label htmlFor="reprocess-unsent">Reprocessar envios pendentes</Label>
-                    <p className="text-xs textForegroundMuted">
+                    <p className="text-xs text-muted-foreground">
                       Tenta novamente eventos que falharam por indisponibilidade da API.
                     </p>
                   </div>
@@ -413,7 +393,7 @@ const MetaSettingsTab = () => {
                 autoComplete="new-password"
               />
               {config.accessTokenConfigured && !accessTokenChanged && (
-                <p className="text-xs textForegroundMuted">Um token já está salvo. Preencha o campo para substituir.</p>
+                <p className="text-xs text-muted-foreground">Um token já está salvo. Preencha o campo para substituir.</p>
               )}
             </div>
             <div className="space-y-2">
@@ -428,7 +408,7 @@ const MetaSettingsTab = () => {
                 autoComplete="new-password"
               />
               {config.appSecretConfigured && !appSecretChanged && (
-                <p className="text-xs textForegroundMuted">Um app secret já está salvo. Preencha o campo para substituir.</p>
+                <p className="text-xs text-muted-foreground">Um app secret já está salvo. Preencha o campo para substituir.</p>
               )}
             </div>
           </div>

@@ -10,6 +10,7 @@ import ComposerToolbar, { SuggestReplyButton } from './composer/ComposerToolbar.
 import AttachmentTray from './composer/AttachmentTray.jsx';
 import InstanceSelector from './composer/InstanceSelector.jsx';
 import SlashPalette from './composer/SlashPalette.jsx';
+import TeammatesPresence from './composer/TeammatesPresence.jsx';
 import useComposerState, { ACCEPTED_FILE_TYPES } from './composer/useComposerState.js';
 import { fillTemplatePlaceholders, getFirstName } from './utils/presentation.js';
 
@@ -63,6 +64,8 @@ export const Composer = forwardRef(function Composer(
     onSend,
     onCreateNote,
     onTyping,
+    teammatesTyping = [],
+    teammatesViewing = [],
     isSending = false,
     sendError = null,
     aiError = null,
@@ -261,6 +264,7 @@ export const Composer = forwardRef(function Composer(
     if (isNote) {
       onCreateNote?.(trimmed);
       clearValue();
+      onTyping?.({ hasText: false });
       setMode('reply');
       return;
     }
@@ -299,6 +303,7 @@ export const Composer = forwardRef(function Composer(
     if (accepted !== false && onSend) {
       clearValue();
       clearAttachments();
+      onTyping?.({ hasText: false });
       setUploadError(null);
       aiStreaming?.reset?.();
     }
@@ -379,6 +384,7 @@ export const Composer = forwardRef(function Composer(
 
   return (
     <div className="@container flex flex-col gap-2">
+      <TeammatesPresence typing={teammatesTyping} viewers={teammatesViewing} />
       {notice ? (
         <div className="flex items-start gap-3 rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger-soft-foreground" role="alert">
           <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -455,8 +461,10 @@ export const Composer = forwardRef(function Composer(
               rows={1}
               value={value}
               onChange={(event) => {
-                setValue(event.target.value);
-                if (!isNote) onTyping?.();
+                const nextValue = event.target.value;
+                setValue(nextValue);
+                // Outros atendentes veem "Fulano está digitando…" (resposta) ou "…escrevendo uma nota" (nota).
+                onTyping?.({ mode: isNote ? 'note' : 'reply', hasText: nextValue.trim().length > 0 });
               }}
               onKeyDown={handleKeyDown}
               readOnly={isAiGenerating}

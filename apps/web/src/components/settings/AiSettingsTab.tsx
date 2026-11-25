@@ -14,6 +14,9 @@ import {
   SelectValue,
 } from '@/components/ui/select.jsx';
 import { AlertCircle, Upload, RefreshCw, Wand2, Save } from 'lucide-react';
+import { apiGet, apiPut } from '@/lib/api.js';
+
+const AI_CONFIG_PATH = '/api/ai/config';
 
 type AiAssistantMode = 'IA_AUTO' | 'COPILOTO' | 'HUMANO';
 
@@ -92,11 +95,8 @@ const AiSettingsTab = () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch('/api/ai/config');
-        if (!response.ok) {
-          throw new Error(`Falha ao carregar configurações (${response.status})`);
-        }
-        const payload = await response.json();
+        // `apiGet` envia o token e o tenant — um `fetch` cru voltava 401 fora dos testes.
+        const payload = await apiGet(AI_CONFIG_PATH);
         const data = payload?.data as AiConfig;
         if (mounted) {
           setConfig({
@@ -141,30 +141,21 @@ const AiSettingsTab = () => {
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch('/api/ai/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: config.model,
-          temperature: config.temperature,
-          maxOutputTokens: config.maxOutputTokens,
-          systemPromptReply: config.systemPromptReply,
-          systemPromptSuggest: config.systemPromptSuggest,
-          structuredOutputSchema: parsedSchema ?? config.structuredOutputSchema,
-          tools: config.tools ?? [],
-          vectorStoreEnabled: config.vectorStoreEnabled,
-          vectorStoreIds: config.vectorStoreIds,
-          streamingEnabled: config.streamingEnabled,
-          defaultMode: config.defaultMode,
-          confidenceThreshold: config.confidenceThreshold,
-          fallbackPolicy: config.fallbackPolicy,
-        }),
+      const payload = await apiPut(AI_CONFIG_PATH, {
+        model: config.model,
+        temperature: config.temperature,
+        maxOutputTokens: config.maxOutputTokens,
+        systemPromptReply: config.systemPromptReply,
+        systemPromptSuggest: config.systemPromptSuggest,
+        structuredOutputSchema: parsedSchema ?? config.structuredOutputSchema,
+        tools: config.tools ?? [],
+        vectorStoreEnabled: config.vectorStoreEnabled,
+        vectorStoreIds: config.vectorStoreIds,
+        streamingEnabled: config.streamingEnabled,
+        defaultMode: config.defaultMode,
+        confidenceThreshold: config.confidenceThreshold,
+        fallbackPolicy: config.fallbackPolicy,
       });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.message ?? 'Não foi possível salvar as configurações');
-      }
-      const payload = await response.json();
       const data = payload.data as AiConfig;
       setConfig({
         ...data,

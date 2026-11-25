@@ -4,7 +4,7 @@ import { ChevronDown, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils.js';
 import type { LeadSummary } from '../../state/leads';
 import type { KanbanStage } from '../../hooks/useKanbanStages';
-import { formatBRL } from '../../utils/labels';
+import { formatBRL } from '@/lib/currency';
 import { LEAD_STAGE_TONE_CLASSES, type LeadStage } from '../../utils/lead-stage';
 import LeadCard from './LeadCard';
 import type { DropState } from './StageColumn';

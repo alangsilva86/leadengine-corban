@@ -12,8 +12,8 @@ import { Button } from '@/components/ui/button.jsx';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { cn } from '@/lib/utils.js';
-import { formatRelativeShort } from '@/features/crm/utils/labels';
-import { formatPhone } from '../utils/format.js';
+import { formatRelativeShort } from '@/lib/relative-time';
+import { formatPhone } from '@/lib/phone';
 
 /**
  * Pré-visualização + confirmação da mesclagem de contatos duplicados (POST /api/contacts/merge).

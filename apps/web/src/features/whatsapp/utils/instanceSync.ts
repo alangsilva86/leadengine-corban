@@ -1,10 +1,8 @@
 import {
   ensureArrayOfObjects,
   isPlainRecord,
-  normalizeInstanceRecord,
   normalizeInstancesCollection,
   pickStringValue,
-  shouldDisplayInstance,
   selectPreferredInstance,
   type NormalizeOptions,
   type NormalizedInstance,
@@ -28,19 +26,7 @@ export interface AgreementMeta {
   region: Nullable<string>;
 }
 
-export const ensureAgreementMeta = (agreement: unknown): AgreementMeta => ({
-  id: isPlainRecord(agreement) && typeof agreement.id === 'string' ? agreement.id : null,
-  tenantId:
-    isPlainRecord(agreement) && typeof agreement.tenantId === 'string'
-      ? agreement.tenantId
-      : isPlainRecord(agreement) && typeof agreement.tenant_id === 'string'
-        ? agreement.tenant_id
-        : null,
-  name: isPlainRecord(agreement) && typeof agreement.name === 'string' ? agreement.name : null,
-  region: isPlainRecord(agreement) && typeof agreement.region === 'string' ? agreement.region : null,
-});
-
-export const mergeInstancesById = <T extends { id?: Nullable<string> }>(
+const mergeInstancesById = <T extends { id?: Nullable<string> }>(
   currentList: T[] = [],
   updates: T[] = [],
 ): T[] => {
@@ -323,19 +309,3 @@ export const resolveFriendlyError = (
   };
 };
 
-export const filterDisplayableInstances = (
-  instances: NormalizedInstance[] | undefined,
-): NormalizedInstance[] =>
-  ensureArray<NormalizedInstance>(instances).filter((instance) => shouldDisplayInstance(instance));
-
-export const mapToNormalizedInstances = (
-  list: unknown,
-  options: NormalizeOptions = {},
-): NormalizedInstance[] => {
-  const raw = ensureArrayOfObjects<UnknownRecord>(list);
-  return normalizeInstancesCollection(raw, options);
-};
-
-export const normalizeInstancePayload = (
-  payload: unknown,
-): NormalizedInstance | null => normalizeInstanceRecord(payload);

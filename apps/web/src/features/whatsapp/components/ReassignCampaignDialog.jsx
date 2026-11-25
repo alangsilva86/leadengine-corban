@@ -16,7 +16,7 @@ import { Label } from '@/components/ui/label.jsx';
 import CampaignMetricsGrid from './CampaignMetricsGrid.jsx';
 import { NumberStatusDot } from './numbers/NumberStatusBadge';
 import { getNumberStatus } from '../lib/numberStatus';
-import { formatWhatsAppNumber } from '../lib/formatting';
+import { formatWhatsAppNumber } from '@/lib/phone';
 import { resolveInstancePhone } from '../lib/instances';
 import { resolveWhatsAppError } from '../lib/errors';
 import { resolveCampaignTitle } from './CampaignCard.jsx';

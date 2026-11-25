@@ -10,6 +10,7 @@ import { useCrmViewContext, useCrmViewState } from '../state/view-context';
 import type { LeadSummary } from '../state/leads';
 import { countActiveFilters } from '../components/CrmToolbar';
 import emitCrmTelemetry from '../utils/telemetry';
+import { serializeCrmFilters } from '../utils/filter-serialization';
 import { LEAD_STAGES, LEAD_STAGE_DEFINITIONS, normalizeLeadStage, type LeadStage } from '../utils/lead-stage';
 
 const STALLED_THRESHOLD_MS = 1000 * 60 * 60 * 72; // 72 h
@@ -108,6 +109,7 @@ const LeadKanbanView = () => {
         isLoading={isLoading && leads.length === 0}
         onOpenLead={handleOpenLead}
         onMoveLead={handleMoveLead}
+        autoScrollKey={serializeCrmFilters(filters)}
       />
       {hasNextPage ? (
         <div className="flex justify-center">

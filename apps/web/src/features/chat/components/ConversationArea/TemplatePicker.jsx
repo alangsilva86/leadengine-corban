@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button.jsx';
 import { fillTemplatePlaceholders } from './utils/presentation.js';
 
-export const DEFAULT_TEMPLATES = [
+const DEFAULT_TEMPLATES = [
   {
     id: 'template-welcome',
     name: 'Boas-vindas',

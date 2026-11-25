@@ -6,6 +6,15 @@ export const statusMeta = {
   archived: { label: 'Arquivada', variant: 'secondary' },
 };
 
+/** Status da campanha → variante do `Badge` (cartão e histórico). */
+export const CAMPAIGN_STATUS_BADGE_VARIANT = {
+  active: 'success',
+  paused: 'warning',
+  draft: 'secondary',
+  ended: 'secondary',
+  archived: 'secondary',
+};
+
 const STATUS_TONE_MAP = {
   active: 'success',
   paused: 'warning',

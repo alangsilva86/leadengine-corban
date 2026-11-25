@@ -4,15 +4,15 @@ import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
-import { formatBRL } from '@/features/crm/utils/labels';
+import { formatBRL } from '@/lib/currency';
 import LeadStageBadge from '@/features/crm/components/lead-stage/LeadStageBadge';
 import {
   CONTACT_STATUS_LABELS,
   documentKindLabel,
   formatDocument,
-  formatPhone,
   humanizeFieldKey,
 } from '../utils/format.js';
+import { formatPhone } from '@/lib/phone';
 
 const Field = ({ label, children }) => (
   <div className="space-y-0.5">

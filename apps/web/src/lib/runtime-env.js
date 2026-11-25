@@ -45,7 +45,3 @@ export const getEnvVar = (key, fallback) => {
   return fallback;
 };
 
-export const getRuntimeEnv = () => ({
-  ...getProcessEnv(),
-  ...getImportMetaEnv(),
-});

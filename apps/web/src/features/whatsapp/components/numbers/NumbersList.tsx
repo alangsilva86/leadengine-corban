@@ -12,7 +12,7 @@ import NumberStatusBadge from './NumberStatusBadge';
 import type { WhatsAppNumber } from '../../hooks/useWhatsAppNumbers';
 
 /** Filtros só aparecem quando a lista passa deste tamanho. */
-export const FILTERS_THRESHOLD = 5;
+const FILTERS_THRESHOLD = 5;
 
 type StatusFilter = 'all' | 'connected' | 'attention';
 

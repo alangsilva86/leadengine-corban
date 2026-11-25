@@ -21,7 +21,7 @@ const getStorage = () => {
   return null;
 };
 
-export const readDraft = (ticketId) => {
+const readDraft = (ticketId) => {
   if (!ticketId) return '';
   const key = storageKey(ticketId);
   const storage = getStorage();
@@ -39,7 +39,7 @@ const notify = (ticketId) => {
   listeners.forEach((listener) => listener(ticketId));
 };
 
-export const writeDraft = (ticketId, value) => {
+const writeDraft = (ticketId, value) => {
   if (!ticketId) return;
   const key = storageKey(ticketId);
   const normalized = typeof value === 'string' ? value : '';
@@ -64,7 +64,7 @@ export const writeDraft = (ticketId, value) => {
   notify(ticketId);
 };
 
-export const clearDraft = (ticketId) => writeDraft(ticketId, '');
+const clearDraft = (ticketId) => writeDraft(ticketId, '');
 
 const subscribe = (listener) => {
   listeners.add(listener);

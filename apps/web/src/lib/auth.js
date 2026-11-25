@@ -322,7 +322,7 @@ export const clearTenantId = () => {
   applyTenantChange(DEFAULT_TENANT_ID);
 };
 
-export const clearTenantSlugHint = () => {
+const clearTenantSlugHint = () => {
   applyTenantSlugHintChange(DEFAULT_TENANT_SLUG_HINT);
 };
 

@@ -17,7 +17,7 @@ const ConversationAreaContent = (props) => {
 };
 
 /** Nada selecionado: convite para escolher uma conversa. */
-export const NoConversationSelected = () => (
+const NoConversationSelected = () => (
   <div className="flex h-full min-h-0 flex-1 items-center justify-center bg-background p-6">
     <EmptyState
       icon={MessagesSquare}

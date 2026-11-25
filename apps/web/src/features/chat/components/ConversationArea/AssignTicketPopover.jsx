@@ -8,7 +8,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils.js';
 import { useSearchUsersQuery } from '../../api/useSearchUsersQuery.js';
 import { getPrimaryCommandAnchorId } from '../../actions/commandAnchors.js';
-import { buildInitialsFromName, getFirstName, resolveTicketAssignee } from './utils/presentation.js';
+import { getFirstName, resolveTicketAssignee } from './utils/presentation.js';
+import { getPersonInitials } from '@/lib/initials';
 
 /**
  * Lista de agentes — montada só com o popover aberto (a busca não roda à toa
@@ -195,7 +196,7 @@ const AssignTicketPopover = ({ entry, context, focusMap, buttonClassName, curren
                   aria-hidden
                   className="inline-flex size-6 items-center justify-center rounded-full bg-primary-soft text-[10px] font-semibold text-primary-soft-foreground"
                 >
-                  {buildInitialsFromName(displayAssignee.name ?? (isMine ? currentUser?.name : null), '') || (
+                  {getPersonInitials(displayAssignee.name ?? (isMine ? currentUser?.name : null), '') || (
                     <User className="size-3.5" />
                   )}
                 </span>

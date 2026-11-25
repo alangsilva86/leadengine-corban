@@ -87,7 +87,9 @@ export const useConversationExperience = ({
     lastEntryKey: messageLastEntryKey,
   } = useTicketMessages(messagesQuery);
   const { composerHeight } = useComposerMetrics(composerRef, ticketId);
-  const { typingAgents, broadcastTyping } = useWhatsAppPresence({ typingIndicator, ticketId });
+  // Outros atendentes nesta conversa: vão para o aviso acima do composer (não para a timeline/cabeçalho, onde o
+  // "digitando…" seria confundido com o cliente).
+  const { typingAgents, viewers, broadcastTyping } = useWhatsAppPresence({ typingIndicator, ticketId });
   const slaClock = useSLAClock(ticket);
   const {
     instances: whatsappInstances = [],
@@ -377,7 +379,8 @@ export const useConversationExperience = ({
     scrollRef,
     ticketId,
     lastEntryKey: combinedLastEntryKey,
-    typingAgentsCount: typingAgents.length,
+    // Só o "digitando" da IA aparece na timeline; o de outros atendentes não deve rolar a conversa.
+    typingAgentsCount: aiReplyStream.status === 'streaming' ? 1 : 0,
     scrollToBottom,
     onLoadMore: handleLoadMore,
   });
@@ -558,14 +561,10 @@ export const useConversationExperience = ({
     composerApiRef.current.setDraftValue(aiReplyStream.message ?? '', { replace: true });
   }, [aiReplyStream.message, aiReplyStream.status]);
 
+  // Cabeçalho e timeline mostram só o Copiloto IA escrevendo.
   const augmentedTypingAgents = useMemo(() => {
     if (aiReplyStream.status === 'streaming') {
-      const alreadyIncludesAi = typingAgents.some((agent) => agent?.id === 'ai-assistant');
-      if (alreadyIncludesAi) {
-        return typingAgents;
-      }
       return [
-        ...typingAgents,
         {
           id: 'ai-assistant',
           userName: 'Copiloto IA',
@@ -573,8 +572,8 @@ export const useConversationExperience = ({
         },
       ];
     }
-    return typingAgents;
-  }, [aiReplyStream.status, typingAgents]);
+    return [];
+  }, [aiReplyStream.status]);
 
   const contactIdentity = useMemo(() => getTicketIdentity(ticket), [ticket]);
   const windowState = useMemo(() => resolveWindowState(ticket), [ticket]);
@@ -689,6 +688,8 @@ export const useConversationExperience = ({
       aiAutonomous: normalizedAiMode === 'auto' && typeof onTakeOver === 'function',
       onTakeOver,
       onTyping: broadcastTyping,
+      teammatesTyping: typingAgents,
+      teammatesViewing: viewers,
       aiState,
       isSending,
       sendError,

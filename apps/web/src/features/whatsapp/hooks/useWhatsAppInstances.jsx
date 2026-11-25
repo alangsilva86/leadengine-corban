@@ -707,10 +707,4 @@ export default function useWhatsAppInstances(options = {}) {
   };
 }
 
-export {
-  RATE_LIMIT_COOLDOWN_MS,
-  readInstancesCache,
-  persistInstancesCache,
-  clearInstancesCache,
-  parseInstancesPayload,
-};
+export { readInstancesCache, persistInstancesCache, clearInstancesCache, parseInstancesPayload };

@@ -64,7 +64,7 @@ const getActionableStatusMessage = (status: number | null) => {
   }
 };
 
-export const buildBaileysErrorState = (
+const buildBaileysErrorState = (
   error: ErrorLike | unknown,
   previousState: BaileysErrorState | null
 ): BaileysErrorState => {
@@ -116,7 +116,7 @@ export const formatDateTime = (value: unknown) => {
   });
 };
 
-export const parseBaileysEvents = (payload: unknown): any[] => {
+const parseBaileysEvents = (payload: unknown): any[] => {
   if (Array.isArray(payload)) {
     return payload;
   }

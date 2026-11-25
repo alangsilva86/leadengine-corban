@@ -304,14 +304,18 @@ export const useChatController = ({ tenantId, currentUser, autoSelect = true } =
     [handleTicketUpdated, queryClient]
   );
 
+  // Presença de outros atendentes ("Ana está digitando…"): recebe pela conexão compartilhada e envia por ela.
+  const typingIndicator = useTypingIndicator({ currentUserId: currentUser?.id ?? null });
+
   const realtime = useRealtimeTickets({
     tenantId,
-    userId: currentUser?.id,
     ticketId: selectedTicketId,
     enabled: Boolean(tenantId),
     onTicketUpdated: handleTicketUpdated,
     onMessageCreated: handleMessageCreated,
     onMessageUpdated: handleMessageUpdated,
+    onTyping: typingIndicator.registerTypingEvent,
+    onViewers: typingIndicator.registerViewersEvent,
     onQueueMissing: handleQueueMissing,
   });
 
@@ -396,8 +400,6 @@ export const useChatController = ({ tenantId, currentUser, autoSelect = true } =
   const notesMutation = useNotesMutation({ fallbackTicketId: selectedTicketId });
   const statusMutation = useTicketStatusMutation({ fallbackTicketId: selectedTicketId });
   const assignMutation = useTicketAssignMutation({ fallbackTicketId: selectedTicketId });
-
-  const typingIndicator = useTypingIndicator({ socket: realtime?.socket });
 
   useEffect(() => {
     if (typeof window === 'undefined') {

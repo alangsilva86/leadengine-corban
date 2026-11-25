@@ -6,7 +6,7 @@ import { useCampaignFilters } from '../campaigns/hooks/useCampaignFilters.js';
 import { ALL_FILTER_VALUE, NO_INSTANCE_VALUE } from '../campaigns/constants.js';
 
 /** Filtros só aparecem quando a lista passa deste tamanho. */
-export const CAMPAIGN_FILTERS_THRESHOLD = 6;
+const CAMPAIGN_FILTERS_THRESHOLD = 6;
 
 /**
  * Lista de regras em cartões. Sem cabeçalho próprio, CTAs ou avisos:

@@ -16,14 +16,13 @@ import {
 import { TableCell, TableRow } from '@/components/ui/table.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
-import {
-  formatBRL,
-  formatDateTime,
-  formatRelativeShort,
-  getInitials,
-} from '@/features/crm/utils/labels';
+import { formatDateTime } from '@/features/crm/utils/labels';
 import LeadStageBadge from '@/features/crm/components/lead-stage/LeadStageBadge';
-import { CONTACT_STATUS_LABELS, formatPhone } from '../utils/format.js';
+import { CONTACT_STATUS_LABELS } from '../utils/format.js';
+import { formatBRL } from '@/lib/currency';
+import { formatRelativeShort } from '@/lib/relative-time';
+import { getInitials } from '@/lib/initials';
+import { formatPhone } from '@/lib/phone';
 
 const MAX_VISIBLE_TAGS = 2;
 

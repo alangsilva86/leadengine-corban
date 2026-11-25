@@ -4,7 +4,8 @@ import { useAuth } from '@/features/auth/AuthProvider.jsx';
 
 import useWhatsAppInstances from './useWhatsAppInstances.jsx';
 import { useInstancesStore } from '../state/instancesStore';
-import { formatRelativeTime, formatWhatsAppNumber } from '../lib/formatting';
+import { formatRelativeTime } from '@/lib/relative-time';
+import { formatWhatsAppNumber } from '@/lib/phone';
 import { resolveInstancePhone, looksLikeWhatsAppJid } from '../lib/instances';
 import { getInstanceMetrics } from '../lib/metrics';
 import { getNumberStatus, type NumberStatus } from '../lib/numberStatus';
