@@ -207,8 +207,15 @@ export const instanceIdParamValidator = () =>
     .isLength({ min: 1 })
     .withMessage(INVALID_INSTANCE_ID_MESSAGE);
 
+// 401/403 do broker indicam credencial do servidor (API key) inválida, não sessão do usuário: repassá-los faz o
+// cliente web tratar a resposta como sessão expirada e deslogar o operador. Status fora da faixa de erro também
+// não podem ser repassados como resposta de falha.
+const resolveBrokerFailureHttpStatus = (brokerStatus: number): number =>
+  brokerStatus === 401 || brokerStatus === 403 || brokerStatus < 400 || brokerStatus > 599 ? 502 : brokerStatus;
+
 export const respondWhatsAppBrokerFailure = (res: ResponseLike, error: WhatsAppBrokerError): void => {
-  const status = readBrokerErrorStatus(error) ?? error.status ?? 502;
+  const brokerStatus = readBrokerErrorStatus(error) ?? error.status ?? 502;
+  const status = resolveBrokerFailureHttpStatus(brokerStatus);
   const responseTimeMs = (error as WhatsAppBrokerError & { responseTimeMs?: number }).responseTimeMs;
 
   res.status(status).json({
@@ -217,7 +224,7 @@ export const respondWhatsAppBrokerFailure = (res: ResponseLike, error: WhatsAppB
       code: error.code || 'BROKER_ERROR',
       message: error.message || 'WhatsApp broker request failed',
       details: compactRecord({
-        status,
+        status: brokerStatus,
         requestId: error.requestId ?? undefined,
         brokerCode: error.brokerCode ?? undefined,
         responseTimeMs,

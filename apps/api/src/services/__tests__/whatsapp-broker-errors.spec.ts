@@ -11,6 +11,7 @@ describe('translateWhatsAppBrokerError', () => {
     expect(normalized).toEqual({
       code: 'BROKER_TIMEOUT',
       message: expect.stringContaining('Tempo limite'),
+      retryable: true,
     });
   });
 
@@ -20,6 +21,7 @@ describe('translateWhatsAppBrokerError', () => {
     expect(normalized).toEqual({
       code: 'RATE_LIMITED',
       message: expect.stringContaining('Limite de envio'),
+      retryable: true,
     });
   });
 
@@ -29,6 +31,7 @@ describe('translateWhatsAppBrokerError', () => {
     expect(normalized).toEqual({
       code: 'INSTANCE_NOT_CONNECTED',
       message: expect.stringContaining('Instância de WhatsApp desconectada'),
+      retryable: true,
     });
   });
 
@@ -38,6 +41,7 @@ describe('translateWhatsAppBrokerError', () => {
     expect(normalized).toEqual({
       code: 'INSTANCE_NOT_CONNECTED',
       message: expect.stringContaining('Instância de WhatsApp desconectada'),
+      retryable: true,
     });
   });
 
@@ -47,6 +51,7 @@ describe('translateWhatsAppBrokerError', () => {
     expect(normalized).toEqual({
       code: 'INVALID_TO',
       message: expect.stringContaining('Número de destino inválido'),
+      retryable: false,
     });
   });
 

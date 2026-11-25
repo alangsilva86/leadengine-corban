@@ -43,16 +43,21 @@ describe('campaigns route utilities', () => {
     it('throws when headers attempt to override tenant context', () => {
       const req = buildRequest({ user: { tenantId: 'tenant-123' }, headers: { 'x-tenant-id': 'tenant-999' } });
 
-      expect(() => resolveTenantId(req)).toThrowErrorMatchingInlineSnapshot('"Tentativa de acesso a dados de outro tenant."');
+      expect(() => resolveTenantId(req)).toThrow(
+        expect.objectContaining({
+          name: 'TenantAccessError',
+          code: 'FORBIDDEN',
+          message: 'Tentativa de acesso a dados de outro tenant.',
+        })
+      );
     });
   });
 
   describe('buildFilters', () => {
     it('applies default status when none is provided', () => {
       const filters = buildFilters({});
-      expect(filters).toMatchObject({
-        agreementId: undefined,
-        instanceId: undefined,
+      // Filtros ausentes não são serializados como `undefined` (exactOptionalPropertyTypes).
+      expect(filters).toEqual({
         statuses: ['active'],
         tags: [],
       });

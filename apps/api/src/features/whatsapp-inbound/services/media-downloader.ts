@@ -1,13 +1,15 @@
 import { Buffer } from 'node:buffer';
-import {
-  downloadContentFromMessage,
-  downloadMediaMessage,
-  type MediaType,
-  type WAMessage,
-} from '@whiskeysockets/baileys';
 import { fetch } from 'undici';
 
 import { logger } from '../../../config/logger.js';
+import {
+  DEFAULT_WHATSAPP_MEDIA_ORIGIN,
+  downloadAndDecryptMedia,
+  downloadAndDecryptMessageMedia,
+  isWhatsAppCryptoError,
+  type MediaDownloadOptions,
+  type WhatsAppMediaType,
+} from '../../../lib/whatsapp-crypto';
 import {
   buildWhatsAppBrokerUrl,
   createBrokerTimeoutSignal,
@@ -43,7 +45,7 @@ type DownloadableMessageKey =
   | 'documentMessage'
   | 'stickerMessage';
 
-type DownloadContentType = 'image' | 'video' | 'audio' | 'document' | 'sticker';
+type DownloadContentType = Extract<WhatsAppMediaType, 'image' | 'video' | 'audio' | 'document' | 'sticker'>;
 
 const MEDIA_KEY_TO_DOWNLOAD_TYPE: Record<DownloadableMessageKey, DownloadContentType> = {
   imageMessage: 'image',
@@ -61,69 +63,51 @@ const MEDIA_KEY_PRIORITY: DownloadableMessageKey[] = [
   'stickerMessage',
 ];
 
+const DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS = 15_000;
+
+const CDN_REQUEST_HEADERS: Record<string, string> = {
+  Accept: 'application/octet-stream',
+  'User-Agent': 'Mozilla/5.0 (LeadEngine WhatsApp)',
+  Referer: 'https://web.whatsapp.com/',
+};
+
+const parsePositiveInteger = (value: string | undefined): number | undefined => {
+  const parsed = value ? Number.parseInt(value.trim(), 10) : Number.NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+};
+
+/**
+ * Options for direct downloads from the WhatsApp CDN. `WHATSAPP_MEDIA_MAX_BYTES` overrides the
+ * module default (64 MiB); larger media fall back to the broker download.
+ */
+const buildCdnDownloadOptions = (timeoutMs?: number): MediaDownloadOptions => {
+  const options: MediaDownloadOptions = {
+    timeoutMs: timeoutMs ?? DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS,
+    headers: CDN_REQUEST_HEADERS,
+  };
+  const maxBytes = parsePositiveInteger(process.env.WHATSAPP_MEDIA_MAX_BYTES);
+  if (maxBytes) {
+    options.maxBytes = maxBytes;
+  }
+  return options;
+};
+
+const describeCdnError = (error: unknown) => ({
+  error: mapErrorForLog(error),
+  errorCode: isWhatsAppCryptoError(error) ? error.code : null,
+});
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   (isRecord(value) ? (value as Record<string, unknown>) : parseAsRecord(value));
 
-const consumeStream = async (stream: AsyncIterable<Uint8Array>): Promise<Buffer> => {
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(Buffer.from(chunk));
-  }
-  return chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks);
-};
-
-const normalizeToBuffer = (value: unknown): Buffer | null => {
-  if (!value) {
-    return null;
-  }
-
-  if (Buffer.isBuffer(value)) {
-    return value;
-  }
-
-  if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
-    return Buffer.from(value as Uint8Array);
-  }
-
-  if (Array.isArray(value) && value.every((entry) => typeof entry === 'number')) {
-    return Buffer.from(value);
-  }
-
-  if (typeof value === 'string') {
-    try {
-      return Buffer.from(value, 'base64');
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-};
-
 interface MediaCandidate {
   key: DownloadableMessageKey;
   record: Record<string, unknown>;
   downloadType: DownloadContentType;
 }
-
-const sanitizeDownloadableMessageRecord = (record: Record<string, unknown>): Record<string, unknown> => {
-  const clone: Record<string, unknown> = { ...record };
-  const rawMediaKey = clone.mediaKey ?? (clone as { mediakey?: unknown }).mediakey;
-  if (typeof rawMediaKey === 'string' && rawMediaKey.trim().length > 0) {
-    try {
-      const buffer = Buffer.from(rawMediaKey.trim(), 'base64');
-      if (buffer.length > 0) {
-        clone.mediaKey = buffer;
-      }
-    } catch {
-      delete clone.mediaKey;
-    }
-  }
-  return clone;
-};
 
 const collectCandidates = (
   rawMessage: Record<string, unknown>,
@@ -175,7 +159,12 @@ const buildResultFromCandidate = (
   };
 };
 
-export const downloadViaBaileys = async (
+/**
+ * Downloads and decrypts inbound media straight from the WhatsApp CDN using the media key carried
+ * by the raw message (lib/whatsapp-crypto: MAC verified, WhatsApp hosts only, timeout and size limit).
+ * Returns `null` when nothing could be downloaded so callers fall back to the broker.
+ */
+export const downloadViaWhatsAppCdn = async (
   rawMessage: Record<string, unknown> | null | undefined,
   preferredKey?: DownloadableMessageKey | null
 ): Promise<InboundMediaDownloadResult | null> => {
@@ -184,36 +173,39 @@ export const downloadViaBaileys = async (
   }
 
   const candidates = collectCandidates(rawMessage, preferredKey);
+  const options = buildCdnDownloadOptions();
 
   if (isRecord(rawMessage.message)) {
     try {
-      const buffer = await downloadMediaMessage(rawMessage as unknown as WAMessage, 'buffer', {});
-
-      const normalizedBuffer = normalizeToBuffer(buffer);
-      if (normalizedBuffer && normalizedBuffer.length > 0) {
-        return buildResultFromCandidate(normalizedBuffer, candidates[0] ?? null);
+      const { buffer } = await downloadAndDecryptMessageMedia(rawMessage, options);
+      if (buffer.length > 0) {
+        return buildResultFromCandidate(buffer, candidates[0] ?? null);
       }
     } catch (error) {
-      logger.debug('whatsapp-inbound: falha ao usar downloadMediaMessage', {
-        error: mapErrorForLog(error),
-      });
+      logger.debug('whatsapp-inbound: falha ao baixar a mídia da mensagem pelo CDN do WhatsApp', describeCdnError(error));
     }
   }
 
   for (const candidate of candidates) {
+    const { record } = candidate;
     try {
-      const sanitizedRecord = sanitizeDownloadableMessageRecord(candidate.record);
-      const stream = await downloadContentFromMessage(
-        sanitizedRecord as unknown as Record<string, unknown>,
-        candidate.downloadType
+      const buffer = await downloadAndDecryptMedia(
+        {
+          mediaKey: record.mediaKey ?? record.mediakey,
+          directPath: readString(record.directPath) ?? null,
+          url: readString(record.url) ?? null,
+          fileSha256: record.fileSha256,
+          fileEncSha256: record.fileEncSha256,
+        },
+        candidate.downloadType,
+        options
       );
-      const buffer = await consumeStream(stream);
       if (buffer.length > 0) {
         return buildResultFromCandidate(buffer, candidate);
       }
     } catch (error) {
-      logger.debug('whatsapp-inbound: falha ao usar downloadContentFromMessage', {
-        error: mapErrorForLog(error),
+      logger.debug('whatsapp-inbound: falha ao baixar mídia pelo CDN do WhatsApp', {
+        ...describeCdnError(error),
         mediaKey: candidate.key,
       });
     }
@@ -326,9 +318,6 @@ const parseContentDisposition = (value: string | null): string | null => {
   }
 };
 
-const DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS = 15_000;
-const DEFAULT_WHATSAPP_MEDIA_HOST = 'https://mmg.whatsapp.net';
-
 const DEFAULT_MIME_BY_TYPE: Record<string, string> = {
   IMAGE: 'image/jpeg',
   VIDEO: 'video/mp4',
@@ -352,33 +341,24 @@ const resolveDefaultMime = (mediaType: string | null): string | null => {
   return DEFAULT_MIME_BY_TYPE[normalized] ?? null;
 };
 
-type BaileysMediaConfig = { messageKey: string; downloadType: MediaType };
-
-const BAILEYS_MEDIA_TYPE_BY_MESSAGE: Record<string, BaileysMediaConfig> = {
-  IMAGE: { messageKey: 'imageMessage', downloadType: 'image' },
-  VIDEO: { messageKey: 'videoMessage', downloadType: 'video' },
-  AUDIO: { messageKey: 'audioMessage', downloadType: 'audio' },
-  DOCUMENT: { messageKey: 'documentMessage', downloadType: 'document' },
-  STICKER: { messageKey: 'stickerMessage', downloadType: 'sticker' },
+const CDN_MEDIA_TYPE_BY_MESSAGE: Record<string, DownloadContentType> = {
+  IMAGE: 'image',
+  VIDEO: 'video',
+  AUDIO: 'audio',
+  DOCUMENT: 'document',
+  STICKER: 'sticker',
 };
 
-const DEFAULT_BAILEYS_MEDIA_CONFIG: BaileysMediaConfig = {
-  messageKey: 'documentMessage',
-  downloadType: 'document',
-};
+const DEFAULT_CDN_MEDIA_TYPE: DownloadContentType = 'document';
 
-const resolveBaileysMediaType = (mediaType: string | null): BaileysMediaConfig => {
+/** Maps the normalized message type (IMAGE, VIDEO…) to the media type used to derive the keys. */
+const resolveCdnMediaType = (mediaType: string | null): DownloadContentType => {
   if (!mediaType) {
-    return DEFAULT_BAILEYS_MEDIA_CONFIG;
+    return DEFAULT_CDN_MEDIA_TYPE;
   }
 
   const normalized = mediaType.trim().toUpperCase() || DEFAULT_MEDIA_TYPE;
-  if (!normalized) {
-    return DEFAULT_BAILEYS_MEDIA_CONFIG;
-  }
-
-  const candidate = BAILEYS_MEDIA_TYPE_BY_MESSAGE[normalized];
-  return candidate ?? DEFAULT_BAILEYS_MEDIA_CONFIG;
+  return CDN_MEDIA_TYPE_BY_MESSAGE[normalized] ?? DEFAULT_CDN_MEDIA_TYPE;
 };
 
 const buildWhatsAppMediaUrl = (
@@ -396,7 +376,7 @@ const buildWhatsAppMediaUrl = (
   const normalized = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   return {
     directPath: normalized,
-    url: `${DEFAULT_WHATSAPP_MEDIA_HOST}${normalized}`,
+    url: `${DEFAULT_WHATSAPP_MEDIA_ORIGIN}${normalized}`,
   };
 };
 
@@ -424,96 +404,24 @@ const downloadMediaViaMediaKey = async ({
     return null;
   }
 
-  let mediaKeyBuffer: Buffer;
-  try {
-    mediaKeyBuffer = Buffer.from(normalizedMediaKey, 'base64');
-  } catch (error) {
-    logger.debug('WhatsApp Baileys media download: invalid media key base64', {
-      error: mapErrorForLog(error),
-    });
-    return null;
-  }
-
-  if (mediaKeyBuffer.length === 0) {
-    return null;
-  }
-
   const downloadFields = buildWhatsAppMediaUrl(normalizedDirectPath);
   if (!downloadFields) {
     return null;
   }
 
-  const { messageKey, downloadType } = resolveBaileysMediaType(mediaType);
+  const downloadType = resolveCdnMediaType(mediaType);
   const fallbackMime = resolveDefaultMime(mediaType);
 
-  const axiosOptions = {
-    timeout: timeoutMs ?? DEFAULT_MEDIA_DOWNLOAD_TIMEOUT_MS,
-    headers: {
-      Accept: 'application/octet-stream',
-      'User-Agent': 'Mozilla/5.0 (LeadEngine WhatsApp)',
-      Origin: 'https://web.whatsapp.com',
-      Referer: 'https://web.whatsapp.com/',
-    },
-  };
-
-  const buildLogContext = () => ({
-    tenantId: tenantId ?? null,
-    instanceId: instanceId ?? null,
-    messageId: messageId ?? null,
-    directPath: downloadFields.directPath ?? null,
-    url: downloadFields.url ?? null,
-  });
-
-  const downloadInput: Parameters<typeof downloadContentFromMessage>[0] = {
-    mediaKey: mediaKeyBuffer,
-    directPath: downloadFields.directPath ?? null,
-    url: downloadFields.url ?? null,
-  };
-
-  const mediaRecord: Record<string, unknown> = {
-    ...downloadInput,
-  };
-
-  if (fallbackMime) {
-    mediaRecord.mimetype = fallbackMime;
-  }
-
-  mediaRecord.mediaKey = mediaKeyBuffer;
-
-  const minimalMessage = {
-    key: { remoteJid: 'status@broadcast', id: 'media-download', fromMe: false },
-    message: {
-      [messageKey]: mediaRecord,
-    },
-  } as unknown as Parameters<typeof downloadMediaMessage>[0];
-
   try {
-    const buffer = await downloadMediaMessage(minimalMessage, 'buffer', { options: axiosOptions });
-    const resolvedBuffer = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    if (resolvedBuffer.length > 0) {
-      return {
-        buffer: resolvedBuffer,
-        mimeType: fallbackMime,
-        fileName: null,
-        size: resolvedBuffer.length,
-      };
-    }
-  } catch (error) {
-    logger.debug('WhatsApp Baileys direct media download failed via downloadMediaMessage', {
-      error,
-      ...buildLogContext(),
-    });
-  }
-
-  try {
-    const stream = await downloadContentFromMessage(downloadInput, downloadType, {
-      options: axiosOptions,
-    });
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk));
-    }
-    const buffer = chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks);
+    const buffer = await downloadAndDecryptMedia(
+      {
+        mediaKey: normalizedMediaKey,
+        directPath: downloadFields.directPath ?? null,
+        url: downloadFields.url ?? null,
+      },
+      downloadType,
+      buildCdnDownloadOptions(timeoutMs)
+    );
 
     if (buffer.length > 0) {
       return {
@@ -524,9 +432,13 @@ const downloadMediaViaMediaKey = async ({
       };
     }
   } catch (error) {
-    logger.debug('WhatsApp Baileys direct media download failed via downloadContentFromMessage', {
-      error,
-      ...buildLogContext(),
+    logger.debug('WhatsApp direct media download failed (CDN)', {
+      ...describeCdnError(error),
+      tenantId: tenantId ?? null,
+      instanceId: instanceId ?? null,
+      messageId: messageId ?? null,
+      directPath: downloadFields.directPath ?? null,
+      url: downloadFields.url ?? null,
     });
   }
 

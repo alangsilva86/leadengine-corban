@@ -2,10 +2,12 @@ import express, { type Request, type RequestHandler } from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const listCampaignsMock = vi.fn();
-const createCampaignMock = vi.fn();
-const updateCampaignMock = vi.fn();
-const deleteCampaignMock = vi.fn();
+const { listCampaignsMock, createCampaignMock, updateCampaignMock, deleteCampaignMock } = vi.hoisted(() => ({
+  listCampaignsMock: vi.fn(),
+  createCampaignMock: vi.fn(),
+  updateCampaignMock: vi.fn(),
+  deleteCampaignMock: vi.fn(),
+}));
 
 vi.mock('../../middleware/auth', () => ({
   requireTenant: (_req: unknown, _res: unknown, next: () => void) => next(),

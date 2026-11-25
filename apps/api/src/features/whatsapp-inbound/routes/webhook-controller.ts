@@ -186,7 +186,22 @@ const createHandleWhatsAppWebhook = (config: WhatsAppWebhookControllerConfig) =>
       });
 
       if (!resolvedContext.tenantId || !resolvedContext.instanceId) {
+        // Instância desconhecida, ambígua (id/brokerId de mais de um tenant), de tenant inativo ou com dica de
+        // tenant divergente: o tenant vem só do mapeamento instância → tenant, então o evento é rejeitado.
         rejectedContexts += 1;
+        logger.warn('🎯 LeadEngine • WhatsApp :: 🚫 Evento de webhook rejeitado: instância sem tenant resolvido', {
+          requestId,
+          eventType: eventType ?? null,
+          rawInstanceId: resolvedContext.rawInstanceId ?? null,
+          tenantHint: readString(req.header('x-tenant-id')) ?? null,
+        });
+        whatsappWebhookEventsCounter.inc({
+          origin: 'webhook',
+          tenantId: 'unknown',
+          instanceId: resolvedContext.rawInstanceId ?? 'unknown',
+          result: 'rejected',
+          reason: 'unknown_instance',
+        });
         continue;
       }
 

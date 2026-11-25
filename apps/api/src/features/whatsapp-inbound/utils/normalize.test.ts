@@ -64,9 +64,21 @@ describe('normalizeInboundMessage', () => {
 
     expect(normalized.text).toBe('Extended payload message');
     expect(normalized.type).toBe('TEXT');
-    expect(normalized.id).toMatch(/^wamid-/);
+    // Sem `id`, o id da mensagem vem de key.id (estável para dedupe), não de um UUID aleatório.
+    expect(normalized.id).toBe('client-456');
+    expect(normalized.clientMessageId).toBe('client-456');
     expect(normalized.caption).toBeNull();
     expect(normalized.receivedAt).toBe(fixedNow);
+  });
+
+  it('generates a wamid- id when neither id nor key.id are present', () => {
+    const normalized = normalizeInboundMessage({
+      id: null,
+      conversation: 'sem identificador',
+      key: { remoteJid: '5511888888888@s.whatsapp.net' },
+    } as Record<string, unknown>);
+
+    expect(normalized.id).toMatch(/^wamid-/);
   });
 
   it('normalizes image media with caption and metadata info', () => {

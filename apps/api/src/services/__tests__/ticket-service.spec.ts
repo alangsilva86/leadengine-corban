@@ -15,9 +15,11 @@ const emitToAgreement = vi.fn();
 const emitToTenant = vi.fn();
 const emitToTicket = vi.fn();
 const emitToUser = vi.fn();
+const emitToCampaign = vi.fn();
 
 vi.mock('../../lib/socket-registry', () => ({
   emitToAgreement,
+  emitToCampaign,
   emitToTenant,
   emitToTicket,
   emitToUser,
@@ -42,9 +44,11 @@ vi.mock('@ticketz/storage', () => ({
   updateTicket: vi.fn(),
 }));
 
+// Piloto Corban (adae3c03): o contato é lido com findFirst escopado por tenant e todo envio WhatsApp
+// passa pela whatsapp-policy (contato/instância do tenant + INBOUND na janela de 24h).
 const prisma = {
   contact: {
-    findUnique: vi.fn(),
+    findFirst: vi.fn(),
   },
   contactPhone: {
     updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -52,6 +56,10 @@ const prisma = {
   },
   whatsAppInstance: {
     findUnique: vi.fn(),
+    findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({ id: where.id })),
+  },
+  message: {
+    findFirst: vi.fn(async () => ({ id: 'inbound-within-window' })),
   },
   ticket: {
     findUnique: vi.fn(),
@@ -132,7 +140,7 @@ describe('ticket-service logging', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(updatedMessage);
-    prisma.contact.findUnique.mockResolvedValue({
+    prisma.contact.findFirst.mockResolvedValue({
       id: 'contact-1',
       primaryPhone: '5511999999999',
     });
@@ -174,7 +182,9 @@ describe('ticket-service logging', () => {
     });
   });
 
-  it('logs dispatch failure with dispatch resolution details', async () => {
+  it('keeps the message pending when the dispatch outcome is uncertain', async () => {
+    // adae3c03: erro sem status (rede) ou 5xx após o disparo -> resultado incerto; a mensagem fica PENDING
+    // para conciliação em vez de FAILED, e a falha ainda conta para o circuit breaker.
     const ticket = {
       id: 'ticket-2',
       tenantId: 'tenant-2',
@@ -212,7 +222,7 @@ describe('ticket-service logging', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(failedMessage);
-    prisma.contact.findUnique.mockResolvedValue({
+    prisma.contact.findFirst.mockResolvedValue({
       id: 'contact-2',
       primaryPhone: '5511999999988',
     });
@@ -220,6 +230,96 @@ describe('ticket-service logging', () => {
 
     const transport = {
       sendMessage: vi.fn().mockRejectedValue(new Error('network failure')),
+    };
+
+    const ticketService = await import('../ticket-service');
+    const emitMessageUpdatedEventsMock = vi.fn().mockResolvedValue(undefined);
+
+    const result = await ticketService.sendMessage(
+      'tenant-2',
+      'user-2',
+      {
+        ticketId: ticket.id,
+        type: 'text',
+        instanceId: 'inst-2',
+        direction: 'OUTBOUND',
+        content: 'hello again',
+        metadata: {},
+      },
+      { transport, emitMessageUpdatedEvents: emitMessageUpdatedEventsMock }
+    );
+
+    expect(result).toMatchObject({ id: 'message-2', status: 'PENDING' });
+    expect(transport.sendMessage).toHaveBeenCalledTimes(1);
+    expect(storageUpdateMessage).not.toHaveBeenCalledWith(
+      'tenant-2',
+      'message-2',
+      expect.objectContaining({ status: 'FAILED' })
+    );
+    expect(logger.warn).toHaveBeenCalledWith('Envio WhatsApp aguarda conciliação', {
+      tenantId: 'tenant-2',
+      ticketId: 'ticket-2',
+      messageId: 'message-2',
+      status: undefined,
+    });
+    expect(recordCircuitFailure).toHaveBeenCalledWith('circuit-key');
+    expect(logger.error).not.toHaveBeenCalledWith('whatsapp.outbound.dispatch.failed', expect.anything());
+    expect(prisma.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: 'tenant-2', ticketId: 'ticket-2', direction: 'INBOUND' }),
+      })
+    );
+  });
+
+  it('logs definitive dispatch failures with dispatch resolution details', async () => {
+    const { WhatsAppBrokerError } = await import('../whatsapp-broker-client');
+    const ticket = {
+      id: 'ticket-2',
+      tenantId: 'tenant-2',
+      contactId: 'contact-2',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'inst-2' },
+      userId: 'user-2',
+      updatedAt: new Date(),
+      lastMessageAt: new Date(),
+      lastMessagePreview: 'preview',
+    };
+    const messageRecord = {
+      id: 'message-2',
+      ticketId: ticket.id,
+      type: 'text',
+      direction: 'OUTBOUND',
+      content: 'hello again',
+      metadata: {},
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      status: 'PENDING',
+      instanceId: 'inst-2',
+    };
+    const failedMessage = {
+      ...messageRecord,
+      status: 'FAILED',
+      metadata: {
+        ...messageRecord.metadata,
+        broker: {
+          error: { message: 'network failure' },
+        },
+      },
+    };
+
+    storageFindTicketById.mockResolvedValue(ticket);
+    storageCreateMessage.mockResolvedValue(messageRecord);
+    storageUpdateMessage.mockResolvedValue(failedMessage);
+    prisma.contact.findFirst.mockResolvedValue({
+      id: 'contact-2',
+      primaryPhone: '5511999999988',
+    });
+    prisma.whatsAppInstance.findUnique.mockResolvedValue({ id: 'inst-2', brokerId: 'broker-77' });
+
+    const transport = {
+      sendMessage: vi
+        .fn()
+        .mockRejectedValue(new WhatsAppBrokerError('network failure', 'INVALID_RECIPIENT', 400, 'req-400')),
     };
 
     const ticketService = await import('../ticket-service');
@@ -248,7 +348,7 @@ describe('ticket-service logging', () => {
         status: 'FAILED',
         metadata: expect.objectContaining({
           broker: expect.objectContaining({
-            error: expect.objectContaining({ message: 'network failure' }),
+            error: expect.objectContaining({ code: 'INVALID_TO', status: 400 }),
           }),
         }),
       })
@@ -265,11 +365,11 @@ describe('ticket-service logging', () => {
       tenantId: 'tenant-2',
       ticketId: 'ticket-2',
       messageId: 'message-2',
-      error: 'network failure',
-      errorCode: undefined,
-      status: undefined,
-      requestId: undefined,
-      rawErrorCode: undefined,
+      error: 'Número de destino inválido ou indisponível para receber mensagens.',
+      errorCode: 'INVALID_TO',
+      status: 400,
+      requestId: 'req-400',
+      rawErrorCode: 'INVALID_RECIPIENT',
       requestedInstanceId: 'inst-2',
       resolvedDispatchId: 'broker-77',
       brokerId: 'broker-77',
@@ -322,7 +422,7 @@ describe('ticket-service metadata enrichment', () => {
       return messageRecord;
     });
     storageUpdateMessage.mockResolvedValue({ ...messageRecord, status: 'SENT', metadata: {} });
-    prisma.contact.findUnique.mockResolvedValue({
+    prisma.contact.findFirst.mockResolvedValue({
       id: 'contact-enrichment-1',
       primaryPhone: '5511999999999',
     });
@@ -415,7 +515,7 @@ describe('ticket-service phone normalization', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(updatedMessage);
-    prisma.contact.findUnique.mockResolvedValue({
+    prisma.contact.findFirst.mockResolvedValue({
       id: 'contact-primary-1',
       primaryPhone: ' 5511987654321 ',
       phone: null,
@@ -518,7 +618,7 @@ describe('ticket-service dispatch guard', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(updatedMessage);
-    prisma.contact.findUnique.mockResolvedValue({
+    prisma.contact.findFirst.mockResolvedValue({
       id: 'contact-out-1',
       primaryPhone: '5511988887777',
     });
@@ -624,7 +724,7 @@ describe('ticket-service dispatch guard', () => {
     storageFindTicketById.mockResolvedValue(ticket);
     storageCreateMessage.mockResolvedValue(messageRecord);
     storageUpdateMessage.mockResolvedValue(updatedMessage);
-    prisma.contact.findUnique.mockResolvedValue({
+    prisma.contact.findFirst.mockResolvedValue({
       id: 'contact-media-1',
       primaryPhone: '5511999998888',
     });
@@ -732,7 +832,7 @@ describe('ticket-service dispatch guard', () => {
     );
 
     expect(transport.sendMessage).not.toHaveBeenCalled();
-    expect(prisma.contact.findUnique).not.toHaveBeenCalled();
+    expect(prisma.contact.findFirst).not.toHaveBeenCalled();
     expect(logger.info).not.toHaveBeenCalledWith(
       'whatsapp.outbound.dispatch.attempt',
       expect.anything()

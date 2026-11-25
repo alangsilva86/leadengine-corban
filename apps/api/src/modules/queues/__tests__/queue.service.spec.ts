@@ -20,11 +20,16 @@ const buildQueueRecord = (overrides: {
   updatedAt: new Date('2024-01-01T00:00:00.000Z'),
 });
 
+// Emula o Postgres em READ COMMITTED: transações rodam de fato em paralelo (cada leitura/escrita cede o event
+// loop) e só o advisory lock de transação (`pg_advisory_xact_lock` via $executeRaw) as serializa, liberado ao fim
+// do callback (COMMIT/ROLLBACK). O mock anterior encadeava as transações, então nunca expunha a corrida.
 const createPrismaMock = () => {
   const queues: ReturnType<typeof buildQueueRecord>[] = [];
-  let transactionChain = Promise.resolve<unknown>(null);
+  const advisoryLocks = new Map<string, Promise<void>>();
+  const yieldToOtherTransactions = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   const transactionQueueFindFirst = vi.fn(async ({ where }: { where?: { tenantId?: string } }) => {
+    await yieldToOtherTransactions();
     const tenantQueues = queues.filter((queue) => queue.tenantId === where?.tenantId);
     if (tenantQueues.length === 0) {
       return null;
@@ -38,6 +43,7 @@ const createPrismaMock = () => {
   });
 
   const transactionQueueCreate = vi.fn(async ({ data }: Prisma.QueueCreateArgs) => {
+    await yieldToOtherTransactions();
     const record = buildQueueRecord({
       tenantId: data.tenantId as string,
       orderIndex: data.orderIndex as number,
@@ -47,39 +53,64 @@ const createPrismaMock = () => {
     return record;
   });
 
-  const transactionClient = {
-    queue: {
-      findFirst: transactionQueueFindFirst,
-      create: transactionQueueCreate,
-    },
-  } satisfies Partial<Prisma.TransactionClient>;
+  const executeRaw = vi.fn();
 
   const prismaMock = {
     $transaction: vi.fn(async (callback: (tx: Prisma.TransactionClient) => unknown) => {
-      transactionChain = transactionChain.then(() => callback(transactionClient as Prisma.TransactionClient));
-      return transactionChain;
+      const releases: Array<() => void> = [];
+      const transactionClient = {
+        $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          executeRaw(strings.join('?'), ...values);
+          const key = `${strings.join('?')}|${JSON.stringify(values)}`;
+          const previous = advisoryLocks.get(key) ?? Promise.resolve();
+          let release: () => void = () => {};
+          const held = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          advisoryLocks.set(key, previous.then(() => held));
+          releases.push(release);
+          await previous;
+          return 1;
+        },
+        queue: {
+          findFirst: transactionQueueFindFirst,
+          create: transactionQueueCreate,
+        },
+      };
+
+      try {
+        return await callback(transactionClient as unknown as Prisma.TransactionClient);
+      } finally {
+        releases.forEach((release) => release());
+      }
     }),
   } satisfies Partial<PrismaClient>;
 
-  return { queues, prismaMock, transactionQueueCreate, transactionQueueFindFirst };
+  return { queues, prismaMock, transactionQueueCreate, transactionQueueFindFirst, executeRaw };
 };
 
 describe('QueueService', () => {
   describe('createQueue', () => {
-    it('derives the next orderIndex in a transaction with a locked max lookup', async () => {
-      const { prismaMock, transactionQueueCreate, transactionQueueFindFirst, queues } = createPrismaMock();
+    it('derives the next orderIndex from the max lookup inside a transaction', async () => {
+      const { prismaMock, transactionQueueCreate, transactionQueueFindFirst, queues, executeRaw } = createPrismaMock();
       queues.push(buildQueueRecord({ tenantId: 'tenant-1', orderIndex: 2, name: 'Existing' }));
 
       const service = new QueueService(prismaMock as PrismaClient);
       const queue = await service.createQueue('tenant-1', { name: 'New Queue' });
 
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      // O advisory lock do tenant é tomado antes de ler o máximo.
+      expect(executeRaw).toHaveBeenCalledWith(expect.stringContaining('pg_advisory_xact_lock'), 'tenant-1');
+      expect(executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        transactionQueueFindFirst.mock.invocationCallOrder[0] ?? 0
+      );
       expect(transactionQueueFindFirst).toHaveBeenCalledWith({
         where: { tenantId: 'tenant-1' },
         orderBy: { orderIndex: 'desc' },
         select: { orderIndex: true },
-        lock: { mode: 'ForUpdate' },
       });
+      // 6f3dcc26 removeu `lock: { mode: 'ForUpdate' }`, que não é um argumento válido do Prisma
+      // (falhava com PrismaClientValidationError em runtime).
       expect(transactionQueueCreate).toHaveBeenCalledWith({
         data: expect.objectContaining({ tenantId: 'tenant-1', orderIndex: 3 }),
         select: expect.objectContaining({ id: true, orderIndex: true }),
@@ -97,7 +128,23 @@ describe('QueueService', () => {
         service.createQueue('tenant-1', { name: 'Queue C' }),
       ]);
 
-      expect([first.orderIndex, second.orderIndex, third.orderIndex]).toEqual([0, 1, 2]);
+      expect([first.orderIndex, second.orderIndex, third.orderIndex].sort()).toEqual([0, 1, 2]);
+    });
+
+    it('locks per tenant and skips the lock when the caller sets orderIndex', async () => {
+      const { prismaMock, executeRaw } = createPrismaMock();
+      const service = new QueueService(prismaMock as PrismaClient);
+
+      const [tenantA, tenantB] = await Promise.all([
+        service.createQueue('tenant-a', { name: 'Queue A' }),
+        service.createQueue('tenant-b', { name: 'Queue B' }),
+      ]);
+      expect([tenantA.orderIndex, tenantB.orderIndex]).toEqual([0, 0]);
+      expect(executeRaw.mock.calls.map((call) => call[1]).sort()).toEqual(['tenant-a', 'tenant-b']);
+
+      const pinned = await service.createQueue('tenant-a', { name: 'Pinned', orderIndex: 10 });
+      expect(pinned.orderIndex).toBe(10);
+      expect(executeRaw).toHaveBeenCalledTimes(2);
     });
   });
 });

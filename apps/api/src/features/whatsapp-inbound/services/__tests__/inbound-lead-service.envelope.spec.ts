@@ -1,27 +1,24 @@
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { normalizeUpsertEvent } from '../baileys-raw-normalizer';
 
-const findOrCreateOpenTicketByChatMock = vi.fn();
-const upsertMessageByExternalIdMock = vi.fn();
 const normalizeInboundMessageMock = vi.fn();
 const inboundMessagesCounterIncMock = vi.fn();
-const socketEmitMock = vi.fn();
-const socketToMock = vi.fn(() => ({ emit: socketEmitMock }));
-
-const isWhatsappPassthroughModeEnabledMock = vi.fn();
-const isWhatsappInboundSimpleModeEnabledMock = vi.fn();
 
 const prismaMock = {
-  whatsAppInstance: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+  whatsAppInstance: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   tenant: { findFirst: vi.fn() },
-  campaign: { findMany: vi.fn(), upsert: vi.fn() },
+  campaign: { findMany: vi.fn(), findFirst: vi.fn(), upsert: vi.fn(), create: vi.fn(), update: vi.fn() },
   queue: { findUnique: vi.fn(), findFirst: vi.fn(), upsert: vi.fn() },
-  contact: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+  contact: { findUnique: vi.fn(), findFirst: vi.fn(), findUniqueOrThrow: vi.fn(), update: vi.fn(), create: vi.fn() },
+  contactPhone: { upsert: vi.fn(), updateMany: vi.fn() },
+  contactTag: { deleteMany: vi.fn(), upsert: vi.fn() },
+  tag: { findMany: vi.fn(), create: vi.fn() },
   ticket: { findFirst: vi.fn(), findUnique: vi.fn() },
-  lead: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+  lead: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), upsert: vi.fn() },
   leadActivity: { findFirst: vi.fn(), create: vi.fn() },
+  $transaction: vi.fn(),
 };
 
 const addAllocationsMock = vi.fn();
@@ -40,11 +37,6 @@ vi.mock('../../../../config/logger', () => ({
   },
 }));
 
-vi.mock('../../../../config/feature-flags', () => ({
-  isWhatsappPassthroughModeEnabled: isWhatsappPassthroughModeEnabledMock,
-  isWhatsappInboundSimpleModeEnabled: isWhatsappInboundSimpleModeEnabledMock,
-}));
-
 vi.mock('../../../../lib/prisma', () => ({
   prisma: prismaMock,
 }));
@@ -57,9 +49,8 @@ vi.mock('../../../../lib/socket-registry', () => ({
   emitToTenant: emitToTenantMock,
   emitToTicket: emitToTicketMock,
   emitToAgreement: emitToAgreementMock,
-  getSocketServer: vi.fn(() => ({
-    to: socketToMock,
-  })),
+  emitToCampaign: vi.fn(),
+  getSocketServer: vi.fn(() => null),
 }));
 
 vi.mock('../../../../services/ticket-service', () => ({
@@ -70,14 +61,19 @@ vi.mock('../../../../services/ticket-service', () => ({
 vi.mock('../../../../lib/metrics', () => ({
   inboundMessagesProcessedCounter: { inc: inboundMessagesCounterIncMock },
   leadLastContactGauge: { set: vi.fn() },
+  whatsappInboundMetrics: { observeLatency: vi.fn() },
+  whatsappWebhookEventsCounter: { inc: vi.fn() },
 }));
 
 vi.mock('@ticketz/storage', () => ({
-  findOrCreateOpenTicketByChat: findOrCreateOpenTicketByChatMock,
-  upsertMessageByExternalId: upsertMessageByExternalIdMock,
+  allocateBrokerLeads: vi.fn(),
+  listAllocations: vi.fn(),
+  updateAllocation: vi.fn(),
+  enqueueInboundMediaJob: vi.fn(),
+  $Enums: { MessageType: {} },
 }));
 
-vi.mock('../utils/normalize', () => ({
+vi.mock('../../utils/normalize', () => ({
   normalizeInboundMessage: normalizeInboundMessageMock,
 }));
 
@@ -92,14 +88,16 @@ let ingestInboundWhatsAppMessage:
   typeof import('../inbound-lead-service')['ingestInboundWhatsAppMessage'];
 let resetInboundLeadServiceTestState:
   typeof import('../inbound-lead-service')['resetInboundLeadServiceTestState'];
-let testingInternals: typeof import('../inbound-lead-service')['__testing'];
+let dedupeCache: typeof import('../dedupe')['dedupeCache'];
+let queueCacheByTenant: typeof import('../provisioning')['queueCacheByTenant'];
 let loggerMock: MockedLogger;
 
 beforeAll(async () => {
   const module = await import('../inbound-lead-service');
   ingestInboundWhatsAppMessage = module.ingestInboundWhatsAppMessage;
   resetInboundLeadServiceTestState = module.resetInboundLeadServiceTestState;
-  testingInternals = module.__testing;
+  ({ dedupeCache } = await import('../dedupe'));
+  ({ queueCacheByTenant } = await import('../provisioning'));
 
   const loggerModule = await import('../../../../config/logger');
   loggerMock = loggerModule.logger as MockedLogger;
@@ -107,6 +105,10 @@ beforeAll(async () => {
 
 const resetPrismaMocks = () => {
   for (const model of Object.values(prismaMock)) {
+    if (typeof model === 'function') {
+      model.mockReset();
+      continue;
+    }
     for (const fn of Object.values(model)) {
       fn.mockReset();
     }
@@ -160,15 +162,8 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
 
   beforeEach(() => {
     resetInboundLeadServiceTestState();
-    findOrCreateOpenTicketByChatMock.mockReset();
-    upsertMessageByExternalIdMock.mockReset();
     normalizeInboundMessageMock.mockReset();
     inboundMessagesCounterIncMock.mockReset();
-    socketEmitMock.mockReset();
-    socketToMock.mockReset();
-    socketToMock.mockImplementation(() => ({ emit: socketEmitMock }));
-    isWhatsappPassthroughModeEnabledMock.mockReset();
-    isWhatsappInboundSimpleModeEnabledMock.mockReset();
     resetPrismaMocks();
     addAllocationsMock.mockReset();
     emitToTenantMock.mockReset();
@@ -180,34 +175,6 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
     loggerMock.warn.mockReset();
     loggerMock.error.mockReset();
     loggerMock.debug.mockReset();
-
-    isWhatsappPassthroughModeEnabledMock.mockReturnValue(true);
-    isWhatsappInboundSimpleModeEnabledMock.mockReturnValue(false);
-
-    findOrCreateOpenTicketByChatMock.mockResolvedValue({
-      ticket: {
-        id: 'ticket-1',
-        tenantId: 'tenant-1',
-      },
-      wasCreated: true,
-    });
-
-    upsertMessageByExternalIdMock.mockResolvedValue({
-      message: {
-        id: 'message-1',
-        tenantId: 'tenant-1',
-        ticketId: 'ticket-1',
-        chatId: '5511999999999@s.whatsapp.net',
-        direction: 'inbound',
-        type: 'text',
-        text: 'Olá',
-        media: null,
-        metadata: {},
-        createdAt: new Date('2024-05-10T12:00:01.000Z'),
-        externalId: 'wamid.123',
-      },
-      wasCreated: true,
-    });
 
     normalizeInboundMessageMock.mockReturnValue({
       type: 'TEXT',
@@ -229,66 +196,40 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
     });
   });
 
-  describe('when passthrough mode is enabled', () => {
-    beforeEach(() => {
-      isWhatsappPassthroughModeEnabledMock.mockReturnValue(true);
+  // O modo passthrough (findOrCreateOpenTicketByChat/upsertMessageByExternalId direto na ingestão)
+  // foi removido em ef28e1dd/76b323a8; a ingestão sempre usa a pipeline padrão abaixo.
+  describe('standard inbound pipeline', () => {
+    afterEach(() => {
+      delete process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED;
+      delete process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST;
     });
 
-    it('persists passthrough artifacts without transport metadata', async () => {
-      const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
+    // Desde eb613513 o autoprovisionamento exige flag + allowlist do tenant.
+    const allowInboundAutoProvision = (tenantId = 'tenant-1') => {
+      process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED = 'true';
+      process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST = tenantId;
+    };
 
-      expect(processed).toBe(true);
-
-      expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tenantId: 'tenant-1',
-          chatId: '5511999999999@s.whatsapp.net',
-          instanceId: 'instance-1',
-        })
+    beforeEach(() => {
+      prismaMock.$transaction.mockImplementation(async (callback: (tx: typeof prismaMock) => unknown) =>
+        callback(prismaMock)
       );
-
-      expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(1);
-      const upsertPayload = upsertMessageByExternalIdMock.mock.calls[0]?.[0];
-      expect(upsertPayload).toBeTruthy();
-      expect(upsertPayload.metadata).not.toHaveProperty('transport');
-      expect(upsertPayload.metadata).not.toHaveProperty('origin');
-      expect(upsertPayload.metadata).toMatchObject({
+      prismaMock.tag.findMany.mockResolvedValue([]);
+      prismaMock.tag.create.mockImplementation(async (args: { data: { name: string } }) => ({
+        id: `tag-${args.data.name}`,
+        name: args.data.name,
+      }));
+      prismaMock.contact.findUniqueOrThrow.mockImplementation(async (args: { where: { id: string } }) => ({
+        id: args.where.id,
         tenantId: 'tenant-1',
-        chatId: '5511999999999@s.whatsapp.net',
-        instanceId: 'instance-1',
-        direction: 'inbound',
-        sourceInstance: 'instance-1',
-      });
-
-      expect(inboundMessagesCounterIncMock).toHaveBeenCalledWith({
-        origin: 'passthrough',
-        tenantId: 'tenant-1',
-        instanceId: 'instance-1',
-      });
-
-      expect(socketToMock).toHaveBeenCalledWith('tenant:tenant-1');
-      expect(socketToMock).toHaveBeenCalledWith('ticket:ticket-1');
-      expect(socketEmitMock).toHaveBeenCalled();
-    });
-
-    it('skips duplicates across tenant/instance/chat identifiers', async () => {
-      const processedFirst = await ingestInboundWhatsAppMessage(buildEnvelope());
-      const processedSecond = await ingestInboundWhatsAppMessage(buildEnvelope());
-
-      expect(processedFirst).toBe(true);
-      expect(processedSecond).toBe(false);
-
-      expect(findOrCreateOpenTicketByChatMock).toHaveBeenCalledTimes(1);
-      expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(1);
-      expect(inboundMessagesCounterIncMock).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('when passthrough mode is disabled', () => {
-    beforeEach(() => {
-      isWhatsappPassthroughModeEnabledMock.mockReturnValue(false);
-
+        displayName: 'João',
+        fullName: 'João',
+        primaryPhone: '+5511999999999',
+        tags: [],
+        phones: [],
+      }));
       prismaMock.whatsAppInstance.findFirst.mockResolvedValue(null);
+      prismaMock.whatsAppInstance.findMany.mockResolvedValue([]);
       prismaMock.whatsAppInstance.findUnique.mockResolvedValue({
         id: 'instance-1',
         tenantId: 'tenant-1',
@@ -497,41 +438,63 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       expect(timelinePayload?.content).toBe(expectedChoiceText);
       expect(timelinePayload?.content).not.toContain('[Mensagem recebida via WhatsApp]');
 
-      const eventMetadata = (timelinePayload?.metadata?.eventMetadata ?? {}) as Record<string, unknown>;
-      const source = (eventMetadata.source ?? {}) as Record<string, unknown>;
-      expect(source.event).toBe('poll_update');
+      // A metadata da timeline guarda a metadata do envelope em `eventMetadata` (o `source` do
+      // envelope — 'raw_normalized' — tem precedência sobre o do normalizador de enquete).
+      const raw = (timelinePayload?.metadata?.raw ?? {}) as Record<string, unknown>;
+      expect(raw).toMatchObject({ type: 'TEXT', text: expectedChoiceText });
 
-      const pollMetadata = (timelinePayload?.metadata?.poll ?? {}) as Record<string, unknown>;
+      const eventMetadata = (timelinePayload?.metadata?.eventMetadata ?? {}) as Record<string, unknown>;
+      expect(eventMetadata).toMatchObject({ tenantId: 'tenant-1', chatId: '5511999999999@s.whatsapp.net' });
+      const pollMetadata = (eventMetadata.poll ?? {}) as Record<string, unknown>;
       const pollSelectedOptions = Array.isArray(pollMetadata.selectedOptions)
         ? (pollMetadata.selectedOptions as Record<string, unknown>[])
         : [];
       expect(pollSelectedOptions[0]?.title).toBe('Azul');
+      const pollChoice = (eventMetadata.pollChoice ?? {}) as { vote?: { optionIds?: unknown } };
+      expect(pollChoice.vote?.optionIds).toEqual(['option-azul']);
     });
 
-    it('allocates leads indexed by instance when no campaigns exist', async () => {
+    it('does not create instance-indexed allocations when no campaign already owns the lead', async () => {
+      // Piloto Corban (adae3c03): só uma alocação de campanha existente e inequívoca define a origem;
+      // a alocação "fallback" indexada por instância foi removida.
       const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
 
       expect(processed).toBe(true);
-      expect(addAllocationsMock).toHaveBeenCalledWith(
-        'tenant-1',
-        { instanceId: 'instance-1' },
-        expect.any(Array)
-      );
-
-      expect(emitToTenantMock).toHaveBeenCalledWith(
-        'tenant-1',
-        'leadAllocations.new',
+      expect(sendMessageMock).toHaveBeenCalledTimes(1);
+      expect(addAllocationsMock).not.toHaveBeenCalled();
+      expect(emitToTenantMock).not.toHaveBeenCalledWith('tenant-1', 'leadAllocations.new', expect.anything());
+      expect(prismaMock.campaign.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          instanceId: 'instance-1',
-          campaignId: null,
+          where: expect.objectContaining({ tenantId: 'tenant-1', whatsappInstanceId: 'instance-1', status: 'active' }),
         })
       );
-
       expect(inboundMessagesCounterIncMock).toHaveBeenCalledWith({
-        origin: 'legacy',
+        origin: 'webhook',
         tenantId: 'tenant-1',
         instanceId: 'instance-1',
       });
+    });
+
+    it('allocates the lead to the single campaign that already owns it', async () => {
+      prismaMock.campaign.findMany.mockResolvedValueOnce([
+        { id: 'campaign-1', name: 'Campanha', status: 'active', whatsappInstanceId: 'instance-1', tenantId: 'tenant-1', agreementId: 'agreement-1' },
+      ]);
+      addAllocationsMock.mockResolvedValueOnce({
+        newlyAllocated: [
+          { allocationId: 'alloc-1', leadId: 'lead-1', campaignId: 'campaign-1', agreementId: 'agreement-1', instanceId: 'instance-1' },
+        ],
+        summary: { total: 1, contacted: 0, won: 0, lost: 0 },
+      });
+
+      const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
+
+      expect(processed).toBe(true);
+      expect(addAllocationsMock).toHaveBeenCalledWith('tenant-1', { campaignId: 'campaign-1' }, expect.any(Array));
+      expect(emitToTenantMock).toHaveBeenCalledWith(
+        'tenant-1',
+        'leadAllocations.new',
+        expect.objectContaining({ campaignId: 'campaign-1', instanceId: 'instance-1' })
+      );
     });
 
     it('permits retry when queue provisioning fails before persisting the message', async () => {
@@ -541,32 +504,31 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       const firstAttempt = await ingestInboundWhatsAppMessage(buildEnvelope());
       expect(firstAttempt).toBe(false);
       expect(sendMessageMock).not.toHaveBeenCalled();
-      expect(testingInternals.dedupeCache.size).toBe(0);
+      expect(dedupeCache.size).toBe(0);
 
       const secondAttempt = await ingestInboundWhatsAppMessage(buildEnvelope());
       expect(secondAttempt).toBe(true);
       expect(sendMessageMock).toHaveBeenCalledTimes(1);
       expect(prismaMock.queue.upsert).toHaveBeenCalledTimes(1);
-      expect(testingInternals.dedupeCache.size).toBeGreaterThan(0);
+      expect(dedupeCache.size).toBeGreaterThan(0);
     });
 
-    it('reuses instance resolved via broker identifier matching the envelope instance id', async () => {
+    // Desde 8dcc45dd a resolução da instância é: id (findUnique) → brokerId (findFirst) → autoprov
+    // → instâncias do tenant. Antes a busca por broker vinha primeiro (com tenantId no where).
+    it('resolves the instance by id before falling back to the broker lookup', async () => {
       const envelope = buildEnvelope();
       envelope.message.metadata = {
         ...(envelope.message.metadata as Record<string, unknown>),
         brokerId: envelope.instanceId,
       };
 
-      const instanceRecord = { id: 'instance-1', tenantId: 'tenant-1' };
-      prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(instanceRecord);
-
       const processed = await ingestInboundWhatsAppMessage(envelope);
 
       expect(processed).toBe(true);
-      expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledWith({
-        where: { brokerId: 'instance-1', tenantId: 'tenant-1' },
-      });
-      expect(prismaMock.whatsAppInstance.findUnique).not.toHaveBeenCalled();
+      expect(prismaMock.whatsAppInstance.findUnique).toHaveBeenCalledWith({ where: { id: 'instance-1' } });
+      expect(prismaMock.whatsAppInstance.findFirst).not.toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ brokerId: 'instance-1' }) })
+      );
       expect(prismaMock.whatsAppInstance.create).not.toHaveBeenCalled();
     });
 
@@ -576,22 +538,103 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       envelope.message.metadata = {
         ...(envelope.message.metadata as Record<string, unknown>),
         instanceId: envelope.instanceId,
+        brokerId: envelope.instanceId,
       };
 
       const instanceRecord = { id: 'instance-legacy', tenantId: 'tenant-1' };
+      prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
       prismaMock.whatsAppInstance.findFirst.mockResolvedValueOnce(instanceRecord);
 
       const processed = await ingestInboundWhatsAppMessage(envelope);
 
       expect(processed).toBe(true);
+      expect(prismaMock.whatsAppInstance.findUnique).toHaveBeenCalledWith({ where: { id: 'broker-uuid-9' } });
+      // brokerId é único só por tenant (@@unique([tenantId, brokerId])): a busca é escopada pela dica de tenant.
       expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledWith({
-        where: { brokerId: 'broker-uuid-9', tenantId: 'tenant-1' },
+        where: { tenantId: 'tenant-1', brokerId: 'broker-uuid-9' },
       });
-      expect(prismaMock.whatsAppInstance.findUnique).not.toHaveBeenCalled();
       expect(prismaMock.whatsAppInstance.create).not.toHaveBeenCalled();
+      expect(createTicketMock).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'tenant-1' }));
+    });
+
+    // Sem tenant padrão: o tenant sai só do mapeamento instância → tenant; nada cai em `demo-tenant`.
+    describe('tenant resolution without a default tenant', () => {
+      it('resolves a tenantless event strictly from the instance → tenant mapping', async () => {
+        const envelope = buildEnvelope();
+        envelope.tenantId = null;
+        prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce({ id: 'instance-1', tenantId: 'tenant-1' });
+
+        const processed = await ingestInboundWhatsAppMessage(envelope);
+
+        expect(processed).toBe(true);
+        expect(createTicketMock).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'tenant-1' }));
+        expect(prismaMock.whatsAppInstance.findMany).not.toHaveBeenCalled();
+      });
+
+      it('rejects (and does not reroute) events whose instance is unknown, even with a tenant hint', async () => {
+        const envelope = buildEnvelope();
+        envelope.instanceId = 'instance-ghost';
+        envelope.message.metadata = { ...(envelope.message.metadata as Record<string, unknown>), instanceId: 'instance-ghost' };
+        prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
+        prismaMock.whatsAppInstance.findMany.mockResolvedValue([{ id: 'instance-1', tenantId: 'tenant-1' }]);
+
+        const processed = await ingestInboundWhatsAppMessage(envelope);
+
+        expect(processed).toBe(false);
+        // Antes: caía na "melhor instância do tenant" e gravava a mensagem nela.
+        expect(prismaMock.whatsAppInstance.findMany).not.toHaveBeenCalledWith({ where: { tenantId: 'tenant-1' } });
+        expect(createTicketMock).not.toHaveBeenCalled();
+        expect(loggerMock.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Instância WhatsApp não localizada'),
+          expect.objectContaining({ reason: 'unknown_instance', instanceId: 'instance-ghost' })
+        );
+      });
+
+      it('rejects events whose instance belongs to a tenant other than the hint', async () => {
+        prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce({ id: 'instance-1', tenantId: 'tenant-other' });
+
+        const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
+
+        expect(processed).toBe(false);
+        expect(createTicketMock).not.toHaveBeenCalled();
+        expect(loggerMock.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Instância WhatsApp não localizada'),
+          expect.objectContaining({ reason: 'tenant_mismatch' })
+        );
+      });
+
+      it('rejects tenantless events whose brokerId exists in more than one tenant', async () => {
+        const envelope = buildEnvelope();
+        envelope.tenantId = null;
+        envelope.instanceId = 'shared-broker-id';
+        envelope.message.metadata = {
+          ...(envelope.message.metadata as Record<string, unknown>),
+          instanceId: 'shared-broker-id',
+          brokerId: 'shared-broker-id',
+        };
+        prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
+        prismaMock.whatsAppInstance.findMany.mockResolvedValueOnce([
+          { id: 'instance-a', tenantId: 'tenant-a', brokerId: 'shared-broker-id' },
+          { id: 'instance-b', tenantId: 'tenant-b', brokerId: 'shared-broker-id' },
+        ]);
+
+        const processed = await ingestInboundWhatsAppMessage(envelope);
+
+        expect(processed).toBe(false);
+        expect(prismaMock.whatsAppInstance.findMany).toHaveBeenCalledWith({
+          where: { brokerId: 'shared-broker-id' },
+          take: 2,
+        });
+        expect(createTicketMock).not.toHaveBeenCalled();
+        expect(loggerMock.warn).toHaveBeenCalledWith(
+          expect.stringContaining('Instância WhatsApp não localizada'),
+          expect.objectContaining({ reason: 'ambiguous_broker_id' })
+        );
+      });
     });
 
     it('auto provisions missing instances before processing standard inbound flow', async () => {
+      allowInboundAutoProvision();
       prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
       prismaMock.tenant.findFirst.mockResolvedValueOnce({ id: 'tenant-1', name: 'Tenant One' });
       const createdInstance = {
@@ -629,29 +672,24 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       expect(prismaMock.whatsAppInstance.update).not.toHaveBeenCalled();
       expect(createTicketMock).toHaveBeenCalledTimes(1);
       expect(sendMessageMock).toHaveBeenCalledTimes(1);
-      expect(emitToTicketMock).toHaveBeenCalledWith(
-        'ticket-1',
-        expect.stringMatching(/tickets\./),
-        expect.objectContaining({
-          tenantId: 'tenant-1',
-          ticketId: 'ticket-1',
-        })
-      );
-      expect(emitToTenantMock).toHaveBeenCalledWith(
+      // Os eventos realtime do ticket/mensagem saem de sendMessage (camada de tickets, mockada aqui);
+      // a ingestão chama emitRealtimeUpdatesForInbound com emitTicketRealtimeEvents=false para não duplicar.
+      expect(sendMessageMock).toHaveBeenCalledWith(
         'tenant-1',
-        expect.stringMatching(/tickets\./),
-        expect.objectContaining({
-          tenantId: 'tenant-1',
-          ticketId: 'ticket-1',
-        })
+        undefined,
+        expect.objectContaining({ ticketId: 'ticket-1', direction: 'INBOUND' })
       );
+      expect(emitToTicketMock).not.toHaveBeenCalledWith('ticket-1', 'ticketMessages.new', expect.anything());
     });
 
-    it('auto provisions queues for first inbound message when payload supplies tenant identification', async () => {
+    // A ingestão lê a dica de tenant de metadata → envelope (sem tenant padrão); dicas soltas no payload (fora de
+    // metadata) não são consideradas, então o tenant chega via metadata do envelope.
+    it('auto provisions instance and default queue on the first inbound message when only metadata identifies the tenant', async () => {
+      allowInboundAutoProvision();
       const envelope = buildEnvelope();
       envelope.tenantId = null;
-      envelope.message.payload = {
-        ...envelope.message.payload,
+      envelope.message.metadata = {
+        ...(envelope.message.metadata as Record<string, unknown>),
         tenantId: 'tenant-1',
         tenant: { id: 'tenant-1' },
       };
@@ -701,27 +739,28 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       );
 
       expect(sendMessageMock).toHaveBeenCalledTimes(1);
-      expect(emitToTicketMock).toHaveBeenCalledWith(
-        'ticket-1',
-        'tickets.updated',
-        expect.objectContaining({ tenantId: 'tenant-1', ticketId: 'ticket-1' })
+      expect(sendMessageMock).toHaveBeenCalledWith(
+        'tenant-1',
+        undefined,
+        expect.objectContaining({ ticketId: 'ticket-1' })
       );
       expect(emitToTenantMock).toHaveBeenCalledWith(
         'tenant-1',
-        'tickets.updated',
-        expect.objectContaining({ tenantId: 'tenant-1', ticketId: 'ticket-1' })
+        'whatsapp.queue.autoProvisioned',
+        expect.objectContaining({ tenantId: 'tenant-1', queueId: 'queue-auto-1' })
       );
 
-      expect(testingInternals.queueCacheByTenant.get('tenant-1')).toEqual(
+      expect(queueCacheByTenant.get('tenant-1')).toEqual(
         expect.objectContaining({ id: 'queue-auto-1' })
       );
     });
 
-    it('logs auto provisioning success for fresh instances when simple mode is disabled', async () => {
+    it('logs auto provisioning success for fresh instances of an existing tenant', async () => {
+      allowInboundAutoProvision();
       const envelope = buildEnvelope();
 
       prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
-      prismaMock.tenant.findFirst.mockResolvedValueOnce(null);
+      // eb613513: o tenant precisa existir (não há mais ensureTenantRecord no autoprov).
       prismaMock.tenant.findFirst.mockResolvedValue({ id: 'tenant-1', name: 'Tenant One' });
 
       const createdInstance = {
@@ -737,20 +776,31 @@ describe('ingestInboundWhatsAppMessage (simplified envelope)', () => {
       expect(processed).toBe(true);
 
       expect(loggerMock.info).toHaveBeenCalledWith(
-        '🎯 LeadEngine • WhatsApp :: 🆕 Instância autoprov criada durante ingestão padrão',
+        '🎯 LeadEngine • WhatsApp :: 🆕 Instância provisionada automaticamente',
         expect.objectContaining({
           instanceId: 'instance-1',
           tenantId: 'tenant-1',
-          tenantIdentifiers: expect.arrayContaining(['tenant-1']),
           brokerId: 'instance-1',
         })
       );
-      expect(loggerMock.warn).not.toHaveBeenCalledWith(
-        '🎯 LeadEngine • WhatsApp :: ⚠️ Autoprovisionamento não realizado durante ingestão padrão',
+      expect(loggerMock.error).not.toHaveBeenCalledWith(
+        '🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao autoprov instância durante ingestão',
         expect.any(Object)
       );
       expect(createTicketMock).toHaveBeenCalledTimes(1);
       expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not auto provision instances for tenants outside the allowlist', async () => {
+      allowInboundAutoProvision('another-tenant');
+      prismaMock.whatsAppInstance.findUnique.mockResolvedValueOnce(null);
+      prismaMock.tenant.findFirst.mockResolvedValue({ id: 'tenant-1', name: 'Tenant One' });
+
+      const processed = await ingestInboundWhatsAppMessage(buildEnvelope());
+
+      expect(processed).toBe(false);
+      expect(prismaMock.whatsAppInstance.create).not.toHaveBeenCalled();
+      expect(sendMessageMock).not.toHaveBeenCalled();
     });
   });
 });

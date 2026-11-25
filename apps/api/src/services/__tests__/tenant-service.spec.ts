@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@ticketz/storage', () => {
   const normalizeTenantId = (value: unknown): string | null => {
@@ -32,7 +32,11 @@ vi.mock('@ticketz/storage', () => {
   return { normalizeTenantId, ensureTenantFromUser, assertTenantConsistency };
 });
 
-import { resolveRequestTenantId } from '../tenant-service';
+import {
+  registerTenantResolutionHook,
+  resetTenantResolutionHooks,
+  resolveRequestTenantId,
+} from '../tenant-service';
 
 const buildRequest = (overrides: Partial<Request> = {}): Request =>
   ({
@@ -57,5 +61,39 @@ describe('tenant-service > resolveRequestTenantId', () => {
     expect(() => resolveRequestTenantId(req, 'other-tenant')).toThrow(
       /Tentativa de acesso a dados de outro tenant/,
     );
+  });
+  describe('tenantless requests (no silent demo-tenant fallback)', () => {
+    const originalMvpTenant = process.env.AUTH_MVP_TENANT_ID;
+
+    afterEach(() => {
+      resetTenantResolutionHooks();
+      if (originalMvpTenant === undefined) {
+        delete process.env.AUTH_MVP_TENANT_ID;
+      } else {
+        process.env.AUTH_MVP_TENANT_ID = originalMvpTenant;
+      }
+    });
+
+    it('rejects requests without an authenticated tenant instead of resolving demo-tenant', () => {
+      const req = buildRequest({ user: undefined });
+
+      expect(() => resolveRequestTenantId(req)).toThrow(/Tenant obrigatório/);
+    });
+
+    it('ignores AUTH_MVP_TENANT_ID and tenant headers for tenantless requests', () => {
+      process.env.AUTH_MVP_TENANT_ID = 'demo-tenant';
+      const req = buildRequest({ user: undefined, headers: { 'x-tenant-id': 'demo-tenant' } });
+
+      expect(() => resolveRequestTenantId(req, 'demo-tenant')).toThrow(/Tenant obrigatório/);
+    });
+
+    it('still honors hooks registered explicitly', () => {
+      const unregister = registerTenantResolutionHook(() => 'tenant-from-hook');
+      const req = buildRequest({ user: undefined });
+
+      expect(resolveRequestTenantId(req)).toBe('tenant-from-hook');
+      unregister();
+      expect(() => resolveRequestTenantId(req)).toThrow(/Tenant obrigatório/);
+    });
   });
 });

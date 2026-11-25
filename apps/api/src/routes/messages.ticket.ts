@@ -6,6 +6,7 @@ import { SendByTicketSchema } from '@ticketz/contracts';
 import { asyncHandler } from '../middleware/error-handler';
 import { sendOnTicket } from '../services/ticket-service';
 import { validateMessageSendRequest } from './messages/shared';
+import { respondWithSendFailure } from './messages/send-errors';
 import { requireTenant } from '../middleware/auth';
 import { resolveRequestTenantId } from '../services/tenant-service';
 
@@ -86,14 +87,22 @@ router.post(
       return;
     }
 
-    const result = await sendOnTicket({
-      operatorId: req.user?.id,
-      ticketId,
-      payload,
-      instanceId: parsed.instanceId,
-      idempotencyKey,
-      tenantId,
-    });
+    let result: Awaited<ReturnType<typeof sendOnTicket>>;
+    try {
+      result = await sendOnTicket({
+        operatorId: req.user?.id,
+        ticketId,
+        payload,
+        instanceId: parsed.instanceId,
+        idempotencyKey,
+        tenantId,
+      });
+    } catch (error) {
+      if (respondWithSendFailure(req, res, error, { tenantId, ticketId, instanceId: parsed.instanceId ?? null })) {
+        return;
+      }
+      throw error;
+    }
 
     res.status(202).json(result);
   })

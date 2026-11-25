@@ -2,7 +2,7 @@
  * Testes para PerformanceTracker
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PerformanceTracker, createPerformanceTracker } from '../performance-tracker';
 
 describe('PerformanceTracker', () => {
@@ -39,9 +39,17 @@ describe('PerformanceTracker', () => {
   });
 
   describe('measure', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('should measure async function execution', async () => {
+      // Controla o relógio para não depender da precisão do setTimeout (que pode disparar <10ms).
+      const nowSpy = vi.spyOn(performance, 'now');
+      nowSpy.mockReturnValueOnce(1_000).mockReturnValueOnce(1_010);
+
       const result = await tracker.measure('async-op', async () => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        await Promise.resolve();
         return 'success';
       });
 
@@ -49,7 +57,7 @@ describe('PerformanceTracker', () => {
       const measurements = tracker.getMeasurements();
       expect(measurements).toHaveLength(1);
       expect(measurements[0].name).toBe('async-op');
-      expect(measurements[0].durationMs).toBeGreaterThanOrEqual(10);
+      expect(measurements[0].durationMs).toBe(10);
     });
 
     it('should track error in metadata', async () => {

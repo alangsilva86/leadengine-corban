@@ -5,6 +5,7 @@ import { requireTenant } from '../middleware/auth';
 import { asyncHandler } from '../middleware/error-handler';
 import { sendToContact } from '../services/ticket-service';
 import { validateMessageSendRequest } from './messages/shared';
+import { respondWithSendFailure } from './messages/send-errors';
 
 const router: Router = Router();
 
@@ -25,15 +26,24 @@ router.post(
 
     const { parsed, payload, idempotencyKey } = validationResult;
 
-    const response = await sendToContact({
-      tenantId: req.user!.tenantId,
-      operatorId: req.user!.id,
-      contactId,
-      instanceId: parsed.instanceId,
-      to: parsed.to,
-      payload,
-      idempotencyKey,
-    });
+    let response: Awaited<ReturnType<typeof sendToContact>>;
+    try {
+      response = await sendToContact({
+        tenantId: req.user!.tenantId,
+        operatorId: req.user!.id,
+        contactId,
+        instanceId: parsed.instanceId,
+        to: parsed.to,
+        payload,
+        idempotencyKey,
+      });
+    } catch (error) {
+      const context = { tenantId: req.user!.tenantId, contactId, instanceId: parsed.instanceId ?? null };
+      if (respondWithSendFailure(req, res, error, context)) {
+        return;
+      }
+      throw error;
+    }
 
     res.status(202).json(response);
   })

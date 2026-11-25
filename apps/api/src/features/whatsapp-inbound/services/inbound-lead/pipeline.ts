@@ -11,6 +11,7 @@ import {
   inboundMessagesProcessedCounter,
   leadLastContactGauge,
   whatsappInboundMetrics,
+  whatsappWebhookEventsCounter,
 } from '../../../../lib/metrics';
 import { createPerformanceTracker } from '../../../../lib/performance-tracker';
 import { sendToFailedMessageDLQ } from '../../../../lib/failed-message-dlq';
@@ -23,10 +24,7 @@ import {
   type NormalizedInboundMessage,
   type NormalizedMessageType,
 } from '../../utils/normalize';
-import {
-  DEFAULT_DEDUPE_TTL_MS,
-  DEFAULT_TENANT_ID,
-} from '../constants';
+import { DEFAULT_DEDUPE_TTL_MS } from '../constants';
 import { registerDedupeKey, shouldSkipByDedupe } from '../dedupe';
 import { mapErrorForLog } from '../logging';
 import {
@@ -50,7 +48,7 @@ import {
   queueCacheByTenant,
   type WhatsAppInstanceRecord,
 } from '../provisioning';
-import { downloadViaBaileys, downloadViaBroker } from '../media-downloader';
+import { downloadViaBroker, downloadViaWhatsAppCdn } from '../media-downloader';
 import {
   type InboundMessageDetails,
   type InboundWhatsAppEvent,
@@ -136,11 +134,7 @@ export const processStandardInboundEvent = async (
   const normalizedEventTenantId =
     typeof eventTenantId === 'string' && eventTenantId.trim().length > 0 ? eventTenantId.trim() : null;
   let metadataTenantId = readString((metadataRecord as any)['tenantId']);
-  let metricsTenantId =
-    normalizedEventTenantId ??
-    metadataTenantId ??
-    (typeof DEFAULT_TENANT_ID === 'string' ? DEFAULT_TENANT_ID : null) ??
-    'unknown';
+  let metricsTenantId = normalizedEventTenantId ?? metadataTenantId ?? 'unknown';
 
   let perfEnded = false;
   const finalize = (result: boolean): boolean => {
@@ -314,21 +308,66 @@ export const processStandardInboundEvent = async (
     }
   };
 
+  // O tenant vem só do mapeamento instância → tenant (ou de uma dica explícita do contexto do webhook); não há
+  // tenant padrão. `brokerId` é único apenas por tenant (@@unique([tenantId, brokerId])), então a busca por ele é
+  // escopada pela dica de tenant e, sem dica, só aceita uma correspondência global única.
+  const rejectUnresolvedInstance = (reason: 'unknown_instance' | 'tenant_mismatch' | 'ambiguous_broker_id') => {
+    logger.warn('🎯 LeadEngine • WhatsApp :: ⚙️ Instância WhatsApp não localizada', {
+      requestId,
+      reason,
+      tenantId: tenantIdForBrokerLookup,
+      brokerId: resolvedBrokerId ?? null,
+      instanceId: instanceIdentifier,
+    });
+    whatsappWebhookEventsCounter.inc({
+      origin: 'webhook',
+      tenantId: tenantIdForBrokerLookup ?? 'unknown',
+      instanceId: instanceIdentifier ?? resolvedBrokerId ?? 'unknown',
+      result: 'rejected',
+      reason,
+    });
+    return finalize(false);
+  };
+
+  const matchesTenantHint = (candidate: WhatsAppInstanceRecord | null | undefined): boolean =>
+    Boolean(candidate) && (!tenantIdForBrokerLookup || candidate?.tenantId === tenantIdForBrokerLookup);
+
+  if (instance && !matchesTenantHint(instance)) {
+    return rejectUnresolvedInstance('tenant_mismatch');
+  }
+
   if (!instance && resolvedInstanceId) {
-    instance =
-      (await prisma.whatsAppInstance.findUnique({
-        where: { id: resolvedInstanceId },
-      })) ?? (await autoProvisionInstance(resolvedInstanceId));
+    const byId = await prisma.whatsAppInstance.findUnique({
+      where: { id: resolvedInstanceId },
+    });
+    if (byId && !matchesTenantHint(byId)) {
+      return rejectUnresolvedInstance('tenant_mismatch');
+    }
+    instance = byId ?? (await autoProvisionInstance(resolvedInstanceId));
   }
 
   if (!instance && resolvedBrokerId) {
-    instance =
-      (await prisma.whatsAppInstance.findFirst({
-        where: { brokerId: resolvedBrokerId },
-      })) ?? (await autoProvisionInstance(resolvedBrokerId));
+    if (tenantIdForBrokerLookup) {
+      instance = await prisma.whatsAppInstance.findFirst({
+        where: { tenantId: tenantIdForBrokerLookup, brokerId: resolvedBrokerId },
+      });
+    } else {
+      const candidates =
+        (await prisma.whatsAppInstance.findMany({
+          where: { brokerId: resolvedBrokerId },
+          take: 2,
+        })) ?? [];
+      if (candidates.length > 1) {
+        return rejectUnresolvedInstance('ambiguous_broker_id');
+      }
+      instance = candidates[0] ?? null;
+    }
+    instance = instance ?? (await autoProvisionInstance(resolvedBrokerId));
   }
 
-  if (!instance && tenantIdForBrokerLookup) {
+  // Sem identificador de instância, mas com tenant explícito (ex.: reprocessamento de enquete), escolhemos a
+  // instância do próprio tenant de forma determinística. Um identificador desconhecido nunca cai aqui: é rejeitado.
+  if (!instance && !instanceIdentifier && !resolvedBrokerId && tenantIdForBrokerLookup) {
     const tenantInstances =
       (await prisma.whatsAppInstance.findMany({
         where: { tenantId: tenantIdForBrokerLookup },
@@ -387,13 +426,11 @@ export const processStandardInboundEvent = async (
   }
 
   if (!instance) {
-    logger.warn('🎯 LeadEngine • WhatsApp :: ⚙️ Instância WhatsApp não localizada', {
-      requestId,
-      tenantId: tenantIdForBrokerLookup,
-      brokerId: resolvedBrokerId ?? null,
-      instanceId: instanceIdentifier,
-    });
-    return finalize(false);
+    return rejectUnresolvedInstance('unknown_instance');
+  }
+
+  if (!matchesTenantHint(instance)) {
+    return rejectUnresolvedInstance('tenant_mismatch');
   }
 
   if (!resolvedInstanceId) {
@@ -587,18 +624,18 @@ export const processStandardInboundEvent = async (
     const hasDownloadMetadata = Boolean(mediaDetails.directPath || mediaDetails.mediaKey);
 
     let downloadResult:
-      | Awaited<ReturnType<typeof downloadViaBaileys>>
+      | Awaited<ReturnType<typeof downloadViaWhatsAppCdn>>
       | Awaited<ReturnType<typeof downloadViaBroker>>
       | null = null;
 
     try {
       downloadResult = await Promise.race([
-        downloadViaBaileys(mediaDetails.raw, mediaDetails.rawKey ?? undefined),
+        downloadViaWhatsAppCdn(mediaDetails.raw, mediaDetails.rawKey ?? undefined),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
       ]);
 
       if (!downloadResult) {
-        logger.debug('🎯 LeadEngine • WhatsApp :: ⏱️ Download de mídia via Baileys timeout - será processado em background', {
+        logger.debug('🎯 LeadEngine • WhatsApp :: ⏱️ Download de mídia pelo CDN do WhatsApp excedeu o tempo - será processado em background', {
           requestId,
           tenantId,
           instanceId,
@@ -606,7 +643,7 @@ export const processStandardInboundEvent = async (
         });
       }
     } catch (error) {
-      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao baixar mídia inbound diretamente via Baileys', {
+      logger.warn('🎯 LeadEngine • WhatsApp :: ⚠️ Falha ao baixar mídia inbound diretamente do CDN do WhatsApp', {
         error: mapErrorForLog(error),
         requestId,
         tenantId,

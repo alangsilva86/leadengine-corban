@@ -37,6 +37,7 @@ Todos os pacotes compartilham build com `tsup` e são publicados internamente vi
 1. Webhook único (`apps/api/src/features/whatsapp-inbound/routes/webhook-controller.ts`) normaliza eventos Baileys, persiste mensagens e aciona `messages.new` em Socket.IO.
 2. O serviço `ingestInboundWhatsAppMessage` realiza dedupe, provisiona filas de atendimento (`prisma.queue`) e cria tickets/mensagens de forma síncrona.
 3. Logs e métricas (`features/whatsapp-inbound/utils/baileys-event-logger.ts`, `apps/api/src/lib/metrics.ts`) monitoram throughput e falhas sem depender de workers separados.
+4. Mídia inbound é baixada do CDN do WhatsApp e decifrada (e votos de enquete são decifrados) por `apps/api/src/lib/whatsapp-crypto` (`node:crypto`); a API não depende do pacote Baileys — só o broker externo usa Baileys.
 
 ## 📊 Observabilidade e circuit breaker
 

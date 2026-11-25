@@ -1,6 +1,8 @@
 import type { MessageStatus } from '../../../types/tickets';
 
-import { normalizeBrokerStatus } from '../../../services/ticket-service';
+// Import direto do helper: o re-export em services/tickets/messaging/index.ts aponta para
+// './send-message', que não exporta normalizeBrokerStatus (fica undefined no bundle).
+import { normalizeBrokerStatus } from '../../../services/tickets/shared/whatsapp';
 
 const BAILEYS_STATUS_MAP: Record<number, MessageStatus> = {
   0: 'PENDING',

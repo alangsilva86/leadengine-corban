@@ -1,7 +1,6 @@
 import express, { type RequestHandler } from 'express';
 import request from 'supertest';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConflictError } from '@ticketz/core';
 
 const listContactsMock = vi.fn();
 const createContactMock = vi.fn();
@@ -210,12 +209,9 @@ describe('Contacts routes', () => {
     expect(response.body).toEqual({ success: true, data: { id: contactId, name: 'Test' } });
   });
 
-  it('sends whatsapp action for each contact', async () => {
+  it('blocks bulk WhatsApp sends until the channel is homologated', async () => {
+    // Piloto Corban (adae3c03): disparo em lote fica bloqueado (409) sem canal/modelos homologados.
     const app = buildContactsApp();
-
-    sendWhatsappBulkActionMock.mockResolvedValueOnce([
-      { contactId: '22222222-2222-2222-2222-222222222222', status: 'ENQUEUED' },
-    ]);
 
     const response = await request(app)
       .post('/actions/whatsapp')
@@ -224,27 +220,12 @@ describe('Contacts routes', () => {
         message: { type: 'text', text: 'Hello' },
       });
 
-    expect(response.status).toBe(202);
-    expect(sendWhatsappBulkActionMock).toHaveBeenCalledWith({
-      operatorId: 'user-1',
-      payload: { contactIds: ['22222222-2222-2222-2222-222222222222'], message: { type: 'text', text: 'Hello' } },
-      tenantId: 'tenant-1',
-    });
-    expect(response.body).toEqual({
-      success: true,
-      data: { results: [{ contactId: '22222222-2222-2222-2222-222222222222', status: 'ENQUEUED' }] },
-    });
-  });
-
-  it('returns validation error when whatsapp payload missing message', async () => {
-    const app = buildContactsApp();
-    sendWhatsappBulkActionMock.mockRejectedValueOnce(new ConflictError('Whatsapp action requires a message payload.'));
-
-    const response = await request(app)
-      .post('/actions/whatsapp')
-      .send({ contactIds: ['22222222-2222-2222-2222-222222222222'] });
-
     expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: { code: 'CAMPAIGN_NOT_HOMOLOGATED' },
+    });
+    expect(sendWhatsappBulkActionMock).not.toHaveBeenCalled();
   });
 
   it('returns 404 when updating nonexistent task', async () => {

@@ -2,7 +2,7 @@
  * Testes para SimpleCache
  */
 
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SimpleCache, createCache } from '../simple-cache';
 
 describe('SimpleCache', () => {
@@ -109,7 +109,7 @@ describe('SimpleCache', () => {
     it('should return cached value if exists', async () => {
       cache.set('key1', 'cached-value');
       
-      const factory = jest.fn(async () => 'new-value');
+      const factory = vi.fn(async () => 'new-value');
       const result = await cache.getOrSet('key1', factory);
       
       expect(result).toBe('cached-value');
@@ -117,7 +117,7 @@ describe('SimpleCache', () => {
     });
 
     it('should call factory and cache result if not exists', async () => {
-      const factory = jest.fn(async () => 'new-value');
+      const factory = vi.fn(async () => 'new-value');
       const result = await cache.getOrSet('key1', factory);
       
       expect(result).toBe('new-value');
@@ -126,7 +126,7 @@ describe('SimpleCache', () => {
     });
 
     it('should use custom TTL when provided', async () => {
-      const factory = jest.fn(async () => 'new-value');
+      const factory = vi.fn(async () => 'new-value');
       await cache.getOrSet('key1', factory, 100);
       
       expect(cache.get('key1')).toBe('new-value');

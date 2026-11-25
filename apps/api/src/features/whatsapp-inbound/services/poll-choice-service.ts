@@ -1,6 +1,5 @@
-import { decryptPollVote } from '@whiskeysockets/baileys';
-
 import { prisma } from '../../../lib/prisma';
+import { decryptPollVote, isWhatsAppCryptoError } from '../../../lib/whatsapp-crypto';
 import { logger } from '../../../config/logger';
 import {
   PollChoiceAggregatesSchema,
@@ -203,7 +202,8 @@ const decodeBase64Variant = (value: string | null | undefined): Buffer | null =>
   try {
     const buffer = Buffer.from(normalized, 'base64');
     const reencoded = base64UrlEncode(buffer);
-    const normalizedInput = trimmed.replace(/=+$/u, '');
+    // Accept both alphabets: standard base64 ("+", "/") must decode as well as base64url.
+    const normalizedInput = trimmed.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
     if (reencoded === normalizedInput) {
       return buffer;
     }
@@ -329,6 +329,7 @@ const decryptEncryptedVoteSelections = (params: {
     logger.warn('Failed to decrypt WhatsApp poll vote using stored metadata', {
       pollId: params.pollId,
       voterJid: params.voterJid,
+      errorCode: isWhatsAppCryptoError(error) ? error.code : null,
       error,
     });
     return null;

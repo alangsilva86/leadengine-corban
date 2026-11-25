@@ -57,6 +57,7 @@ O pipeline inbound foi consolidado: todo evento chega por `/api/integrations/wha
 - Reprocessamentos devem reutilizar o payload recebido originalmente, disparando novamente o serviço de ingestão para reconstruir tickets/mensagens quando necessário.
 - O armazenamento de sessões Baileys foi removido junto com o modo sidecar; apenas o broker HTTP permanece ativo.
 - O runtime sidecar foi aposentado; não há mais dependência de volumes persistentes específicos para sessões Baileys dentro da API.
+- A API também não depende mais do pacote `@whiskeysockets/baileys`: a decifragem de mídia (`mediaKey`/`directPath`) e de votos de enquete (`encPayload`/`encIv` + `messageSecret`) é feita por `apps/api/src/lib/whatsapp-crypto` (ver o README do módulo). Os payloads do broker continuam no formato Baileys.
 
 ### Baileys raw fallback
 

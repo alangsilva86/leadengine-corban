@@ -34,9 +34,16 @@ vi.mock('@ticketz/storage', () => ({
 vi.mock('../lib/prisma.js', () => {
   const instanceMock = {
     findUnique: vi.fn(),
+    findMany: vi.fn(),
     upsert: vi.fn(),
     findFirst: vi.fn(),
     update: vi.fn(),
+  };
+  const tenantMock = {
+    findFirst: vi.fn(),
+  };
+  const inboundWebhookJobMock = {
+    createMany: vi.fn(),
   };
   const campaignMock = {
     findMany: vi.fn(),
@@ -79,6 +86,8 @@ vi.mock('../lib/prisma.js', () => {
       leadActivity: leadActivityMock,
       ticket: ticketMock,
       processedIntegrationEvent: processedIntegrationEventMock,
+      tenant: tenantMock,
+      inboundWebhookJob: inboundWebhookJobMock,
     },
   };
 });
@@ -210,7 +219,18 @@ const createApp = () => {
   return app;
 };
 
+const mockFn = (fn: unknown) => fn as ReturnType<typeof vi.fn>;
+
+// Piloto Corban (adae3c03): o webhook resolve instância/tenant no banco (match único por id/brokerId,
+// tenant ativo e coerente com x-tenant-id) e apenas persiste um job; a ingestão roda no worker.
+const stubWebhookScope = (instance = { id: 'inst-1', tenantId: 'tenant-1', brokerId: 'inst-1' }) => {
+  mockFn(prisma.whatsAppInstance.findMany).mockResolvedValue([instance]);
+  mockFn(prisma.tenant.findFirst).mockResolvedValue({ id: instance.tenantId });
+  mockFn(prisma.inboundWebhookJob.createMany).mockResolvedValue({ count: 1 });
+};
+
 const stubInboundSuccessMocks = () => {
+  stubWebhookScope();
   const instance = {
     id: 'inst-1',
     tenantId: 'tenant-1',
@@ -288,6 +308,10 @@ describe('WhatsApp webhook (integration)', () => {
   beforeEach(() => {
     resetInboundLeadServiceTestState();
     (prisma.whatsAppInstance.findUnique as unknown as ReturnType<typeof vi.fn>).mockReset();
+    mockFn(prisma.whatsAppInstance.findMany).mockReset();
+    mockFn(prisma.whatsAppInstance.findMany).mockResolvedValue([]);
+    mockFn(prisma.tenant.findFirst).mockReset();
+    mockFn(prisma.inboundWebhookJob.createMany).mockReset();
     (prisma.whatsAppInstance.findFirst as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.whatsAppInstance.upsert as unknown as ReturnType<typeof vi.fn>).mockReset();
     (prisma.whatsAppInstance.update as unknown as ReturnType<typeof vi.fn>).mockReset();
@@ -385,10 +409,7 @@ describe('WhatsApp webhook (integration)', () => {
         .send({});
 
       expect(response.status).toBe(401);
-      expect(response.body).toMatchObject({
-        ok: false,
-        error: { code: 'MISSING_AUTHORIZATION' },
-      });
+      expect(response.text).toBe('');
     });
 
     it('rejects webhook with invalid API key value', async () => {
@@ -407,19 +428,30 @@ describe('WhatsApp webhook (integration)', () => {
       expect(response.text).toBe('');
     });
 
-    it('rejects webhook when tenant is missing', async () => {
+    it('rejects events whose instance cannot be resolved to a tenant', async () => {
       const app = createApp();
 
       const response = await request(app)
         .post('/api/integrations/whatsapp/webhook')
         .set('authorization', 'Bearer test-key')
-        .send({});
+        .send(buildCanonicalWebhookPayload({ instanceId: 'inst-unknown' }));
 
-      expect(response.status).toBe(400);
-      expect(response.body).toMatchObject({
-        ok: false,
-        error: { code: 'MISSING_TENANT' },
-      });
+      expect(response.status).toBe(403);
+      expect(prisma.inboundWebhookJob.createMany).not.toHaveBeenCalled();
+    });
+
+    it('rejects events whose x-tenant-id conflicts with the stored instance tenant', async () => {
+      stubWebhookScope();
+      const app = createApp();
+
+      const response = await request(app)
+        .post('/api/integrations/whatsapp/webhook')
+        .set('authorization', 'Bearer test-key')
+        .set('x-tenant-id', 'tenant-other')
+        .send(buildCanonicalWebhookPayload());
+
+      expect(response.status).toBe(403);
+      expect(prisma.inboundWebhookJob.createMany).not.toHaveBeenCalled();
     });
 
     it('resolves tenant from instance lookup when tenant headers are missing', async () => {
@@ -437,7 +469,9 @@ describe('WhatsApp webhook (integration)', () => {
             instanceId: 'inst-1',
             messages: [
               {
-                key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.instance' },
+                key: { remoteJid: '5511999999999@s.whatsapp.net', id: 'wamid.instance', fromMe: false },
+                messageTimestamp: 1_700_000_000,
+                message: { conversation: 'Olá' },
               },
             ],
           },
@@ -445,19 +479,24 @@ describe('WhatsApp webhook (integration)', () => {
 
       expect(response.status).toBe(204);
       expect(response.body).toEqual({});
+      expect(prisma.inboundWebhookJob.createMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: [expect.objectContaining({ tenantId: 'tenant-1', instanceId: 'inst-1' })],
+        })
+      );
     });
 
-    it('accepts webhook when API key and tenant are provided via headers', async () => {
+    it('acknowledges an authenticated webhook without events', async () => {
       const app = createApp();
 
       const response = await request(app)
         .post('/api/integrations/whatsapp/webhook')
         .set('authorization', 'Bearer test-key')
         .set('x-tenant-id', 'tenant-1')
-        .send({});
+        .send([]);
 
-      expect(response.status).toBe(204);
-      expect(response.body).toEqual({});
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ ok: true, received: 0, persisted: 0 });
     });
 
     it('returns 400 when webhook payload is not valid JSON', async () => {
@@ -496,7 +535,7 @@ describe('WhatsApp webhook (integration)', () => {
     expect(response.status).toBe(401);
   });
 
-  it('queues inbound message and creates allocation', async () => {
+  it('persists the inbound message as a job before acknowledging', async () => {
     stubInboundSuccessMocks();
 
     const app = createApp();
@@ -519,64 +558,36 @@ describe('WhatsApp webhook (integration)', () => {
 
     expect(response.status).toBe(204);
     expect(response.body).toEqual({});
-  });
-
-  it('provisions fallback campaign when no active campaign exists', async () => {
-    stubInboundSuccessMocks();
-
-    (prisma.campaign.findMany as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
-    (prisma.campaign.upsert as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      id: 'fallback-camp',
-      tenantId: 'tenant-1',
-      agreementId: 'whatsapp-instance-fallback:inst-1',
-      agreementName: 'WhatsApp • Inbound',
-      name: 'WhatsApp • Inbound',
-      whatsappInstanceId: 'inst-1',
-      status: 'active',
-    });
-
-    (addAllocations as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      newlyAllocated: [
+    expect(prisma.inboundWebhookJob.createMany).toHaveBeenCalledTimes(1);
+    const [jobArgs] = mockFn(prisma.inboundWebhookJob.createMany).mock.calls[0] ?? [];
+    expect(jobArgs).toMatchObject({
+      skipDuplicates: true,
+      data: [
         {
-          allocationId: 'alloc-fallback',
-          leadId: 'lead-fallback',
           tenantId: 'tenant-1',
-          campaignId: 'fallback-camp',
-          campaignName: 'WhatsApp • Inbound',
-          agreementId: 'whatsapp-instance-fallback:inst-1',
           instanceId: 'inst-1',
-          status: 'allocated',
-          receivedAt: new Date('2024-02-02T12:00:00.000Z').toISOString(),
-          updatedAt: new Date('2024-02-02T12:00:00.000Z').toISOString(),
-          fullName: 'Fallback Contact',
-          document: '98765432100',
-          registrations: [],
-          tags: [],
+          conversationId: '5511999998888@s.whatsapp.net',
+          eventKey: expect.any(String),
         },
       ],
-      summary: { total: 1, contacted: 0, won: 0, lost: 0 },
     });
+    // A ingestão (ticket, mensagem, alocação) acontece no worker, não na requisição do webhook.
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+    expect(addAllocations).not.toHaveBeenCalled();
+  });
 
-    const app = createApp();
+  it('answers 503 so the broker retries when the job cannot be persisted', async () => {
+    stubInboundSuccessMocks();
+    mockFn(prisma.inboundWebhookJob.createMany).mockRejectedValueOnce(new Error('database unavailable'));
 
-    const payload = buildCanonicalWebhookPayload({
-      instanceId: 'inst-1',
-      tenantId: 'tenant-1',
-      messageId: 'wamid.fallback',
-      conversation: 'Olá',
-      phone: '+5511999997777',
-      pushName: 'Fallback User',
-    });
-
-    const response = await request(app)
+    const response = await request(createApp())
       .post('/api/integrations/whatsapp/webhook')
       .set('authorization', 'Bearer test-key')
       .set('x-tenant-id', 'tenant-1')
-      .set('x-api-key', 'test-key')
-      .send(payload);
+      .send(buildCanonicalWebhookPayload({ messageId: 'wamid.retry' }));
 
-    expect(response.status).toBe(204);
-    expect(response.body).toEqual({});
+    expect(response.status).toBe(503);
+    expect(response.headers['retry-after']).toBe('5');
   });
 
   it('queues inbound message when Authorization bearer header is used', async () => {
@@ -628,32 +639,23 @@ describe('WhatsApp webhook (integration)', () => {
     expect(response.body).toEqual({});
   });
 
-  it('queues inbound message when API key is optional', async () => {
+  it('fails closed with 503 when the webhook API key is not configured', async () => {
     delete process.env.WHATSAPP_WEBHOOK_API_KEY;
     refreshWhatsAppEnv();
+    stubInboundSuccessMocks();
 
-    const app = createApp();
-
-    const payload = buildCanonicalWebhookPayload({
-      instanceId: 'inst-1',
-      tenantId: 'tenant-1',
-      messageId: 'wamid.123',
-      conversation: 'Olá',
-      phone: '+5511999998888',
-      pushName: 'Maria',
-    });
-
-    const response = await request(app)
+    const response = await request(createApp())
       .post('/api/integrations/whatsapp/webhook')
       .set('authorization', 'Bearer tenant-1:test-key')
       .set('x-tenant-id', 'tenant-1')
-      .send(payload);
+      .send(buildCanonicalWebhookPayload());
 
-    expect(response.status).toBe(204);
-    expect(response.body).toEqual({});
+    expect(response.status).toBe(503);
+    expect(prisma.inboundWebhookJob.createMany).not.toHaveBeenCalled();
   });
 
   it('applies WhatsApp message status updates via broker ACK', async () => {
+    stubWebhookScope({ id: 'inst-status', tenantId: 'tenant-status', brokerId: 'inst-status' });
     const app = createApp();
 
     findMessageByExternalIdMock.mockResolvedValue({

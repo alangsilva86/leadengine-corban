@@ -11,6 +11,7 @@ const {
   contactCreateMock,
   whatsAppInstanceFindUniqueMock,
   ticketFindUniqueMock,
+  messageFindFirstMock,
   userDeleteManyMock,
   userUpsertMock,
   restoreMvpBypassEnv,
@@ -28,6 +29,7 @@ const {
     contactCreateMock: vi.fn(),
     whatsAppInstanceFindUniqueMock: vi.fn(),
     ticketFindUniqueMock: vi.fn(),
+    messageFindFirstMock: vi.fn(),
     userDeleteManyMock: vi.fn(),
     userUpsertMock: vi.fn(),
     restoreMvpBypassEnv: () => {
@@ -74,16 +76,33 @@ vi.mock('../../lib/prisma', () => ({
       findFirst: (...args: unknown[]) => queueFindFirstMock(...args),
       upsert: (...args: unknown[]) => queueUpsertMock(...args),
     },
+    // Piloto Corban (adae3c03): contato e instância são lidos com findFirst escopado por tenant e o envio
+    // exige uma mensagem INBOUND na janela de atendimento de 24h (whatsapp-policy).
     contact: {
       findUnique: (...args: unknown[]) => contactFindUniqueMock(...args),
+      findFirst: async (args: { where: { id: string; tenantId?: string } }) => {
+        const contact = await contactFindUniqueMock({ where: { id: args.where.id } });
+        return contact && (!args.where.tenantId || contact.tenantId === args.where.tenantId) ? contact : null;
+      },
       update: (...args: unknown[]) => contactUpdateMock(...args),
       create: (...args: unknown[]) => contactCreateMock(...args),
     },
+    contactPhone: {
+      updateMany: async () => ({ count: 0 }),
+      upsert: async (args: { create: Record<string, unknown> }) => ({ id: 'contact-phone-1', ...args.create }),
+    },
     whatsAppInstance: {
       findUnique: (...args: unknown[]) => whatsAppInstanceFindUniqueMock(...args),
+      findFirst: async (args: { where: { id: string; tenantId?: string } }) => {
+        const instance = await whatsAppInstanceFindUniqueMock({ where: { id: args.where.id } });
+        return instance && (!args.where.tenantId || instance.tenantId === args.where.tenantId) ? instance : null;
+      },
     },
     ticket: {
       findUnique: (...args: unknown[]) => ticketFindUniqueMock(...args),
+    },
+    message: {
+      findFirst: (...args: unknown[]) => messageFindFirstMock(...args),
     },
     user: {
       deleteMany: (...args: unknown[]) => userDeleteManyMock(...args),
@@ -109,9 +128,8 @@ import { whatsappMessagesRouter } from '../integrations/whatsapp.messages';
 import { errorHandler } from '../../middleware/error-handler';
 import { registerSocketServer, type SocketServerAdapter } from '../../lib/socket-registry';
 import { resetMetrics, renderMetrics } from '../../lib/metrics';
-import { resetTicketStore, createTicket } from '@ticketz/storage';
+import { resetTicketStore, createTicket, listMessages } from '@ticketz/storage';
 import { resetRateLimit } from '../../utils/rate-limit';
-import { WhatsAppBrokerError } from '../../services/whatsapp-broker-client';
 import type { WhatsAppTransport } from '../../features/whatsapp-transport';
 import * as transportModule from '../../features/whatsapp-transport';
 import { resetCircuitBreaker } from '../../utils/circuit-breaker';
@@ -185,6 +203,38 @@ type MockContact = {
 
 const contacts = new Map<string, MockContact>();
 const tickets = new Map<string, Ticket>();
+
+const listPersistedMessages = async (ticketId: string) =>
+  (await listMessages('tenant-123', { ticketId }, { page: 1, limit: 50 })).items;
+
+// 7809605f: falhas 4xx do broker deixaram de virar 202/FAILED; a mensagem é persistida como FAILED (com o
+// erro canônico em metadata.broker.normalizedError). A rota de envio responde com o código normalizado que o web
+// entende (BROKER_TIMEOUT, INSTANCE_NOT_CONNECTED, …) e preserva o código cru do broker em details.brokerCode.
+const expectBrokerFailure = async (
+  response: { status: number; body: Record<string, any> },
+  ticketId: string,
+  expected: { status: number; brokerCode: string; requestId: string; canonicalCode: string }
+) => {
+  expect(response.status).toBe(expected.status);
+  expect(response.body).toMatchObject({
+    success: false,
+    error: {
+      code: expected.canonicalCode,
+      details: { brokerCode: expected.brokerCode, brokerStatus: expected.status, requestId: expected.requestId },
+    },
+  });
+
+  const [persisted] = await listPersistedMessages(ticketId);
+  expect(persisted).toMatchObject({
+    status: 'FAILED',
+    metadata: {
+      broker: {
+        error: { code: expected.canonicalCode, status: expected.status, requestId: expected.requestId },
+        normalizedError: expect.objectContaining({ code: expected.canonicalCode }),
+      },
+    },
+  });
+};
 
 afterAll(() => {
   restoreMvpBypassEnv();
@@ -265,10 +315,10 @@ describe('Outbound message routes', () => {
         return contacts.get(where.id) ?? null;
       }
 
-      if (where && 'tenantId_phone' in where) {
-        const { tenantId, phone } = where.tenantId_phone as { tenantId: string; phone: string };
+      if (where && 'tenantId_primaryPhone' in where) {
+        const { tenantId, primaryPhone } = where.tenantId_primaryPhone as { tenantId: string; primaryPhone: string };
         for (const contact of contacts.values()) {
-          if (contact.tenantId === tenantId && contact.phone === phone) {
+          if (contact.tenantId === tenantId && contact.primaryPhone === primaryPhone) {
             return contact;
           }
         }
@@ -330,6 +380,8 @@ describe('Outbound message routes', () => {
       updatedAt: new Date(),
     });
 
+    messageFindFirstMock.mockResolvedValue({ id: 'inbound-within-window' });
+
     socket = new MockSocketServer();
     registerSocketServer(socket as unknown as SocketServerAdapter);
 
@@ -390,6 +442,7 @@ describe('Outbound message routes', () => {
     contactCreateMock.mockReset();
     whatsAppInstanceFindUniqueMock.mockReset();
     ticketFindUniqueMock.mockReset();
+    messageFindFirstMock.mockReset();
     userDeleteManyMock.mockReset();
     userUpsertMock.mockReset();
   });
@@ -439,9 +492,14 @@ describe('Outbound message routes', () => {
     const [, payloadArg] = sendMessageMock.mock.calls[0] ?? [];
     expect(payloadArg).toMatchObject({
       content: 'Olá! Teste via ticket',
-      previewUrl: false,
     });
-    expect(payloadArg.metadata).toEqual({ idempotencyKey: 'test-ticket-send' });
+    // previewUrl só é repassado ao broker quando o cliente o informa (send-message.ts).
+    expect(payloadArg).not.toHaveProperty('previewUrl');
+    expect(payloadArg.metadata).toMatchObject({
+      idempotencyKey: 'test-ticket-send',
+      outboundIntentHash: expect.any(String),
+      whatsapp: { instanceId: 'instance-001' },
+    });
     expect(payloadArg.metadata).not.toHaveProperty('transport');
     expect(payloadArg.metadata).not.toHaveProperty('transportMode');
 
@@ -637,16 +695,11 @@ describe('Outbound message routes', () => {
         idempotencyKey: 'broker-fail-1',
       });
 
-    expect(response.status).toBe(202);
-    expect(response.body).toMatchObject({
-      queued: true,
-      status: 'FAILED',
-      error: {
-        message: expect.stringContaining('Tempo limite'),
-        code: 'BROKER_TIMEOUT',
-        status: 408,
-        requestId: 'req-123',
-      },
+    await expectBrokerFailure(response, ticket.id, {
+      status: 408,
+      brokerCode: 'REQUEST_TIMEOUT',
+      requestId: 'req-123',
+      canonicalCode: 'BROKER_TIMEOUT',
     });
   });
 
@@ -679,15 +732,11 @@ describe('Outbound message routes', () => {
         idempotencyKey: 'instance-down',
       });
 
-    expect(response.status).toBe(202);
-    expect(response.body).toMatchObject({
-      status: 'FAILED',
-      error: {
-        code: 'INSTANCE_NOT_CONNECTED',
-        message: expect.stringContaining('Instância de WhatsApp desconectada'),
-        status: 409,
-        requestId: 'req-409',
-      },
+    await expectBrokerFailure(response, ticket.id, {
+      status: 409,
+      brokerCode: 'SESSION_NOT_CONNECTED',
+      requestId: 'req-409',
+      canonicalCode: 'INSTANCE_NOT_CONNECTED',
     });
   });
 
@@ -720,15 +769,11 @@ describe('Outbound message routes', () => {
         idempotencyKey: 'invalid-dest',
       });
 
-    expect(response.status).toBe(202);
-    expect(response.body).toMatchObject({
-      status: 'FAILED',
-      error: {
-        code: 'INVALID_TO',
-        message: expect.stringContaining('Número de destino inválido'),
-        status: 400,
-        requestId: 'req-400',
-      },
+    await expectBrokerFailure(response, ticket.id, {
+      status: 400,
+      brokerCode: 'INVALID_RECIPIENT',
+      requestId: 'req-400',
+      canonicalCode: 'INVALID_TO',
     });
   });
 
@@ -761,14 +806,66 @@ describe('Outbound message routes', () => {
         idempotencyKey: 'timeout-429',
       });
 
-    expect(response.status).toBe(202);
+    await expectBrokerFailure(response, ticket.id, {
+      status: 429,
+      brokerCode: 'RATE_LIMIT_EXCEEDED',
+      requestId: 'req-429',
+      canonicalCode: 'RATE_LIMITED',
+    });
+  });
+
+  it('never forwards broker credential failures (401) as an operator 401', async () => {
+    const ticket = await createTicket({
+      tenantId: 'tenant-123',
+      contactId: 'contact-123',
+      queueId: 'queue-1',
+      channel: 'WHATSAPP',
+      metadata: { whatsappInstanceId: 'instance-001' },
+      priority: 'NORMAL',
+      tags: [],
+    });
+    tickets.set(ticket.id, ticket);
+
+    sendMessageMock.mockRejectedValueOnce(new WhatsAppBrokerError('Invalid API key', 'BROKER_AUTH', 401, 'req-401'));
+
+    const app = buildApp();
+    const response = await request(app)
+      .post(`/api/tickets/${ticket.id}/messages`)
+      .set('Idempotency-Key', 'broker-auth')
+      .send({
+        instanceId: 'instance-001',
+        payload: { type: 'text', text: 'Credencial do broker inválida' },
+        idempotencyKey: 'broker-auth',
+      });
+
+    expect(response.status).toBe(502);
     expect(response.body).toMatchObject({
-      status: 'FAILED',
+      error: { code: 'BROKER_ERROR', details: { brokerCode: 'BROKER_AUTH', brokerStatus: 401 } },
+    });
+  });
+
+  it('normalizes broker errors on the contact send route as well', async () => {
+    sendMessageMock.mockRejectedValueOnce(
+      new WhatsAppBrokerError('Session disconnected', 'SESSION_NOT_CONNECTED', 409, 'req-contact-409')
+    );
+
+    const app = buildApp();
+    const response = await request(app)
+      .post('/api/contacts/contact-123/messages')
+      .set('Idempotency-Key', 'contact-instance-down')
+      .send({
+        to: '+554499999999',
+        instanceId: 'instance-001',
+        payload: { type: 'text', text: 'Mensagem pelo contato' },
+        idempotencyKey: 'contact-instance-down',
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      success: false,
       error: {
-        code: 'RATE_LIMITED',
-        message: expect.stringContaining('Limite de envio'),
-        status: 429,
-        requestId: 'req-429',
+        code: 'INSTANCE_NOT_CONNECTED',
+        details: { brokerCode: 'SESSION_NOT_CONNECTED', brokerStatus: 409, requestId: 'req-contact-409' },
       },
     });
   });
@@ -922,16 +1019,10 @@ describe('Outbound message routes', () => {
         idempotencyKey: 'adhoc-fail',
       });
 
-    expect(response.status).toBe(202);
+    // 7809605f: o erro do broker é propagado (status do broker + código bruto), não mais 202/FAILED.
+    expect(response.status).toBe(400);
     expect(response.body).toMatchObject({
-      queued: true,
-      status: 'FAILED',
-      error: {
-        code: 'INVALID_TO',
-        message: expect.stringContaining('Número de destino inválido'),
-        status: 400,
-        requestId: 'adhoc-400',
-      },
+      error: { code: 'INVALID_DESTINATION', details: { requestId: 'adhoc-400' } },
     });
     expect(sendMessageMock).toHaveBeenCalledTimes(1);
   });
@@ -1053,8 +1144,9 @@ describe('Outbound message routes', () => {
           idempotencyKey: `circuit-${i}`,
         });
 
+      // adae3c03: 5xx após o disparo deixa o resultado incerto -> mensagem fica PENDING para conciliação.
       expect(attempt.status).toBe(202);
-      expect(attempt.body.status).toBe('FAILED');
+      expect(attempt.body.status).toBe('PENDING');
     }
 
     const blocked = await request(app)

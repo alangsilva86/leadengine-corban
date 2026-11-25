@@ -318,7 +318,12 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
     try {
       const { prisma } = await import('../lib/prisma.js');
 
-      const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId : 'demo-tenant';
+      // Sem tenant padrão: a rota de depuração exige o tenant explícito.
+      const tenantId = typeof req.query.tenantId === 'string' ? req.query.tenantId.trim() : '';
+      if (!tenantId) {
+        res.status(400).json({ ok: false, error: 'tenantId é obrigatório.' });
+        return;
+      }
       const scopeKey = typeof req.query.scopeKey === 'string' ? req.query.scopeKey : '__global__';
       const cacheKey = `ai-config:${tenantId}:${scopeKey}`;
 
@@ -382,7 +387,11 @@ export const registerRouters = (app: Application, { logger, nodeEnv, debugMessag
     async (req, res) => {
     try {
       const { prisma } = await import('../lib/prisma.js');
-      const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId : 'demo-tenant';
+      const tenantId = typeof req.body?.tenantId === 'string' ? req.body.tenantId.trim() : '';
+      if (!tenantId) {
+        res.status(400).json({ ok: false, error: 'tenantId é obrigatório.' });
+        return;
+      }
       const scopeKey = typeof req.body?.scopeKey === 'string' ? req.body.scopeKey : '__global__';
 
       const updated = await prisma.aiConfig.update({

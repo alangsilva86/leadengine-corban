@@ -1,28 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const getCampaignMetricsMock = vi.fn();
-const fetchLeadEngineCampaignsMock = vi.fn();
-const getUseRealDataFlagMock = vi.fn();
-
-const prismaCampaignMock = {
-  findMany: vi.fn(),
-  findFirst: vi.fn(),
-  findUnique: vi.fn(),
-  create: vi.fn(),
-  update: vi.fn(),
-};
-
-const prismaTenantMock = {
-  findFirst: vi.fn(),
-  create: vi.fn(),
-};
-
-const prismaInstanceMock = {
-  findUnique: vi.fn(),
-  findFirst: vi.fn(),
-  create: vi.fn(),
-  update: vi.fn(),
-};
+const {
+  getCampaignMetricsMock,
+  getUseRealDataFlagMock,
+  prismaCampaignMock,
+  prismaTenantMock,
+  prismaInstanceMock,
+} = vi.hoisted(() => ({
+  getCampaignMetricsMock: vi.fn(),
+  getUseRealDataFlagMock: vi.fn(),
+  prismaCampaignMock: {
+    findMany: vi.fn(),
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
+  prismaTenantMock: {
+    findFirst: vi.fn(),
+    create: vi.fn(),
+  },
+  prismaInstanceMock: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
+}));
 
 vi.mock('../../config/logger', () => ({
   logger: {
@@ -44,16 +48,11 @@ vi.mock('@ticketz/storage', () => ({
   getCampaignMetrics: getCampaignMetricsMock,
 }));
 
-vi.mock('../campaigns-upstream', () => ({
-  fetchLeadEngineCampaigns: fetchLeadEngineCampaignsMock,
-}));
-
 vi.mock('../../config/feature-flags', () => ({
   getUseRealDataFlag: getUseRealDataFlagMock,
 }));
 
 import { createCampaign, listCampaigns } from '../campaigns-service';
-import type { CampaignDTO } from '../../routes/campaigns.types';
 
 describe('campaigns service', () => {
   beforeEach(() => {
@@ -62,7 +61,6 @@ describe('campaigns service', () => {
     Object.values(prismaTenantMock).forEach((fn) => fn.mockReset());
     Object.values(prismaInstanceMock).forEach((fn) => fn.mockReset());
     getCampaignMetricsMock.mockReset();
-    fetchLeadEngineCampaignsMock.mockReset();
     getUseRealDataFlagMock.mockReturnValue(false);
   });
 
@@ -108,38 +106,46 @@ describe('campaigns service', () => {
       metrics: expect.objectContaining({
         budget: 100,
         total: 10,
-        cpl: 10,
+        // Piloto Corban (adae3c03): CPL deixou de ser estimado como budget/total e fica nulo até haver custo real.
+        cpl: null,
       }),
     });
     expect(result.meta).toEqual({ source: 'store', upstreamFallback: false });
   });
 
-  it('returns synthetic campaign when safe mode is enabled', async () => {
+  it('refuses to create campaigns while safe mode is enabled', async () => {
     const previousEnv = process.env.SAFE_MODE;
     process.env.SAFE_MODE = 'true';
 
-    const result = await createCampaign({
-      requestedTenantId: 'tenant-1',
-      agreementId: 'agr-1',
-      agreementName: 'Agreement 1',
-      instanceId: 'inst-1',
-      brokerId: null,
-      name: 'Campaign',
-      channel: 'whatsapp',
-      schedule: { type: 'immediate' },
-      audienceCount: 0,
-      productType: 'generic',
-      marginType: 'percentage',
-      marginValue: null,
-      strategy: null,
-      tags: ['generic'],
-      metadata: {},
-      actorId: 'user-1',
-    });
-
-    expect(result.meta).toEqual({ safeMode: true });
-    expect((result.data as CampaignDTO).status).toBe('scheduled');
-
-    process.env.SAFE_MODE = previousEnv;
+    try {
+      await expect(
+        createCampaign({
+          requestedTenantId: 'tenant-1',
+          agreementId: 'agr-1',
+          agreementName: 'Agreement 1',
+          instanceId: 'inst-1',
+          brokerId: null,
+          name: 'Campaign',
+          channel: 'whatsapp',
+          schedule: { type: 'immediate' },
+          audienceCount: 0,
+          productType: 'generic',
+          marginType: 'percentage',
+          marginValue: null,
+          strategy: null,
+          tags: ['generic'],
+          metadata: {},
+          actorId: 'user-1',
+        })
+      ).rejects.toMatchObject({ code: 'SAFE_MODE', status: 503 });
+      expect(prismaCampaignMock.create).not.toHaveBeenCalled();
+      expect(prismaInstanceMock.findFirst).not.toHaveBeenCalled();
+    } finally {
+      if (previousEnv === undefined) {
+        delete process.env.SAFE_MODE;
+      } else {
+        process.env.SAFE_MODE = previousEnv;
+      }
+    }
   });
 });

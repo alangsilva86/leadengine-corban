@@ -179,8 +179,3 @@ export const refreshFeatureFlags = (overrides?: Partial<FeatureFlags>): FeatureF
   cachedFlags = next;
   return cachedFlags;
 };
-
-export const getMvpBypassTenantId = (): string | undefined => {
-  const tenant = process.env.AUTH_MVP_TENANT_ID?.trim();
-  return tenant && tenant.length > 0 ? tenant : undefined;
-};

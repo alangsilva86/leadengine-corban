@@ -40,8 +40,6 @@ declare global {
 // Utilities
 // =============================================================================
 
-export const AUTH_MVP_BYPASS_TENANT_ID = process.env.AUTH_MVP_TENANT_ID || 'demo-tenant';
-
 export function getPermissionsByRole(role: UserRole): string[] {
   const permissions: Record<UserRole, string[]> = {
     ADMIN: [

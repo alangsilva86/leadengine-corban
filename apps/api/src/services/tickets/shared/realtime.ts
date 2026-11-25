@@ -30,6 +30,11 @@ export type TicketRealtimeEnvelope = {
   ticket: Ticket;
 };
 
+/**
+ * Emite para o tenant, o ticket, a campanha e o usuário. As quatro chamadas saem no mesmo
+ * tick com o mesmo payload, e o `socket-registry` as agrupa num único broadcast para a união
+ * das salas — quem está em mais de uma sala recebe o evento uma vez só.
+ */
 const emitTicketEvent = (
   tenantId: string,
   ticketId: string,

@@ -105,7 +105,7 @@ export const toRawPreview = (value: unknown, maxLength = DEFAULT_RAW_PREVIEW_MAX
     return json.length > maxLength ? json.slice(0, maxLength) : json;
   } catch (error) {
     const fallback = String(value);
-    logger.debug('Failed to serialize raw Baileys payload; using fallback string', { error });
+    logger.debug('Failed to serialize raw broker payload; using fallback string', { error });
     return fallback.length > maxLength ? fallback.slice(0, maxLength) : fallback;
   }
 };

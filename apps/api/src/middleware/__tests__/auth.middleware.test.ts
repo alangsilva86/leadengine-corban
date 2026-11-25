@@ -10,9 +10,10 @@ const loggerMock = {
   debug: vi.fn(),
 };
 
+// Piloto Corban (adae3c03): o access token carrega `sid` e o middleware valida a sessão ativa no banco.
 const prismaMock = {
-  user: {
-    findUnique: vi.fn(),
+  authSession: {
+    findFirst: vi.fn(),
   },
 };
 
@@ -29,7 +30,7 @@ describe('auth middleware (JWT)', () => {
 
   beforeEach(() => {
     vi.resetModules();
-    prismaMock.user.findUnique.mockReset();
+    prismaMock.authSession.findFirst.mockReset();
     loggerMock.error.mockReset();
     process.env.JWT_SECRET = 'test-secret';
   });
@@ -45,41 +46,43 @@ describe('auth middleware (JWT)', () => {
 
   const loadAuthModule = async () => import('../auth');
 
-  it('attaches a user when the token is valid', async () => {
-    const { authMiddleware } = await loadAuthModule();
+  const signAccessToken = (claims: Record<string, unknown>) =>
+    jwt.sign({ type: 'access', ...claims }, 'test-secret', { expiresIn: '15m' });
 
-    prismaMock.user.findUnique.mockResolvedValue({
-      id: 'user-1',
-      tenantId: 'tenant-1',
-      email: 'user@example.com',
-      name: 'Test User',
-      role: 'ADMIN',
-      isActive: true,
-      tenant: {
-        id: 'tenant-1',
-        name: 'Tenant 1',
-        slug: 'tenant-1',
-        isActive: true,
-        settings: {},
-      },
-    });
-
-    const token = jwt.sign(
-      {
-        sub: 'user-1',
-        tenantId: 'tenant-1',
-        type: 'access',
-      },
-      'test-secret',
-      { expiresIn: '15m' }
-    );
-
+  const buildApp = (authMiddleware: express.RequestHandler) => {
     const app = express();
     app.get('/protected', authMiddleware, (req, res) => {
       res.status(200).json({ ok: true, user: req.user });
     });
+    return app;
+  };
 
-    const response = await request(app)
+  it('attaches a user when the token is valid and the session is active', async () => {
+    const { authMiddleware } = await loadAuthModule();
+
+    prismaMock.authSession.findFirst.mockResolvedValue({
+      id: 'session-1',
+      userId: 'user-1',
+      user: {
+        id: 'user-1',
+        tenantId: 'tenant-1',
+        email: 'user@example.com',
+        name: 'Test User',
+        role: 'ADMIN',
+        isActive: true,
+        tenant: {
+          id: 'tenant-1',
+          name: 'Tenant 1',
+          slug: 'tenant-1',
+          isActive: true,
+          settings: {},
+        },
+      },
+    });
+
+    const token = signAccessToken({ sub: 'user-1', tenantId: 'tenant-1', sid: 'session-1' });
+
+    const response = await request(buildApp(authMiddleware))
       .get('/protected')
       .set('Authorization', `Bearer ${token}`);
 
@@ -88,8 +91,65 @@ describe('auth middleware (JWT)', () => {
       id: 'user-1',
       tenantId: 'tenant-1',
       role: 'ADMIN',
+      tenant: { id: 'tenant-1', slug: 'tenant-1' },
     });
-    expect(prismaMock.user.findUnique).toHaveBeenCalledTimes(1);
+    expect(response.body.user.permissions).toContain('users:write');
+    expect(prismaMock.authSession.findFirst).toHaveBeenCalledTimes(1);
+    expect(prismaMock.authSession.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'session-1',
+          userId: 'user-1',
+          user: { tenantId: 'tenant-1', isActive: true, tenant: { isActive: true } },
+        }),
+      })
+    );
+  });
+
+  it('rejects tokens whose session was revoked or expired', async () => {
+    const { authMiddleware } = await loadAuthModule();
+    prismaMock.authSession.findFirst.mockResolvedValue(null);
+
+    const token = signAccessToken({ sub: 'user-1', tenantId: 'tenant-1', sid: 'revoked-session' });
+
+    const response = await request(buildApp(authMiddleware))
+      .get('/protected')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ success: false, error: { code: 'UNAUTHORIZED' } });
+  });
+
+  it('rejects access tokens without a session id', async () => {
+    const { authMiddleware } = await loadAuthModule();
+
+    const token = signAccessToken({ sub: 'user-1', tenantId: 'tenant-1' });
+
+    const response = await request(buildApp(authMiddleware))
+      .get('/protected')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ success: false, error: { code: 'TOKEN_INVALID' } });
+    expect(prismaMock.authSession.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects refresh tokens used as access tokens', async () => {
+    const { authMiddleware } = await loadAuthModule();
+
+    const token = jwt.sign(
+      { type: 'refresh', sub: 'user-1', tenantId: 'tenant-1', sid: 'session-1' },
+      'test-secret',
+      { expiresIn: '15m' }
+    );
+
+    const response = await request(buildApp(authMiddleware))
+      .get('/protected')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body).toMatchObject({ success: false, error: { code: 'TOKEN_INVALID' } });
+    expect(prismaMock.authSession.findFirst).not.toHaveBeenCalled();
   });
 
   it('rejects requests without a token', async () => {
@@ -104,7 +164,7 @@ describe('auth middleware (JWT)', () => {
 
     expect(response.status).toBe(401);
     expect(response.body).toMatchObject({ success: false });
-    expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.authSession.findFirst).not.toHaveBeenCalled();
   });
 
   it('requireTenant enforces authenticated tenants', async () => {

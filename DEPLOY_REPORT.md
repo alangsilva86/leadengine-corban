@@ -99,7 +99,7 @@ O provisionamento de um tenant deve seguir o mesmo rigor do deploy geral, mas co
 ### Integrações
 - **Lead Engine API**: Integração com endpoints reais
 - **Lead Engine Credit API**: Múltiplos convênios suportados
-- **WhatsApp Baileys**: Preparado para integração
+- **WhatsApp**: via broker HTTP externo (baseado em Baileys); a API não depende do pacote Baileys
 
 ## 🔧 Configurações de Produção
 

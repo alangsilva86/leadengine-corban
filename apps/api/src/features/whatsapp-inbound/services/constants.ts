@@ -8,11 +8,3 @@ export const DEFAULT_QUEUE_FALLBACK_DESCRIPTION =
 
 export const DEFAULT_CAMPAIGN_FALLBACK_NAME = 'WhatsApp • Inbound';
 export const DEFAULT_CAMPAIGN_FALLBACK_AGREEMENT_PREFIX = 'whatsapp-instance-fallback';
-
-export const DEFAULT_TENANT_ID = (() => {
-  const envValue = process.env.AUTH_MVP_TENANT_ID;
-  if (typeof envValue === 'string' && envValue.trim().length > 0) {
-    return envValue.trim();
-  }
-  return 'demo-tenant';
-})();

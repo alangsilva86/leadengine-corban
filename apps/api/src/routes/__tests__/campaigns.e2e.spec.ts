@@ -7,7 +7,6 @@ import type { AuthenticatedUser } from '../../middleware/auth';
 
 const campaignFindMany = vi.fn();
 const getCampaignMetricsMock = vi.fn();
-const fetchLeadEngineCampaignsMock = vi.fn();
 
 const featureFlagsState = {
   useRealData: false,
@@ -20,13 +19,17 @@ const originalMvpTenantId = process.env.AUTH_MVP_TENANT_ID;
 
 let requireTenantBehavior: RequestHandler = (_req, _res, next) => next();
 
-vi.mock('../../lib/prisma', () => ({
-  prisma: {
-    campaign: {
-      findMany: campaignFindMany,
+vi.mock('../../lib/prisma', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/prisma')>();
+  return {
+    ...actual,
+    prisma: {
+      campaign: {
+        findMany: campaignFindMany,
+      },
     },
-  },
-}));
+  };
+});
 
 vi.mock('../../config/logger', () => ({
   logger: {
@@ -44,7 +47,6 @@ vi.mock('../../config/feature-flags', () => ({
   isWhatsappRawFallbackEnabled: () => featureFlagsState.whatsappRawFallbackEnabled,
   isWhatsappDebugFeatureEnabled: () => featureFlagsState.whatsappDebug,
   refreshFeatureFlags: vi.fn(),
-  getMvpBypassTenantId: () => process.env.AUTH_MVP_TENANT_ID ?? undefined,
 }));
 
 vi.mock('../../middleware/auth', async () => {
@@ -58,13 +60,13 @@ vi.mock('../../middleware/auth', async () => {
   };
 });
 
-vi.mock('@ticketz/storage', () => ({
-  getCampaignMetrics: (...args: unknown[]) => getCampaignMetricsMock(...args),
-}));
-
-vi.mock('../../services/campaigns-upstream', () => ({
-  fetchLeadEngineCampaigns: (...args: unknown[]) => fetchLeadEngineCampaignsMock(...args),
-}));
+vi.mock('@ticketz/storage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@ticketz/storage')>();
+  return {
+    ...actual,
+    getCampaignMetrics: (...args: unknown[]) => getCampaignMetricsMock(...args),
+  };
+});
 
 let campaignsRouter: express.Router;
 let errorHandler: RequestHandler;
@@ -102,7 +104,6 @@ describe('GET /api/campaigns', () => {
     featureFlagsState.useRealData = false;
     featureFlagsState.mvpAuthBypass = false;
     featureFlagsState.whatsappDebug = false;
-    fetchLeadEngineCampaignsMock.mockReset();
 
     getCampaignMetricsMock.mockResolvedValue({
       total: 10,
@@ -170,7 +171,8 @@ describe('GET /api/campaigns', () => {
             averageResponseSeconds: 120,
             budget: 1000,
             cplTarget: 150,
-            cpl: 100,
+            // Piloto Corban (adae3c03): CPL não é mais estimado como budget/total.
+            cpl: null,
           },
         },
       ],
@@ -189,11 +191,14 @@ describe('GET /api/campaigns', () => {
 
   it('returns 403 when tenant context is missing', async () => {
     featureFlagsState.useRealData = false;
-    requireTenantBehavior = (_req, _res, next) => {
-      const requestWithUser = _req as express.Request & { user?: AuthenticatedUser };
+    const { requireTenant: realRequireTenant } = await vi.importActual<
+      typeof import('../../middleware/auth')
+    >('../../middleware/auth');
+    requireTenantBehavior = (req, res, next) => {
+      const requestWithUser = req as express.Request & { user?: AuthenticatedUser };
       requestWithUser.user = buildAuthenticatedUser('');
       requestWithUser.user.tenantId = '';
-      next();
+      return realRequireTenant(req, res, next);
     };
 
     const app = buildApp();
@@ -272,45 +277,26 @@ describe('GET /api/campaigns', () => {
     });
   });
 
-  it('returns empty items when the upstream responds 404 with USE_REAL_DATA enabled', async () => {
+  it('lists campaigns from the tenant store even when USE_REAL_DATA is enabled', async () => {
+    // Piloto Corban (adae3c03) removeu a sincronização com o upstream do Lead Engine:
+    // a listagem é sempre servida pelo storage isolado por tenant.
     featureFlagsState.useRealData = true;
-    fetchLeadEngineCampaignsMock.mockRejectedValueOnce({ status: 404 });
-
-    const app = buildApp();
-    const response = await request(app)
-      .get('/api/campaigns')
-      .query({ agreementId: 'missing' });
-
-    expect(fetchLeadEngineCampaignsMock).toHaveBeenCalled();
-    expect(campaignFindMany).not.toHaveBeenCalled();
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      success: true,
-      items: [],
-      requestId: expect.any(String),
-    });
-  });
-
-  it('falls back to Prisma when the upstream fails with 5xx and USE_REAL_DATA enabled', async () => {
-    featureFlagsState.useRealData = true;
-    fetchLeadEngineCampaignsMock.mockRejectedValueOnce({ status: 503, message: 'upstream down' });
-
     campaignFindMany.mockResolvedValueOnce([]);
 
     const app = buildApp();
-    const response = await request(app).get('/api/campaigns');
+    const response = await request(app).get('/api/campaigns').query({ agreementId: 'agreement-xyz' });
 
-    expect(fetchLeadEngineCampaignsMock).toHaveBeenCalled();
-    expect(campaignFindMany).toHaveBeenCalled();
     expect(response.status).toBe(200);
+    expect(campaignFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: 'tenant-42', agreementId: 'agreement-xyz' }),
+      })
+    );
     expect(response.body).toMatchObject({
       success: true,
       requestId: expect.any(String),
       items: [],
-      meta: {
-        source: 'store-fallback',
-        upstreamFallback: true,
-      },
+      meta: { source: 'store', upstreamFallback: false },
     });
   });
 });

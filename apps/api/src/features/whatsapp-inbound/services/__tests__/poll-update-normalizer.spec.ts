@@ -1,11 +1,24 @@
+import { Buffer } from 'node:buffer';
+import { createHash, randomBytes } from 'node:crypto';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  encodePollVoteMessage,
+  encryptPollVoteForTest,
+} from '../../../../lib/whatsapp-crypto/__tests__/test-utils';
+import { getPollMetadata } from '../poll-metadata-service';
 import {
   normalizePollUpdate,
   resolveMessageType,
   buildPollVoteText,
 } from '../poll-update-normalizer';
 import type { InboundWhatsAppEnvelope } from '../types';
+
+// normalizePollUpdate consulta metadados persistidos da enquete; aqui não há enquete salva.
+vi.mock('../poll-metadata-service', () => ({
+  getPollMetadata: vi.fn(async () => null),
+}));
 
 describe('poll-update-normalizer', () => {
   beforeEach(() => {
@@ -38,7 +51,7 @@ describe('poll-update-normalizer', () => {
     expect(resolveMessageType(segments)).toBe('poll_update');
   });
 
-  it('normalizes poll votes without original text when option label is available', () => {
+  it('normalizes poll votes without original text when option label is available', async () => {
     const envelope = buildEnvelope();
     const segments = {
       payload: { timestamp: '2024-05-10T12:00:05.000Z' },
@@ -66,7 +79,7 @@ describe('poll-update-normalizer', () => {
       instanceId: 'instance-1',
     } satisfies Record<string, unknown>;
 
-    const result = normalizePollUpdate({
+    const result = await normalizePollUpdate({
       envelope,
       segments,
       baseMetadata,
@@ -98,7 +111,7 @@ describe('poll-update-normalizer', () => {
     expect(vote.timestamp).toBe('2024-05-10T12:00:05.000Z');
   });
 
-  it('builds human-friendly text when vote has question but no option label', () => {
+  it('builds human-friendly text when vote has question but no option label', async () => {
     const envelope = buildEnvelope();
     const segments = {
       payload: {},
@@ -111,7 +124,7 @@ describe('poll-update-normalizer', () => {
 
     const baseMetadata = { tenantId: 'tenant-1' } satisfies Record<string, unknown>;
 
-    const result = normalizePollUpdate({
+    const result = await normalizePollUpdate({
       envelope,
       segments,
       baseMetadata,
@@ -133,7 +146,58 @@ describe('poll-update-normalizer', () => {
     expect(poll.selectedOptionIds).toBeUndefined();
   });
 
-  it('marks messages as placeholder when vote lacks question and choice text', () => {
+  it('decrypts the encrypted vote with the stored poll metadata (real AES-GCM payload)', async () => {
+    const pollEncKey = randomBytes(32);
+    const voterJid = '5511888888888@s.whatsapp.net';
+    const optionHash = (name: string) => createHash('sha256').update(name).digest();
+    const azulId = optionHash('Azul').toString('base64url');
+    const encIv = randomBytes(12);
+    const encPayload = encryptPollVoteForTest({
+      pollMsgId: 'poll-crypto',
+      pollCreatorJid: '5511999999999@s.whatsapp.net',
+      voterJid,
+      pollEncKey,
+      encIv,
+      plaintext: encodePollVoteMessage([optionHash('Azul')]),
+    });
+    vi.mocked(getPollMetadata).mockResolvedValueOnce({
+      pollId: 'poll-crypto',
+      question: 'Qual sua cor favorita?',
+      options: [
+        { id: optionHash('Verde').toString('base64url'), title: 'Verde', index: 0 },
+        { id: azulId, title: 'Azul', index: 1 },
+      ],
+      creationMessageId: 'poll-crypto',
+      creationMessageKey: { remoteJid: '5511999999999@s.whatsapp.net' },
+      messageSecret: pollEncKey.toString('base64'),
+    });
+
+    const result = await normalizePollUpdate({
+      envelope: buildEnvelope(),
+      segments: {
+        payload: {},
+        message: {
+          type: 'poll_update',
+          pollUpdateMessage: {
+            vote: { encPayload: encPayload.toString('base64'), encIv: encIv.toString('base64') },
+          },
+        },
+        metadata: { poll: { id: 'poll-crypto' } },
+      },
+      baseMetadata: { tenantId: 'tenant-1' },
+      chatId: voterJid,
+      externalId: 'wamid-crypto',
+    });
+
+    expect(result).toMatchObject({ isPollUpdate: true, placeholder: false });
+    const metadata = (result as Extract<typeof result, { placeholder: false }>).metadata as Record<string, any>;
+    expect(metadata.poll.selectedOptionIds).toEqual([azulId]);
+    expect(metadata.poll.selectedOptions).toEqual([{ id: azulId, title: 'Azul', text: 'Azul' }]);
+    expect(metadata.pollChoice.vote.optionIds).toEqual([azulId]);
+    expect(Buffer.from(azulId, 'base64url').length).toBe(32);
+  });
+
+  it('marks messages as placeholder when vote lacks question and choice text', async () => {
     const envelope = buildEnvelope();
     const segments = {
       payload: {},
@@ -149,7 +213,7 @@ describe('poll-update-normalizer', () => {
       poll: { id: 'poll-legacy' },
     } satisfies Record<string, unknown>;
 
-    const result = normalizePollUpdate({
+    const result = await normalizePollUpdate({
       envelope,
       segments,
       baseMetadata,

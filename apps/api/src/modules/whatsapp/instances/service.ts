@@ -1675,6 +1675,7 @@ export const collectInstancesForTenant = async (
               (error instanceof Error ? error.name : null);
             metrics.recordRefreshOutcome(tenantId, 'failure', errorCode);
             if (error instanceof WhatsAppBrokerNotConfiguredError) {
+              // Refresh explícito sem broker configurado é erro de configuração (503 WHATSAPP_NOT_CONFIGURED).
               if (options.refresh) {
                 throw error;
               }
@@ -1685,7 +1686,22 @@ export const collectInstancesForTenant = async (
               snapshots = [];
               return;
             }
-            throw error;
+
+            // fc86a3a6 (perdido no merge 1e14b9d5): falha do broker no sync não derruba a listagem — segue com
+            // os dados de storage/cache e sinaliza `refreshFailure`/`refreshFailed` para o cliente.
+            const failure = describeRefreshFailure(error);
+            refreshFailure = failure;
+            warnings.push('Refresh falhou; exibindo dados atuais de storage/cache.');
+            logger.warn('whatsapp.instances.collect.refreshFailure', {
+              tenantId,
+              attempt,
+              cause: failure.cause,
+              status: failure.status,
+              code: failure.code,
+              error: describeErrorForLog(error),
+              ...(requestId ? { requestId } : {}),
+            });
+            return;
           }
         }
       });
@@ -1747,22 +1763,17 @@ export const collectInstancesForTenant = async (
           refreshFailure = failure;
           warnings.push('Refresh falhou; exibindo dados atuais de storage/cache.');
 
+          // Só o broker não configurado chega aqui (os demais erros são relançados acima). Segue com os dados de
+          // storage/cache: este bloco não pode referenciar `attempt` (fora do laço de sync) nem dar `return`, que
+          // faria collectInstancesForTenant devolver undefined.
           logger.warn('whatsapp.instances.collect.refreshFailure', {
             tenantId,
-            attempt,
             cause: failure.cause,
             status: failure.status,
             code: failure.code,
             error: describeErrorForLog(error),
           });
-
-          if (error instanceof WhatsAppBrokerNotConfiguredError) {
-            logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
-            snapshots = snapshots ?? [];
-            return;
-          }
-
-          return;
+          logger.info('whatsapp.instances.sync.brokerNotConfigured', { tenantId });
         }
       }
     } else if (!snapshots) {

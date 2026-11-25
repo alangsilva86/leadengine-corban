@@ -7,7 +7,6 @@ import { assertTenantConsistency, ensureTenantFromUser, normalizeTenantId } from
 import { prisma } from '../lib/prisma';
 import { toSlug } from '../lib/slug';
 import { logger } from '../config/logger';
-import { getMvpBypassTenantId } from '../config/feature-flags';
 
 export type TenantLogContext = Record<string, unknown>;
 
@@ -154,21 +153,10 @@ export interface TenantResolutionHookContext {
 
 export type TenantResolutionHook = (context: TenantResolutionHookContext) => string | null | undefined;
 
+// Não há hook padrão: o antigo `legacyMvpBypassTenantHook` resolvia requisições sem tenant para `demo-tenant`
+// (ou AUTH_MVP_TENANT_ID) — risco latente de gravar/ler dados no tenant errado. Sem tenant no usuário (e sem hook
+// registrado explicitamente), `resolveRequestTenantId` lança TenantAccessError (403).
 const tenantResolutionHooks: TenantResolutionHook[] = [];
-
-const legacyMvpBypassTenantHook: TenantResolutionHook = ({ userTenantId }) => {
-  if (userTenantId) {
-    return null;
-  }
-
-  return getMvpBypassTenantId() ?? 'demo-tenant';
-};
-
-const registerDefaultTenantHooks = () => {
-  tenantResolutionHooks.push(legacyMvpBypassTenantHook);
-};
-
-registerDefaultTenantHooks();
 
 export const registerTenantResolutionHook = (hook: TenantResolutionHook): (() => void) => {
   tenantResolutionHooks.push(hook);
@@ -182,7 +170,6 @@ export const registerTenantResolutionHook = (hook: TenantResolutionHook): (() =>
 
 export const resetTenantResolutionHooks = (): void => {
   tenantResolutionHooks.splice(0, tenantResolutionHooks.length);
-  registerDefaultTenantHooks();
 };
 
 const resolveTenantFromHooks = (context: TenantResolutionHookContext): string | null => {

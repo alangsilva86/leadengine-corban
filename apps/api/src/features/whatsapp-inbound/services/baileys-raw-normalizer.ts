@@ -67,7 +67,7 @@ const parseRecord = (value: unknown): UnknownRecord | null => {
       const parsed = JSON.parse(value);
       return asRecord(parsed);
     } catch (error) {
-      logger.debug('Failed to parse raw Baileys envelope segment', {
+      logger.debug('Failed to parse raw broker envelope segment', {
         snippet: value.slice?.(0, 120),
         error,
       });

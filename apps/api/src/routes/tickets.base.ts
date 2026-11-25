@@ -27,6 +27,7 @@ import {
   isUuidOrCuid,
   paginationValidation,
   validateTicketId,
+  validateEntityId,
 } from './tickets.shared';
 import {
   parseBooleanParam,
@@ -133,8 +134,9 @@ const updateTicketValidation = [
   body('status').optional().isIn(['OPEN', 'PENDING', 'ASSIGNED', 'RESOLVED', 'CLOSED']),
   body('priority').optional().isIn(['LOW', 'NORMAL', 'HIGH', 'URGENT']),
   body('subject').optional().isString().isLength({ max: 200 }),
-  body('userId').optional().isUUID(),
-  body('queueId').optional().isUUID(),
+  // IDs do banco são cuid (ex.: "cmww9e6us0003etluifrrvq2v"); isUUID recusava todos com 400.
+  body('userId').optional().custom(validateEntityId('userId')),
+  body('queueId').optional().custom(validateEntityId('queueId')),
   stageValidation(),
   body('tags').optional().isArray(),
   body('metadata').optional().isObject(),
@@ -364,7 +366,7 @@ router.post(
 router.post(
   '/:id/assign',
   param('id').custom(validateTicketId),
-  body('userId').isUUID(),
+  body('userId').custom(validateEntityId('userId')),
   validateRequest,
   requireTenant,
   asyncHandler(async (req: Request, res: Response) => {

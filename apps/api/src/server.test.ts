@@ -83,7 +83,8 @@ describe('root availability handlers', () => {
     }
   });
 
-  it('exposes HTTP transport mode via the health endpoint', async () => {
+  it('exposes broker observability via the health endpoint', async () => {
+    // 3e5a59e0 removeu WHATSAPP_MODE/transportMode: o transporte HTTP é fixo e o health expõe o broker.
     const { server, url } = await startServer();
 
     try {
@@ -91,13 +92,15 @@ describe('root availability handlers', () => {
       expect(response.status).toBe(200);
 
       const payload = await response.json();
-      expect(payload.whatsapp.mode).toBe('http');
-      expect(payload.whatsapp.transportMode).toBe('http');
-      expect(payload.whatsapp.runtime).toMatchObject({
-        mode: 'http',
-        transport: 'http',
-        disabled: false,
+      expect(payload.status).toBe('ok');
+      expect(payload.whatsapp).not.toHaveProperty('transportMode');
+      expect(payload.whatsapp.broker).toMatchObject({
+        webhookUrl: expect.any(String),
+        timeoutMs: expect.any(Number),
+        degraded: expect.any(Boolean),
+        circuitBreaker: expect.any(Object),
       });
+      expect(payload.readiness).toBeDefined();
     } finally {
       await stopServer(server);
     }
@@ -109,7 +112,8 @@ describe('CORS configuration', () => {
     const { server, url } = await startServer();
 
     try {
-      const origin = 'https://leadengine-corban.up.railway.app/';
+      // 6f3dcc26: fora de produção as origens padrão são as do Vite (localhost:5173/4173).
+      const origin = 'http://localhost:5173/';
       const response = await fetch(`${url}/`, {
         method: 'GET',
         headers: {
@@ -119,6 +123,21 @@ describe('CORS configuration', () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get('access-control-allow-origin')).toBe(origin);
+    } finally {
+      await stopServer(server);
+    }
+  });
+
+  it('rejects origins outside the allowlist', async () => {
+    const { server, url } = await startServer();
+
+    try {
+      const response = await fetch(`${url}/`, {
+        method: 'GET',
+        headers: { Origin: 'https://evil.example.com' },
+      });
+
+      expect(response.headers.get('access-control-allow-origin')).toBeNull();
     } finally {
       await stopServer(server);
     }

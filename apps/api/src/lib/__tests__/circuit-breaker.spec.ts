@@ -2,16 +2,16 @@
  * Testes para CircuitBreaker
  */
 
-import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { CircuitBreaker, CircuitState, CircuitBreakerError, createCircuitBreaker } from '../circuit-breaker';
 
 describe('CircuitBreaker', () => {
-  let successFn: jest.Mock<() => Promise<string>>;
-  let failureFn: jest.Mock<() => Promise<never>>;
+  let successFn: Mock<[], Promise<string>>;
+  let failureFn: Mock<[], Promise<never>>;
 
   beforeEach(() => {
-    successFn = jest.fn(async () => 'success');
-    failureFn = jest.fn(async () => {
+    successFn = vi.fn(async () => 'success');
+    failureFn = vi.fn(async () => {
       throw new Error('Failure');
     });
   });
@@ -95,7 +95,7 @@ describe('CircuitBreaker', () => {
       });
 
       // Open the circuit
-      const failFn = jest.fn(async () => {
+      const failFn = vi.fn(async () => {
         throw new Error('Failure');
       });
       const failBreaker = createCircuitBreaker(failFn, {
@@ -118,7 +118,7 @@ describe('CircuitBreaker', () => {
     });
 
     it('should close after successful calls in HALF_OPEN', async () => {
-      const mixedFn = jest.fn()
+      const mixedFn = vi.fn()
         .mockRejectedValueOnce(new Error('Failure'))
         .mockRejectedValueOnce(new Error('Failure'))
         .mockResolvedValueOnce('success')
@@ -149,7 +149,7 @@ describe('CircuitBreaker', () => {
 
   describe('timeout', () => {
     it('should timeout long-running operations', async () => {
-      const slowFn = jest.fn(async () => {
+      const slowFn = vi.fn(async () => {
         await new Promise(resolve => setTimeout(resolve, 1000));
         return 'too slow';
       });

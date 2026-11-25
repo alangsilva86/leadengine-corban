@@ -1,6 +1,7 @@
 import { param, query } from 'express-validator';
 
-const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Formato 8-4-4-4-12 sem exigir versão/variante RFC (mesmo critério do antigo isUUID('loose')).
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const cuidRegex = /^c[0-9a-z]{24}$/i;
 
 export const isUuidOrCuid = (value: unknown): boolean => {
@@ -14,6 +15,14 @@ export const isUuidOrCuid = (value: unknown): boolean => {
 export const validateTicketId = (value: unknown): true => {
   if (!isUuidOrCuid(value)) {
     throw new Error('Ticket ID must be a valid UUID or CUID');
+  }
+  return true;
+};
+
+/** Validador para IDs de entidades (usuário, fila…): o banco usa cuid; UUID é aceito por compatibilidade. */
+export const validateEntityId = (label: string) => (value: unknown): true => {
+  if (!isUuidOrCuid(value)) {
+    throw new Error(`${label} must be a valid CUID or UUID`);
   }
   return true;
 };

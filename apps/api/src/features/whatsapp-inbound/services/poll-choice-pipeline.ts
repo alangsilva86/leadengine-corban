@@ -31,7 +31,13 @@ const extractSelectionIdSet = (value: unknown): Set<string> | null => {
   const normalized = new Set<string>();
 
   for (const entry of value) {
-    const normalizedEntry = normalizeSelectionId(entry);
+    // As seleções são persistidas tanto como ids ('opt-1') quanto como objetos ({ id, title }).
+    const normalizedEntry =
+      entry && typeof entry === 'object' && !Array.isArray(entry)
+        ? normalizeSelectionId((entry as { id?: unknown }).id) ??
+          normalizeSelectionId((entry as { optionId?: unknown }).optionId) ??
+          normalizeSelectionId((entry as { value?: unknown }).value)
+        : normalizeSelectionId(entry);
     if (normalizedEntry) {
       normalized.add(normalizedEntry);
     }
@@ -40,43 +46,46 @@ const extractSelectionIdSet = (value: unknown): Set<string> | null => {
   return normalized.size > 0 ? normalized : null;
 };
 
+const asPlainRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+
 const collectSelectionIdSetsFromMetadata = (metadata: unknown): Set<string>[] => {
   const candidates: Set<string>[] = [];
 
-  if (!metadata || typeof metadata !== 'object') {
+  const metadataRecord = asPlainRecord(metadata);
+  if (!metadataRecord) {
     return candidates;
   }
 
-  const metadataRecord = metadata as Record<string, unknown>;
-  const pollVoteMetadata = metadataRecord.rewrite &&
-    typeof metadataRecord.rewrite === 'object' &&
-    metadataRecord.rewrite !== null
-      ? (metadataRecord.rewrite as Record<string, unknown>).pollVote
-      : null;
+  const pushSet = (value: unknown) => {
+    const set = extractSelectionIdSet(value);
+    if (set) {
+      candidates.push(set);
+    }
+  };
 
-  if (!pollVoteMetadata || typeof pollVoteMetadata !== 'object') {
-    return candidates;
-  }
+  // Mesmos locais em que o poll-vote-updater grava a seleção aplicada à mensagem
+  // (poll, pollChoice, pollVote) + o legado rewrite.pollVote.
+  const sections = [
+    asPlainRecord(metadataRecord.poll),
+    asPlainRecord(metadataRecord.pollChoice),
+    asPlainRecord(metadataRecord.pollVote),
+    asPlainRecord(asPlainRecord(metadataRecord.rewrite)?.pollVote),
+  ];
 
-  const pollVoteRecord = pollVoteMetadata as Record<string, unknown>;
-  const pollVoteSelected = extractSelectionIdSet(pollVoteRecord.selectedOptions);
-  if (pollVoteSelected) {
-    candidates.push(pollVoteSelected);
-  }
-
-  const pollVoteVote = pollVoteRecord.vote && typeof pollVoteRecord.vote === 'object'
-    ? (pollVoteRecord.vote as Record<string, unknown>)
-    : null;
-
-  if (pollVoteVote) {
-    const pollVoteVoteIds = extractSelectionIdSet(pollVoteVote.optionIds);
-    if (pollVoteVoteIds) {
-      candidates.push(pollVoteVoteIds);
+  for (const section of sections) {
+    if (!section) {
+      continue;
     }
 
-    const pollVoteVoteOptions = extractSelectionIdSet(pollVoteVote.selectedOptions);
-    if (pollVoteVoteOptions) {
-      candidates.push(pollVoteVoteOptions);
+    pushSet(section.selectedOptionIds);
+    pushSet(section.optionIds);
+    pushSet(section.selectedOptions);
+
+    const vote = asPlainRecord(section.vote);
+    if (vote) {
+      pushSet(vote.optionIds);
+      pushSet(vote.selectedOptions);
     }
   }
 

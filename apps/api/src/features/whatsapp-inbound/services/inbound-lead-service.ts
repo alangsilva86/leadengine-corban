@@ -25,10 +25,7 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '../../../config/logger';
 import { inboundMessagesProcessedCounter } from '../../../lib/metrics';
 import { emitWhatsAppDebugPhase } from '../../debug/services/whatsapp-debug-emitter';
-import {
-  DEFAULT_DEDUPE_TTL_MS,
-  DEFAULT_TENANT_ID,
-} from './constants';
+import { DEFAULT_DEDUPE_TTL_MS } from './constants';
 import { registerDedupeKey, shouldSkipByDedupe } from './dedupe';
 import { readString } from './identifiers';
 import { normalizePollUpdate, resolveMessageType } from './poll-update-normalizer';
@@ -131,7 +128,9 @@ export const ingestInboundWhatsAppMessage = async (
   const chatId = resolveChatId(envelope);
   const externalId = resolveMessageId(envelope) ?? randomUUID();
   const instanceId = readString((metaIn as any).instanceId) ?? readString((envelope as any).instanceId);
-  const tenantId = readString((metaIn as any).tenantId) ?? readString((envelope as any).tenantId) ?? DEFAULT_TENANT_ID;
+  // Sem tenant padrão: a pipeline resolve o tenant pela instância (ou rejeita). A dica de tenant do envelope só
+  // restringe a busca — nunca atribui a mensagem a um tenant sozinha.
+  const tenantId = readString((metaIn as any).tenantId) ?? readString((envelope as any).tenantId) ?? null;
 
   // Tratamento especial de voto em enquete: gera envelope normalizado ou sinaliza placeholder.
   const pollNormalization = await normalizePollUpdate({
@@ -169,7 +168,7 @@ export const ingestInboundWhatsAppMessage = async (
   // Chave de deduplicação para o fluxo ingest (envolve tenant, instance, chat e mensagem).
   const messageId = externalId;
   const keyChatId = chatId ?? '__unknown__';
-  const dedupeKey = `${tenantId}:${instanceId ?? 'null'}:${keyChatId}:${messageId}`;
+  const dedupeKey = `${tenantId ?? 'unresolved'}:${instanceId ?? 'null'}:${keyChatId}:${messageId}`;
 
   emitWhatsAppDebugPhase({
     phase: 'ingest:received',
@@ -228,7 +227,7 @@ export const ingestInboundWhatsAppMessage = async (
     payload: { event },
   });
 
-  inboundMessagesProcessedCounter.inc({ origin: 'webhook', tenantId, instanceId: instanceId ?? 'unknown' });
+  inboundMessagesProcessedCounter.inc({ origin: 'webhook', tenantId: tenantId ?? 'unknown', instanceId: instanceId ?? 'unknown' });
 
   return persisted;
 };

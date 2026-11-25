@@ -53,12 +53,14 @@ describe('WhatsApp HTTP integration routes', () => {
   });
 
   afterEach(() => {
-    vi.doUnmock('@whiskeysockets/baileys');
+    vi.doUnmock('../../lib/whatsapp-crypto');
   });
 
-  it('sends instance messages without loading Baileys client', async () => {
-    vi.doMock('@whiskeysockets/baileys', () => {
-      throw new Error('Baileys should not be loaded for HTTP transport');
+  it('sends instance messages through the HTTP transport without loading a WhatsApp client', async () => {
+    // A conexão com o WhatsApp vive no broker externo: enviar mensagens não pode carregar
+    // nenhum código de cliente/protocolo WhatsApp (só o transporte HTTP).
+    vi.doMock('../../lib/whatsapp-crypto', () => {
+      throw new Error('WhatsApp client/protocol code should not be loaded for HTTP transport');
     });
 
     sendAdHocMock.mockResolvedValue({ success: true, data: { id: 'wamid-1' } });
@@ -95,6 +97,7 @@ describe('WhatsApp HTTP integration routes', () => {
     expect(adHocPayload).toMatchObject({ tenantId: expectedTenant });
     const [, options] = sendAdHocMock.mock.calls[0] ?? [];
     expect(options).toEqual({ transport: transportMock });
+    expect(options.transport.mode).toBe('http');
   });
 
   it('rejects sending messages when tenant does not own the instance', async () => {

@@ -34,7 +34,10 @@ const buildApp = async () => {
   });
 
   const { metaOfflineRouter } = await import('../integrations/meta-offline-router');
+  const { errorHandler } = await import('../../middleware/error-handler');
   app.use(metaOfflineRouter);
+  // Em produção o router roda atrás do errorHandler global, que traduz ValidationError em 400.
+  app.use(errorHandler);
 
   return app;
 };
@@ -141,6 +144,7 @@ describe('Meta offline conversions router', () => {
       .send({ reprocessWindowDays: 'invalid-number' });
 
     expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
     expect(upsertConfigMock).not.toHaveBeenCalled();
   });
 });

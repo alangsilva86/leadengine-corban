@@ -10,8 +10,6 @@ export const getBrokerWebhookUrl = (): string => getWhatsAppConfig().broker.webh
 
 export const getDefaultInstanceId = (): string | null => getWhatsAppConfig().defaults.instanceId;
 
-export const getDefaultTenantId = (): string => getWhatsAppConfig().defaults.tenantId;
-
 export const getWebhookVerifyToken = (): string | null => getWhatsAppConfig().webhook.verifyToken;
 
 export const getWebhookApiKey = (): string | null => getWhatsAppConfig().webhook.apiKey;

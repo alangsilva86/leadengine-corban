@@ -1,54 +1,43 @@
 import express from 'express';
 import request from 'supertest';
+import { LeadSource, LeadStatus } from '@prisma/client';
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import type { RequestHandler, Router } from 'express';
-const leadFindMany = vi.fn();
-const leadCount = vi.fn();
-const leadCreate = vi.fn();
-const contactFindUnique = vi.fn();
 
-const leadStatusMock = {
-  NEW: 'NEW',
-  CONTACTED: 'CONTACTED',
-  QUALIFIED: 'QUALIFIED',
-  CONVERTED: 'CONVERTED',
-  LOST: 'LOST',
-} as const;
+// Usa os enums reais do Prisma (o mock antigo de @prisma/client quebrava o carregamento do @ticketz/storage).
+// Piloto Corban (adae3c03): contato/campanha/responsável são resolvidos com findFirst escopado por tenant.
+const { leadFindMany, leadCount, leadCreate, contactFindFirst, campaignFindFirst, userFindFirst } = vi.hoisted(
+  () => ({
+    leadFindMany: vi.fn(),
+    leadCount: vi.fn(),
+    leadCreate: vi.fn(),
+    contactFindFirst: vi.fn(),
+    campaignFindFirst: vi.fn(),
+    userFindFirst: vi.fn(),
+  })
+);
 
-const leadSourceMock = {
-  WHATSAPP: 'WHATSAPP',
-  MANUAL: 'MANUAL',
-  PHONE: 'PHONE',
-  EMAIL: 'EMAIL',
-  OTHER: 'OTHER',
-} as const;
-
-vi.mock('@prisma/client', () => ({
-  LeadStatus: leadStatusMock,
-  LeadSource: leadSourceMock,
-}));
-
-let LeadStatus: typeof leadStatusMock = leadStatusMock;
-let LeadSource: typeof leadSourceMock = leadSourceMock;
-
-vi.mock('../lib/prisma', () => ({
-  prisma: {
-    lead: {
-      findMany: leadFindMany,
-      count: leadCount,
-      create: leadCreate,
+vi.mock('../lib/prisma', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/prisma')>();
+  return {
+    ...actual,
+    prisma: {
+      lead: {
+        findMany: leadFindMany,
+        count: leadCount,
+        create: leadCreate,
+      },
+      contact: { findFirst: contactFindFirst },
+      campaign: { findFirst: campaignFindFirst },
+      user: { findFirst: userFindFirst },
     },
-    contact: {
-      findUnique: contactFindUnique,
-    },
-  },
-}));
+  };
+});
 
 let leadsRouter: Router;
 let errorHandler: RequestHandler;
 
 beforeAll(async () => {
-  ({ LeadStatus, LeadSource } = await import('@prisma/client'));
   ({ leadsRouter } = await import('./leads'));
   ({ errorHandler } = await import('../middleware/error-handler'));
 });
@@ -108,6 +97,7 @@ describe('Leads routes', () => {
       expect.objectContaining({
         skip: 0,
         take: 10,
+        where: expect.objectContaining({ tenantId: 'tenant-1', contact: { tenantId: 'tenant-1' } }),
       })
     );
     expect(response.body).toMatchObject({
@@ -145,10 +135,7 @@ describe('Leads routes', () => {
 
   it('creates a new lead when contact exists', async () => {
     const now = new Date();
-    contactFindUnique.mockResolvedValueOnce({
-      id: 'contact-1',
-      tenantId: 'tenant-1',
-    });
+    contactFindFirst.mockResolvedValueOnce({ id: 'contact-1' });
     leadCreate.mockResolvedValueOnce({
       id: 'lead-2',
       tenantId: 'tenant-1',
@@ -170,13 +157,18 @@ describe('Leads routes', () => {
       .send({ contactId: 'contact-1', source: 'whatsapp' });
 
     expect(response.status).toBe(201);
-    expect(contactFindUnique).toHaveBeenCalledWith({ where: { id: 'contact-1' } });
+    expect(contactFindFirst).toHaveBeenCalledWith({
+      where: { id: 'contact-1', tenantId: 'tenant-1' },
+      select: { id: true },
+    });
     expect(leadCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           tenantId: 'tenant-1',
           contactId: 'contact-1',
           source: LeadSource.WHATSAPP,
+          status: LeadStatus.NEW,
+          stage: 'novo',
         }),
       })
     );
@@ -184,7 +176,7 @@ describe('Leads routes', () => {
   });
 
   it('returns not found when contact does not exist', async () => {
-    contactFindUnique.mockResolvedValueOnce(null);
+    contactFindFirst.mockResolvedValueOnce(null);
 
     const app = buildApp();
     const response = await request(app)
@@ -193,6 +185,24 @@ describe('Leads routes', () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('NOT_FOUND');
+    expect(leadCreate).not.toHaveBeenCalled();
+  });
+
+  it('returns not found when the campaign belongs to another tenant', async () => {
+    contactFindFirst.mockResolvedValueOnce({ id: 'contact-1' });
+    campaignFindFirst.mockResolvedValueOnce(null);
+
+    const app = buildApp();
+    const response = await request(app)
+      .post('/')
+      .send({ contactId: 'contact-1', source: 'WHATSAPP', campaignId: 'foreign-campaign' });
+
+    expect(response.status).toBe(404);
+    expect(campaignFindFirst).toHaveBeenCalledWith({
+      where: { id: 'foreign-campaign', tenantId: 'tenant-1' },
+      select: { id: true },
+    });
+    expect(leadCreate).not.toHaveBeenCalled();
   });
 
   it('rejects lead listing when tenant header mismatches authenticated tenant', async () => {
@@ -200,7 +210,7 @@ describe('Leads routes', () => {
     const response = await request(app).get('/?page=1').set('x-tenant-id', 'tenant-other');
 
     expect(response.status).toBe(403);
-    expect(response.body.success).toBe(false);
     expect(response.body.error.code).toBe('FORBIDDEN');
+    expect(leadFindMany).not.toHaveBeenCalled();
   });
 });

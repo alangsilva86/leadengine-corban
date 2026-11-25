@@ -106,10 +106,13 @@ describe('poll-choice-pipeline', () => {
         updatePollVoteMessage: vi.fn(),
       };
 
+      // Sem tenantContext e sem state.context.tenantId (o fixture compartilhado traz um tenant no state).
+      const stateWithoutContext = { ...state, context: undefined } as PollChoiceState;
+
       const result = await rewritePollVoteMessage(
         {
           poll,
-          state,
+          state: stateWithoutContext,
           voterState: null,
           candidateMessageIds: ['candidate-1'],
           tenantContext: null,
@@ -119,6 +122,32 @@ describe('poll-choice-pipeline', () => {
 
       expect(result).toEqual({ status: 'missingTenant', candidates: ['candidate-1'] });
       expect(deps.updatePollVoteMessage).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the tenant stored in the poll state context', async () => {
+      const deps: RewritePollVoteMessageDeps = {
+        updatePollVoteMessage: vi.fn().mockResolvedValue({
+          status: 'updated',
+          state: PollVoteUpdateState.Completed,
+          tenantId: 'tenant-from-state',
+          storageMessageId: 'storage-message',
+          messageId: 'storage-message',
+          candidates: [],
+          metadataChanged: true,
+          contentUpdated: true,
+          captionUpdated: false,
+        }),
+      };
+
+      const result = await rewritePollVoteMessage(
+        { poll, state, voterState: null, candidateMessageIds: ['candidate-1'], tenantContext: null },
+        deps
+      );
+
+      expect(result).toEqual({ status: 'updated', tenantId: 'tenant-from-state' });
+      expect(deps.updatePollVoteMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-from-state' })
+      );
     });
 
     it('invokes update handler when tenant context is available', async () => {
@@ -211,6 +240,47 @@ describe('poll-choice-pipeline', () => {
         chatId: '5511999999999@s.whatsapp.net',
         existingMessageId: 'message-1',
       });
+    });
+
+    it('skips inbox fallback when the message already carries the vote written by poll-vote-updater', async () => {
+      // Formato gravado por poll-vote-updater: metadata.pollVote / poll / pollChoice.vote.
+      const deps: SchedulePollInboxFallbackDeps = {
+        findPollVoteMessageCandidate: vi.fn().mockResolvedValue({
+          id: 'message-2',
+          metadata: {
+            poll: { id: 'poll-1', selectedOptionIds: ['opt-1'], selectedOptions: [{ id: 'opt-1', title: 'Option 1' }] },
+            pollVote: {
+              pollId: 'poll-1',
+              selectedOptions: [{ id: 'opt-1', title: 'Option 1' }],
+              vote: { optionIds: ['opt-1'] },
+            },
+            rewrite: { pollVote: { appliedAt: '2024-01-01T00:00:00.000Z', pollId: 'poll-1' } },
+          },
+        }),
+      } as unknown as SchedulePollInboxFallbackDeps;
+
+      const result = await schedulePollInboxFallback(
+        { tenantId: 'tenant-1', poll, identifiers: ['poll-1'], selectedOptions: poll.selectedOptions },
+        deps
+      );
+
+      expect(result).toMatchObject({ status: 'skip', reason: 'up_to_date', existingMessageId: 'message-2' });
+    });
+
+    it('requires inbox fallback when the stored vote differs from the new selection', async () => {
+      const deps: SchedulePollInboxFallbackDeps = {
+        findPollVoteMessageCandidate: vi.fn().mockResolvedValue({
+          id: 'message-3',
+          metadata: { pollVote: { selectedOptions: [{ id: 'opt-2', title: 'Option 2' }] } },
+        }),
+      } as unknown as SchedulePollInboxFallbackDeps;
+
+      const result = await schedulePollInboxFallback(
+        { tenantId: 'tenant-1', poll, identifiers: ['poll-1'], selectedOptions: poll.selectedOptions },
+        deps
+      );
+
+      expect(result).toMatchObject({ status: 'requireInbox', existingMessageId: 'message-3' });
     });
 
     it('requires inbox fallback when no existing message is available', async () => {

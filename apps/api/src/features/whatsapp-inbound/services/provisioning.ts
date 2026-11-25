@@ -605,8 +605,10 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
     return { instance: created, wasCreated: true, brokerId };
   } catch (error) {
     if (isUniqueViolation(error)) {
+      // A colisão pode ser com uma instância de OUTRO tenant (id é global; brokerId é único só por tenant):
+      // só reaproveitamos o que pertence ao tenant resolvido.
       const existingById = await prisma.whatsAppInstance.findUnique({ where: { id: instanceId } });
-      if (existingById) {
+      if (existingById && existingById.tenantId === tenant.id) {
         const enriched = await ensureAutopProvisionMetadata(existingById, autopProvisionMetadataPayload);
         logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância reaproveitada após colisão de id', {
           instanceId,
@@ -617,17 +619,14 @@ export const attemptAutoProvisionWhatsAppInstance = async ({
         return { instance: enriched, wasCreated: false, brokerId };
       }
 
-      const existing =
-        (await prisma.whatsAppInstance.findUnique({
-          where: {
-            tenantId_brokerId: {
-              tenantId: tenant.id,
-              brokerId,
-            },
+      const existing = await prisma.whatsAppInstance.findUnique({
+        where: {
+          tenantId_brokerId: {
+            tenantId: tenant.id,
+            brokerId,
           },
-        })) ??
-        (await prisma.whatsAppInstance.findFirst({ where: { brokerId } })) ??
-        (await prisma.whatsAppInstance.findFirst({ where: brokerLookupWhere }));
+        },
+      });
       if (existing) {
         const enriched = await ensureAutopProvisionMetadata(existing, autopProvisionMetadataPayload);
         logger.info('🎯 LeadEngine • WhatsApp :: ♻️ Instância reaproveitada após colisão de broker', {

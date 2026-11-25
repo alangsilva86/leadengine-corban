@@ -18,7 +18,6 @@ type WhatsAppWebhookConfig = {
 
 type WhatsAppDefaultsConfig = {
   instanceId: string | null;
-  tenantId: string;
 };
 
 type WhatsAppConfig = {
@@ -26,8 +25,6 @@ type WhatsAppConfig = {
   webhook: WhatsAppWebhookConfig;
   defaults: WhatsAppDefaultsConfig;
 };
-
-const DEFAULT_TENANT_FALLBACK = 'demo-tenant';
 
 const normalizeBoolean = (value: Booleanish, fallback: boolean): boolean => {
   if (value === undefined || value === null) {
@@ -129,7 +126,6 @@ const buildWhatsAppConfig = (): WhatsAppConfig => {
     },
     defaults: {
       instanceId: normalizeString(process.env.WHATSAPP_DEFAULT_INSTANCE_ID),
-      tenantId: normalizeString(process.env.AUTH_MVP_TENANT_ID) ?? DEFAULT_TENANT_FALLBACK,
     },
   };
 };

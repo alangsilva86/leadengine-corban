@@ -2,7 +2,7 @@
  * Testes para FailedMessageDLQ
  */
 
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { failedMessageDLQ, sendToFailedMessageDLQ, shouldSendToDLQ } from '../failed-message-dlq';
 
 describe('FailedMessageDLQ', () => {

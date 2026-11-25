@@ -142,6 +142,7 @@ const buildTestApp = async (options?: { aiEnabled?: boolean }) => {
 
   vi.resetModules();
   const { aiRouter } = await import('../ai');
+  const { errorHandler } = await import('../../middleware/error-handler');
 
   const app = express();
   app.use(express.json());
@@ -162,6 +163,8 @@ const buildTestApp = async (options?: { aiEnabled?: boolean }) => {
   });
 
   app.use('/ai', aiRouter);
+  // Em produção o errorHandler global converte ValidationError (validateRequest) em 400.
+  app.use(errorHandler);
   return app;
 };
 
@@ -348,6 +351,8 @@ describe('AI routes', () => {
 
     const invalidMode = await request(app).post('/ai/mode').send({ mode: 'invalid_mode' });
     expect(invalidMode.status).toBe(400);
+    expect(invalidMode.body).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    expect(configStore.size).toBe(0);
   });
 
   it('returns structured suggestion stub when OpenAI is disabled', async () => {

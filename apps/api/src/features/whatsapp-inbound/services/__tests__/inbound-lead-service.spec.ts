@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { NotFoundError } from '@ticketz/core';
 import { DEFAULT_QUEUE_CACHE_TTL_MS } from '../constants';
@@ -134,7 +134,8 @@ const sendMessageMock = vi.hoisted(() => vi.fn());
 const emitToTenantMock = vi.hoisted(() => vi.fn());
 const emitToTicketMock = vi.hoisted(() => vi.fn());
 const leadLastContactGaugeSetMock = vi.hoisted(() => vi.fn());
-const downloadViaBaileysMock = vi.hoisted(() => vi.fn());
+const webhookEventsCounterIncMock = vi.hoisted(() => vi.fn());
+const downloadViaWhatsAppCdnMock = vi.hoisted(() => vi.fn());
 const downloadViaBrokerMock = vi.hoisted(() => vi.fn());
 const saveWhatsAppMediaMock = vi.hoisted(() => vi.fn());
 const enqueueInboundMediaJobMock = vi.hoisted(() => vi.fn());
@@ -158,7 +159,7 @@ vi.mock('../../../../services/ticket-service', () => ({
 }));
 
 vi.mock('../media-downloader', () => ({
-  downloadViaBaileys: (...args: unknown[]) => downloadViaBaileysMock(...args),
+  downloadViaWhatsAppCdn: (...args: unknown[]) => downloadViaWhatsAppCdnMock(...args),
   downloadViaBroker: (...args: unknown[]) => downloadViaBrokerMock(...args),
 }));
 
@@ -191,6 +192,7 @@ vi.mock('../../../../lib/metrics', () => ({
   inboundMessagesProcessedCounter: { inc: vi.fn() },
   leadLastContactGauge: { set: leadLastContactGaugeSetMock },
   whatsappInboundMetrics: { observeLatency: vi.fn() },
+  whatsappWebhookEventsCounter: { inc: webhookEventsCounterIncMock },
 }));
 
 type InboundModule = typeof import('../inbound-lead-service');
@@ -285,7 +287,16 @@ describe('ingestInboundWhatsAppMessage', () => {
     applyDefaultPrismaTransactionMock();
   });
 
-  it('ensures tenant creation and persists inbound message for unknown tenant', async () => {
+  afterEach(() => {
+    delete process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED;
+    delete process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST;
+  });
+
+  // Desde eb613513 o autoprovisionamento de instâncias exige flag + allowlist e NÃO cria tenants:
+  // o tenant precisa existir. Antes este teste esperava ensureTenantRecord('ensure-tenant').
+  it('autoprovisions the instance for an allowlisted existing tenant and persists the inbound message', async () => {
+    process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED = 'true';
+    process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST = 'tenant-fresh';
     const ensuredTenant = { id: 'tenant-fresh', name: 'Tenant Fresh', slug: 'tenant-fresh' };
     const timestamp = new Date('2024-03-25T12:00:00.000Z');
     const envelope: InboundWhatsAppEnvelope = {
@@ -315,8 +326,7 @@ describe('ingestInboundWhatsAppMessage', () => {
       },
     };
 
-    tenantFindFirstMock.mockResolvedValueOnce(null).mockResolvedValueOnce(ensuredTenant);
-    ensureTenantRecordMock.mockResolvedValueOnce(ensuredTenant);
+    tenantFindFirstMock.mockResolvedValueOnce(ensuredTenant);
     whatsappInstanceFindFirstMock.mockResolvedValueOnce(null);
     const createdInstance = {
       id: 'wa-new',
@@ -386,15 +396,7 @@ describe('ingestInboundWhatsAppMessage', () => {
     const persisted = await ingestInboundWhatsAppMessage(envelope);
 
     expect(persisted).toBe(true);
-    expect(ensureTenantRecordMock).toHaveBeenCalledWith(
-      ensuredTenant.id,
-      expect.objectContaining({
-        source: 'whatsapp-inbound-auto',
-        action: 'ensure-tenant',
-        instanceId: 'wa-new',
-        requestId: 'req-ensure',
-      })
-    );
+    expect(ensureTenantRecordMock).not.toHaveBeenCalled();
     expect(whatsappInstanceCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ tenantId: ensuredTenant.id }),
@@ -413,6 +415,39 @@ describe('ingestInboundWhatsAppMessage', () => {
       undefined,
       expect.objectContaining({ ticketId: 'ticket-auto', content: 'Olá, LeadEngine!' })
     );
+  });
+
+  it('does not create tenants nor instances for unknown tenant identifiers', async () => {
+    process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED = 'true';
+    process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST = 'tenant-ghost';
+    tenantFindFirstMock.mockResolvedValue(null);
+    whatsappInstanceFindFirstMock.mockResolvedValue(null);
+
+    const persisted = await ingestInboundWhatsAppMessage({
+      origin: 'webhook',
+      instanceId: 'wa-ghost',
+      chatId: null,
+      tenantId: null,
+      message: {
+        kind: 'message',
+        id: 'msg-ghost',
+        externalId: 'ext-ghost',
+        brokerMessageId: 'broker-ghost',
+        timestamp: new Date('2024-03-25T12:00:00.000Z').toISOString(),
+        direction: 'INBOUND',
+        contact: { phone: '+5511999999999', name: 'Cliente Fantasma' },
+        payload: { id: 'payload-ghost', type: 'text', text: 'Oi', key: { id: 'broker-ghost' }, metadata: null },
+        metadata: { tenantId: 'tenant-ghost', requestId: 'req-ghost' },
+      },
+    } as InboundWhatsAppEnvelope);
+
+    expect(persisted).toBe(false);
+    expect(ensureTenantRecordMock).not.toHaveBeenCalled();
+    expect(whatsappInstanceCreateMock).not.toHaveBeenCalled();
+    expect(createTicketMock).not.toHaveBeenCalled();
+    expect(sendMessageMock).not.toHaveBeenCalled();
+    tenantFindFirstMock.mockReset();
+    whatsappInstanceFindFirstMock.mockReset();
   });
 });
 
@@ -552,6 +587,33 @@ describe('metadata helpers', () => {
       expect(result).toBeNull();
       expect(ensureTenantRecordMock).not.toHaveBeenCalled();
       expect(whatsappInstanceCreateMock).not.toHaveBeenCalled();
+    });
+
+    // id é global e brokerId é único só por tenant: na colisão (P2002) nunca reaproveitamos a instância de
+    // outro tenant (antes: findUnique por id e findFirst({ brokerId }) sem escopo).
+    it('never reuses another tenant\'s instance after a unique-constraint collision', async () => {
+      const tenantRecord = { id: 'tenant-autoprov', name: 'Tenant Demo', slug: 'tenant-autoprov' };
+      const foreignInstance = { id: 'wa-auto', tenantId: 'tenant-other', brokerId: 'wa-auto', metadata: {} };
+
+      tenantFindFirstMock.mockResolvedValueOnce(tenantRecord);
+      whatsappInstanceFindFirstMock.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+        where.tenantId ? null : foreignInstance
+      );
+      whatsappInstanceCreateMock.mockRejectedValueOnce(
+        Object.assign(new Error('Unique constraint failed on the fields: (`id`)'), { code: 'P2002' })
+      );
+      whatsappInstanceFindUniqueMock.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+        where.id ? foreignInstance : null
+      );
+
+      const result = await attemptAutoProvisionWhatsAppInstance({
+        instanceId: 'wa-auto',
+        metadata: baseMetadata,
+        requestId: 'req-collision',
+      });
+
+      expect(result).toBeNull();
+      expect(whatsappInstanceUpdateMock).not.toHaveBeenCalled();
     });
 
     it('creates a WhatsApp instance with inbound-auto source', async () => {
@@ -1304,8 +1366,26 @@ describe('processStandardInboundEvent', () => {
       updatedAt: new Date('2024-03-22T10:00:00.000Z'),
     });
 
-    await testing.processStandardInboundEvent(event, Date.now(), { preloadedInstance: null });
+    sendMessageMock.mockResolvedValueOnce({
+      id: 'timeline-ticket-push',
+      createdAt: new Date('2024-03-22T10:00:00.000Z'),
+      metadata: {},
+      content: 'Olá!',
+    });
+    // getDefaultQueueId valida no banco a fila em cache antes de usá-la.
+    findUniqueMock.mockResolvedValueOnce({ id: 'queue-identity' });
+    campaignFindManyMock.mockResolvedValueOnce([]);
+    const result = await testing.processStandardInboundEvent(event, Date.now(), {
+      // Instância já cadastrada: sem ela o fluxo tentaria autoprovisionar (bloqueado por padrão desde eb613513).
+      preloadedInstance: {
+        id: 'instance-push',
+        tenantId: 'tenant-push',
+        name: 'WhatsApp Principal',
+        brokerId: 'instance-push',
+      } as unknown as ProcessEventParams[2]['preloadedInstance'],
+    });
 
+    expect(result).toBe(true);
     expect(contactCreateCalls[0]?.data).toMatchObject({
       displayName: 'Cliente WhatsApp',
       fullName: 'Cliente WhatsApp',
@@ -1366,8 +1446,25 @@ describe('processStandardInboundEvent', () => {
       updatedAt: new Date('2024-03-22T10:00:00.000Z'),
     });
 
-    await testing.processStandardInboundEvent(event, Date.now(), { preloadedInstance: null });
+    sendMessageMock.mockResolvedValueOnce({
+      id: 'timeline-ticket-phone-fallback',
+      createdAt: new Date('2024-03-22T10:00:00.000Z'),
+      metadata: {},
+      content: 'Olá!',
+    });
+    // getDefaultQueueId valida no banco a fila em cache antes de usá-la.
+    findUniqueMock.mockResolvedValueOnce({ id: 'queue-identity' });
+    campaignFindManyMock.mockResolvedValueOnce([]);
+    const result = await testing.processStandardInboundEvent(event, Date.now(), {
+      preloadedInstance: {
+        id: 'instance-phone-fallback',
+        tenantId: 'tenant-phone-fallback',
+        name: 'WhatsApp Principal',
+        brokerId: 'instance-phone-fallback',
+      } as unknown as ProcessEventParams[2]['preloadedInstance'],
+    });
 
+    expect(result).toBe(true);
     expect(contactCreateCalls[0]?.data).toMatchObject({
       displayName: '+5511999999999',
       fullName: '+5511999999999',
@@ -1475,6 +1572,9 @@ describe('processStandardInboundEvent', () => {
       content: 'Olá, LeadEngine!',
     });
 
+    process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED = 'true';
+    process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST = 'tenant-autop';
+
     try {
       const result = await testing.processStandardInboundEvent(event, now.getTime(), {
         preloadedInstance: null,
@@ -1496,6 +1596,8 @@ describe('processStandardInboundEvent', () => {
         }),
       });
     } finally {
+      delete process.env.WHATSAPP_INBOUND_AUTOPROVISION_ENABLED;
+      delete process.env.WHATSAPP_INBOUND_AUTOPROVISION_ALLOWLIST;
       attemptSpy.mockRestore();
       ensureQueueSpy.mockRestore();
       ensureContactSpy.mockRestore();
@@ -1815,7 +1917,7 @@ describe('processStandardInboundEvent', () => {
     contactTagDeleteManyMock.mockResolvedValueOnce({ count: 0 });
     contactTagUpsertMock.mockResolvedValue({});
 
-    downloadViaBaileysMock.mockResolvedValueOnce(null);
+    downloadViaWhatsAppCdnMock.mockResolvedValueOnce(null);
     downloadViaBrokerMock.mockResolvedValueOnce({
       buffer: Buffer.from(`media-${kind.toLowerCase()}`),
       mimeType: mimetype,
@@ -1874,7 +1976,7 @@ describe('processStandardInboundEvent', () => {
       preloadedInstance: instanceRecord as unknown as Parameters<TestingHelpers['processStandardInboundEvent']>[2]['preloadedInstance'],
     });
 
-    expect(downloadViaBaileysMock).toHaveBeenCalledTimes(1);
+    expect(downloadViaWhatsAppCdnMock).toHaveBeenCalledTimes(1);
     expect(downloadViaBrokerMock).toHaveBeenCalledTimes(1);
     expect(downloadViaBrokerMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1970,7 +2072,7 @@ describe('processStandardInboundEvent', () => {
       contactTagDeleteManyMock.mockResolvedValueOnce({ count: 0 });
       contactTagUpsertMock.mockResolvedValue({});
 
-      downloadViaBaileysMock.mockResolvedValueOnce(null);
+      downloadViaWhatsAppCdnMock.mockResolvedValueOnce(null);
       downloadViaBrokerMock.mockResolvedValueOnce(downloadResult as unknown as Awaited<
         ReturnType<typeof downloadViaBrokerMock>
       >);

@@ -52,6 +52,6 @@ describe('collectInstancesForTenant', () => {
 
     await collectInstancesForTenant('tenant-1', { existing: [storedInstance] }, dependencies);
 
-    expect(updatePhoneNumber).toHaveBeenCalledWith('tenant-1', 'instance-1', '+551199999999');
+    expect(updatePhoneNumber).toHaveBeenCalledWith('tenant-1', 'instance-1', '+5511999999999');
   });
 });

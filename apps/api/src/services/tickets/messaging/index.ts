@@ -15,6 +15,8 @@ export const sendOnTicket = whatsappSendModule.sendOnTicket;
 export const sendToContact = whatsappSendModule.sendToContact;
 export const sendAdHoc = whatsappSendModule.sendAdHoc;
 
-export { sendMessage, emitMessageUpdatedEvents, normalizeBrokerStatus } from './send-message';
+export { sendMessage, emitMessageUpdatedEvents } from './send-message';
+// normalizeBrokerStatus vive em shared/whatsapp; reexportá-lo de './send-message' resultava em undefined.
+export { normalizeBrokerStatus };
 export { rateKeyForInstance, resolveInstanceRateLimit, getDefaultQueueIdForTenant };
 export type { WhatsAppTransportDependencies } from '../whatsapp-send';

@@ -36,6 +36,18 @@ import {
 import { normalizePaginationQuery } from '../utils/pagination';
 
 const router: Router = Router();
+
+// contacts tem @@unique([tenantId, primaryPhone]) e @@unique([tenantId, primaryEmail]); o storage
+// propaga o P2002 do Prisma, que sem este mapeamento virava 500 em vez de 409.
+const toContactConflictError = (error: unknown): ConflictError | null => {
+  if (typeof error !== 'object' || error === null || (error as { code?: unknown }).code !== 'P2002') {
+    return null;
+  }
+
+  return new ConflictError('Já existe um contato com este telefone ou e-mail nesta organização.', {
+    target: (error as { meta?: Record<string, unknown> }).meta?.target,
+  });
+};
 const mergeContactsBody = MergeContactsDTOSchema.omit({ tenantId: true }).extend({
   targetId: ContactResourceIdSchema,
   sourceIds: z.array(ContactResourceIdSchema).min(1),
@@ -130,11 +142,7 @@ router.post(
         return;
       }
 
-      if (error instanceof ConflictError) {
-        throw error;
-      }
-
-      throw error;
+      throw toContactConflictError(error) ?? error;
     }
   })
 );
@@ -210,7 +218,12 @@ router.patch(
     }
 
     const tenantId = req.user!.tenantId;
-    const contact = await updateContact({ tenantId, contactId: params.contactId, payload: body });
+    let contact: Awaited<ReturnType<typeof updateContact>>;
+    try {
+      contact = await updateContact({ tenantId, contactId: params.contactId, payload: body });
+    } catch (error) {
+      throw toContactConflictError(error) ?? error;
+    }
 
     if (!contact) {
       throw new NotFoundError('Contact', params.contactId);

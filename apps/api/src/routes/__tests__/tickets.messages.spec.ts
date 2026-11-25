@@ -6,7 +6,6 @@ import {
   WhatsAppBrokerError,
   WhatsAppBrokerNotConfiguredError,
 } from '../../services/whatsapp-broker-client';
-import { WhatsAppTransportError } from '@ticketz/wa-contracts';
 
 const {
   findOrCreateOpenTicketByChatMock,
@@ -258,110 +257,27 @@ describe('POST /api/tickets/messages validations', () => {
     expect(sendMessageMock).not.toHaveBeenCalled();
   });
 
-  it('normalizes uppercase media types when sending outbound chat messages', async () => {
+  it('refuses direct chat sends without a verified conversation', async () => {
+    // Piloto Corban (adae3c03): o envio direto por chatId foi removido; só se envia a partir de um ticket.
+    // Substitui os testes do caminho por chatId (mídia, base64, sucesso e falha do broker).
     const app = buildApp();
-
-    findOrCreateOpenTicketByChatMock.mockResolvedValueOnce({
-      ticket: { id: 'ticket-chat-123', contactId: 'contact-1' },
-      wasCreated: true,
-    });
-    upsertMessageByExternalIdMock.mockResolvedValueOnce({
-      message: { id: 'message-chat-1', ticketId: 'ticket-chat-123', externalId: 'wamid-chat' },
-      wasCreated: true,
-    });
 
     const response = await request(app).post('/api/tickets/messages').send({
       chatId: '5511999999999',
       iid: 'instance-abc',
       type: 'IMAGE',
-      media: {
-        mediaType: 'IMAGE',
-        mediaUrl: 'https://cdn.example.com/image.jpg',
-        caption: '  Check this out  ',
-      },
+      media: { mediaType: 'IMAGE', mediaUrl: 'https://cdn.example.com/image.jpg' },
     });
 
-    expect(response.status).toBe(200);
-    expect(transportSendMessageMock).toHaveBeenCalledTimes(1);
-
-    const [instanceId, transportPayload] = transportSendMessageMock.mock.calls[0];
-    expect(instanceId).toBe('instance-abc');
-    expect(transportPayload).toMatchObject({
-      type: 'image',
-      caption: 'Check this out',
-      media: expect.objectContaining({
-        mediaType: 'image',
-        mediaUrl: 'https://cdn.example.com/image.jpg',
-      }),
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: { code: 'CONVERSATION_REQUIRED' },
     });
-
-    expect(upsertMessageByExternalIdMock).toHaveBeenCalledTimes(1);
-    const storagePayload = upsertMessageByExternalIdMock.mock.calls[0]?.[0];
-    expect(storagePayload.media).toMatchObject({
-      mediaType: 'image',
-      url: 'https://cdn.example.com/image.jpg',
-      caption: 'Check this out',
-    });
-
-    expect(response.body.success).toBe(true);
-    expect(response.body.data).toMatchObject({
-      ticketId: 'ticket-chat-123',
-      messageId: 'message-chat-1',
-      externalId: 'wamid-chat',
-    });
-  });
-
-  it('accepts media payloads carrying only base64 and stores them', async () => {
-    const app = buildApp();
-
-    findOrCreateOpenTicketByChatMock.mockResolvedValueOnce({
-      ticket: { id: 'ticket-chat-124', contactId: 'contact-2' },
-      wasCreated: true,
-    });
-
-    upsertMessageByExternalIdMock.mockResolvedValueOnce({
-      message: { id: 'message-chat-2', ticketId: 'ticket-chat-124', externalId: 'wamid-chat-2' },
-      wasCreated: true,
-    });
-
-    const response = await request(app).post('/api/tickets/messages').send({
-      chatId: '5511988887777@s.whatsapp.net',
-      type: 'IMAGE',
-      media: {
-        mediaType: 'IMAGE',
-        base64: 'data:image/jpeg;base64,AAABBB',
-        caption: '  Foto do produto  ',
-      },
-    });
-
-    expect(response.status).toBe(200);
-
-    const [instanceId, transportPayload] = transportSendMessageMock.mock.calls[0];
-    expect(instanceId).toBe('default-instance-id');
-    expect(transportPayload).toMatchObject({
-      type: 'image',
-      caption: 'Foto do produto',
-      media: expect.objectContaining({
-        mediaType: 'image',
-        base64: 'data:image/jpeg;base64,AAABBB',
-      }),
-    });
-    expect(transportPayload.mediaUrl).toBeUndefined();
-
-    const storagePayload = upsertMessageByExternalIdMock.mock.calls[0]?.[0];
-    expect(storagePayload.media).toMatchObject({
-      mediaType: 'image',
-      base64: 'data:image/jpeg;base64,AAABBB',
-      url: null,
-      caption: 'Foto do produto',
-    });
-
-    expect(brokerObservabilityMocks.recordBrokerSuccessMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        chatId: '5511988887777@s.whatsapp.net',
-        brokerStatus: 200,
-      })
-    );
+    expect(transportSendMessageMock).not.toHaveBeenCalled();
+    expect(findOrCreateOpenTicketByChatMock).not.toHaveBeenCalled();
+    expect(upsertMessageByExternalIdMock).not.toHaveBeenCalled();
+    expect(sendMessageMock).not.toHaveBeenCalled();
   });
 
   it('returns 502 when the broker rejects the send request', async () => {
@@ -407,54 +323,5 @@ describe('POST /api/tickets/messages validations', () => {
         message: 'WhatsApp broker not configured',
       },
     });
-  });
-
-  it('records broker success context for direct chat sends', async () => {
-    const app = buildApp();
-    const response = await request(app)
-      .post('/api/tickets/messages')
-      .send({ chatId: '558899999999@s.whatsapp.net', content: 'Ping' });
-
-    expect(response.status).toBe(200);
-    expect(brokerObservabilityMocks.recordBrokerSuccessMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenantId: 'tenant-123',
-        chatId: '558899999999@s.whatsapp.net',
-        brokerStatus: 200,
-      })
-    );
-  });
-
-  it('annotates WhatsApp transport failures with retry hints and requestId', async () => {
-    const app = buildApp();
-    const transportError = new WhatsAppTransportError('Broker offline', {
-      code: 'BROKER_TIMEOUT',
-      status: 504,
-      requestId: 'req-offline',
-    });
-    transportSendMessageMock.mockRejectedValueOnce(transportError);
-
-    const response = await request(app)
-      .post('/api/tickets/messages')
-      .send({ chatId: '558899999999@s.whatsapp.net', content: 'Teste' });
-
-    expect(response.status).toBe(502);
-    expect(response.body?.error?.requestId).toBe('req-offline');
-    expect(response.body?.error?.brokerCode).toBe('BROKER_TIMEOUT');
-    expect(response.body?.error?.queuedMessageId).toBe('message-mock');
-    expect(response.body?.error?.recoveryHint).toMatch(/Guardamos a mensagem/i);
-    expect(brokerObservabilityMocks.recordBrokerFailureMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tenantId: 'tenant-123',
-        chatId: '558899999999@s.whatsapp.net',
-        errorCode: 'BROKER_TIMEOUT',
-        brokerStatus: 504,
-        requestId: 'req-offline',
-        recoveryQueued: true,
-      })
-    );
-    const metadataArg = upsertMessageByExternalIdMock.mock.calls.at(-1)?.[0]?.metadata as Record<string, unknown>;
-    expect(metadataArg?.retry?.requestId).toBe('req-offline');
-    expect(metadataArg?.retry?.reason).toBe('BROKER_TIMEOUT');
   });
 });

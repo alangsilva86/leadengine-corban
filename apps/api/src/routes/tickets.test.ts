@@ -97,7 +97,9 @@ describe('Tickets routes', () => {
           contactId,
           queueId,
           subject: 'Support request',
-          channel: 'WHATSAPP',
+          // Canal sem despacho externo: o envio WhatsApp agora exige instância + janela de 24h
+          // (whatsapp-policy, adae3c03) e é coberto em messages.outbound.spec/ticket-service.spec.
+          channel: 'CHAT',
           priority: 'HIGH',
           tags: ['vip'],
           metadata: { source: 'test' },
@@ -163,6 +165,29 @@ describe('Tickets routes', () => {
       expect(assignBody.data.userId).toBe('44444444-4444-4444-4444-444444444444');
       expect(assignBody.data.status).toBe('ASSIGNED');
 
+      // Regressão: os IDs reais de usuário são cuid; a rota recusava qualquer um deles com 400.
+      const cuidUserId = 'cmww9e6us0003etluifrrvq2v';
+      const reassignResponse = await fetch(`${url}/api/tickets/${ticketId}/assign`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ userId: cuidUserId }),
+      });
+      expect(reassignResponse.status).toBe(200);
+      expect((await reassignResponse.json()).data.userId).toBe(cuidUserId);
+
+      const invalidAssignResponse = await fetch(`${url}/api/tickets/${ticketId}/assign`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-tenant-id': 'tenant-123',
+        },
+        body: JSON.stringify({ userId: 'not-an-id' }),
+      });
+      expect(invalidAssignResponse.status).toBe(400);
+
       const messageResponse = await fetch(`${url}/api/tickets/messages`, {
         method: 'POST',
         headers: {
@@ -211,7 +236,8 @@ describe('Tickets routes', () => {
       expect(emittedEvents).toContain('ticket.created');
       expect(emittedEvents).not.toContain('ticket.updated');
       expect(emittedEvents).not.toContain('ticket.assigned');
-      expect(emittedEvents).not.toContain('ticket.message');
+      // `ticket.message` segue emitido como evento legado (docs/realtime-inbox-contract.md).
+      expect(emittedEvents).toContain('ticket.message');
       expect(emittedEvents).toContain('messages.new');
       expect(emittedEvents).not.toContain('ticket.closed');
       const ticketsUpdatedCount = emittedEvents.filter((event) => event === 'tickets.updated').length;
@@ -237,7 +263,7 @@ describe('Tickets routes', () => {
           contactId,
           queueId: '00000000-0000-4000-8000-000000000555',
           subject,
-          channel: 'WHATSAPP',
+          channel: 'CHAT',
         }),
       });
 
@@ -327,7 +353,10 @@ describe('Tickets routes', () => {
 
       expect(response.status).toBe(503);
       const body = await response.json();
-      expect(body).toEqual({ code: 'BROKER_NOT_CONFIGURED' });
+      expect(body).toEqual({
+        success: false,
+        error: { code: 'BROKER_NOT_CONFIGURED', message: 'Broker disabled' },
+      });
     } finally {
       await stopTestServer(server);
     }
@@ -343,7 +372,6 @@ describe('Tickets routes', () => {
 
       expect(response.status).toBe(403);
       const body = await response.json();
-      expect(body.success).toBe(false);
       expect(body.error.code).toBe('FORBIDDEN');
     } finally {
       await stopTestServer(server);

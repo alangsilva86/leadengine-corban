@@ -934,6 +934,356 @@ const toMessage = (record: MessageRecord): Message => ({
   metadata: { ...record.metadata },
 });
 
+// Store em memória de tickets/mensagens (removido por engano em 6f3dcc26; o ticket-service ainda
+// delega o CRUD de tickets ao @ticketz/storage).
+const matchesTicketFilters = (ticket: TicketRecord, filters: TicketFilters): boolean => {
+  if (filters.status && filters.status.length > 0 && !filters.status.includes(ticket.status)) {
+    return false;
+  }
+
+  if (filters.priority && filters.priority.length > 0 && !filters.priority.includes(ticket.priority)) {
+    return false;
+  }
+
+  if (filters.queueId && filters.queueId.length > 0 && !filters.queueId.includes(ticket.queueId)) {
+    return false;
+  }
+
+  if (filters.userId && filters.userId.length > 0 && (!ticket.userId || !filters.userId.includes(ticket.userId))) {
+    return false;
+  }
+
+  if (filters.channel && filters.channel.length > 0 && !filters.channel.includes(ticket.channel)) {
+    return false;
+  }
+
+  if (filters.stage && filters.stage.length > 0 && !filters.stage.includes(ticket.stage)) {
+    return false;
+  }
+
+  if (filters.tags && filters.tags.length > 0) {
+    const hasTag = ticket.tags.some((tag: string) => filters.tags!.includes(tag));
+    if (!hasTag) {
+      return false;
+    }
+  }
+
+  if (filters.dateFrom && ticket.createdAt < filters.dateFrom) {
+    return false;
+  }
+
+  if (filters.dateTo && ticket.createdAt > filters.dateTo) {
+    return false;
+  }
+
+  if (filters.search && filters.search.trim().length > 0) {
+    const normalized = filters.search.trim().toLowerCase();
+    const searchableValues = [
+      ticket.id,
+      ticket.subject ?? '',
+      ticket.contactId,
+      ticket.queueId,
+      ticket.userId ?? '',
+      ticket.tags.join(' '),
+      ticket.metadata?.summary ? String(ticket.metadata.summary) : '',
+    ];
+
+    const hasMatch = searchableValues.some((value) => value.toLowerCase().includes(normalized));
+    if (!hasMatch) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const matchesMessageFilters = (message: MessageRecord, filters: MessageFilters): boolean => {
+  if (filters.ticketId && message.ticketId !== filters.ticketId) {
+    return false;
+  }
+
+  if (filters.contactId && message.contactId !== filters.contactId) {
+    return false;
+  }
+
+  if (filters.userId && message.userId !== filters.userId) {
+    return false;
+  }
+
+  if (filters.direction && filters.direction.length > 0 && !filters.direction.includes(message.direction)) {
+    return false;
+  }
+
+  if (filters.type && filters.type.length > 0 && !filters.type.includes(message.type)) {
+    return false;
+  }
+
+  if (filters.status && filters.status.length > 0 && !filters.status.includes(message.status)) {
+    return false;
+  }
+
+  if (filters.dateFrom && message.createdAt < filters.dateFrom) {
+    return false;
+  }
+
+  if (filters.dateTo && message.createdAt > filters.dateTo) {
+    return false;
+  }
+
+  if (filters.search && filters.search.trim().length > 0) {
+    const normalized = filters.search.trim().toLowerCase();
+    const searchableValues = [message.id, message.content, message.metadata?.summary ? String(message.metadata.summary) : ''];
+    const hasMatch = searchableValues.some((value) => value.toLowerCase().includes(normalized));
+    if (!hasMatch) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const sortTickets = (tickets: TicketRecord[], sortBy?: string, sortOrder: 'asc' | 'desc' = 'desc') => {
+  const direction = sortOrder === 'asc' ? 1 : -1;
+  const allowedFields = new Set<keyof TicketRecord>(['createdAt', 'updatedAt', 'lastMessageAt', 'priority']);
+
+  const sortFields: Array<keyof TicketRecord> = (() => {
+    if (!sortBy || !allowedFields.has(sortBy as keyof TicketRecord)) {
+      return ['lastMessageAt', 'updatedAt', 'createdAt'];
+    }
+
+    if (sortBy === 'lastMessageAt') {
+      return ['lastMessageAt', 'updatedAt', 'createdAt'];
+    }
+
+    return [sortBy as keyof TicketRecord];
+  })();
+
+  const compareValues = (valueA: unknown, valueB: unknown): number => {
+    if (valueA === valueB) {
+      return 0;
+    }
+
+    if (valueA === undefined || valueA === null) {
+      return 1;
+    }
+
+    if (valueB === undefined || valueB === null) {
+      return -1;
+    }
+
+    if (valueA instanceof Date && valueB instanceof Date) {
+      if (valueA.getTime() === valueB.getTime()) {
+        return 0;
+      }
+      return valueA.getTime() > valueB.getTime() ? direction : -direction;
+    }
+
+    if (typeof valueA === 'string' && typeof valueB === 'string') {
+      const comparison = valueA.localeCompare(valueB);
+      if (comparison === 0) {
+        return 0;
+      }
+      return comparison * direction;
+    }
+
+    if (typeof valueA === 'number' && typeof valueB === 'number') {
+      if (valueA === valueB) {
+        return 0;
+      }
+      return valueA > valueB ? direction : -direction;
+    }
+
+    return 0;
+  };
+
+  return tickets.sort((a, b) => {
+    for (const field of sortFields) {
+      const result = compareValues(a[field], b[field]);
+      if (result !== 0) {
+        return result;
+      }
+    }
+
+    return 0;
+  });
+};
+
+const sortMessages = (messages: MessageRecord[], sortOrder: 'asc' | 'desc') => {
+  const direction = sortOrder === 'asc' ? 1 : -1;
+  return messages.sort((a, b) => (a.createdAt > b.createdAt ? direction : -direction));
+};
+
+export const resetTicketStore = async () => {
+  ticketsByTenant.clear();
+  messagesByTenant.clear();
+};
+
+export const findTicketById = async (tenantId: string, ticketId: string): Promise<Ticket | null> => {
+  const bucket = getTicketBucket(tenantId);
+  const record = bucket.get(ticketId);
+  return record ? toTicket(record) : null;
+};
+
+export const findTicketsByContact = async (tenantId: string, contactId: string): Promise<Ticket[]> => {
+  const bucket = getTicketBucket(tenantId);
+  return Array.from(bucket.values())
+    .filter((ticket) => ticket.contactId === contactId)
+    .map(toTicket);
+};
+
+export const createTicket = async (input: CreateTicketDTO): Promise<Ticket> => {
+  const bucket = getTicketBucket(input.tenantId);
+  const now = new Date();
+  const record: TicketRecord = {
+    id: randomUUID(),
+    tenantId: input.tenantId,
+    contactId: input.contactId,
+    queueId: input.queueId,
+    userId: undefined,
+    status: 'OPEN',
+    priority: input.priority ?? 'NORMAL',
+    stage: (input.stage ?? 'novo') as TicketStage,
+    subject: input.subject,
+    channel: input.channel,
+    lastMessageAt: undefined,
+    tags: [...(input.tags ?? [])],
+    metadata: { ...(input.metadata ?? {}) },
+    closedAt: undefined,
+    closedBy: undefined,
+    closeReason: undefined,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  bucket.set(record.id, record);
+  return toTicket(record);
+};
+
+export const updateTicket = async (
+  tenantId: string,
+  ticketId: string,
+  input: UpdateTicketDTO & {
+    lastMessageAt?: Date;
+    lastMessagePreview?: string;
+    closedAt?: Date | null;
+    closedBy?: string | null;
+  }
+): Promise<Ticket | null> => {
+  const bucket = getTicketBucket(tenantId);
+  const record = bucket.get(ticketId);
+  if (!record) {
+    return null;
+  }
+
+  if (typeof input.status === 'string') {
+    record.status = input.status as TicketStatus;
+  }
+
+  if (typeof input.priority === 'string') {
+    record.priority = input.priority;
+  }
+
+  if (typeof input.subject === 'string' || input.subject === undefined) {
+    record.subject = input.subject ?? record.subject;
+  }
+
+  if (typeof input.userId === 'string' || input.userId === null) {
+    record.userId = input.userId ?? undefined;
+  }
+
+  if (typeof input.queueId === 'string') {
+    record.queueId = input.queueId;
+  }
+
+  if (typeof input.stage === 'string') {
+    record.stage = input.stage as TicketStage;
+  }
+
+  if (Array.isArray(input.tags)) {
+    record.tags = [...input.tags];
+  }
+
+  if (typeof input.metadata === 'object' && input.metadata !== null) {
+    record.metadata = { ...input.metadata };
+  }
+
+  if (typeof input.closeReason === 'string' || input.closeReason === null) {
+    record.closeReason = input.closeReason ?? undefined;
+  }
+
+  if (input.lastMessageAt) {
+    record.lastMessageAt = input.lastMessageAt;
+  }
+
+  if (input.lastMessagePreview) {
+    record.lastMessagePreview = input.lastMessagePreview;
+  }
+
+  if (input.closedAt !== undefined) {
+    record.closedAt = input.closedAt ?? undefined;
+  }
+
+  if (input.closedBy !== undefined) {
+    record.closedBy = input.closedBy ?? undefined;
+  }
+
+  record.updatedAt = new Date();
+
+  return toTicket(record);
+};
+
+export const assignTicket = async (
+  tenantId: string,
+  ticketId: string,
+  userId: string
+): Promise<Ticket | null> => {
+  const updated = await updateTicket(tenantId, ticketId, { userId, status: 'ASSIGNED' });
+  return updated;
+};
+
+export const closeTicket = async (
+  tenantId: string,
+  ticketId: string,
+  reason: string | undefined,
+  userId: string | undefined
+): Promise<Ticket | null> => {
+  const now = new Date();
+  const updated = await updateTicket(tenantId, ticketId, {
+    status: 'CLOSED',
+    closeReason: reason,
+    closedAt: now,
+    closedBy: userId ?? null,
+  });
+  return updated;
+};
+
+export const listTickets = async (
+  tenantId: string,
+  filters: TicketFilters,
+  pagination: Pagination
+): Promise<PaginatedResult<Ticket>> => {
+  const bucket = getTicketBucket(tenantId);
+  const normalizedPagination = defaultPagination(pagination);
+  const filtered = Array.from(bucket.values()).filter((ticket) => matchesTicketFilters(ticket, filters));
+  const sorted = sortTickets(filtered, normalizedPagination.sortBy, normalizedPagination.sortOrder);
+
+  const start = (normalizedPagination.page - 1) * normalizedPagination.limit;
+  const end = start + normalizedPagination.limit;
+  const paginated = sorted.slice(start, end);
+  const total = filtered.length;
+  const totalPages = total === 0 ? 0 : Math.ceil(total / normalizedPagination.limit);
+
+  return {
+    items: paginated.map(toTicket),
+    total,
+    page: normalizedPagination.page,
+    limit: normalizedPagination.limit,
+    totalPages,
+    hasNext: normalizedPagination.page < totalPages,
+    hasPrev: normalizedPagination.page > 1 && total > 0,
+  };
+};
+
 export const createMessage = async (
   tenantId: string,
   ticketId: string,
@@ -1062,6 +1412,20 @@ export const createMessage = async (
   ticketsBucket.set(ticketId, ticket);
 
   return toMessage(record);
+};
+
+export const findMessageByIdempotencyKey = async (tenantId: string, key: string): Promise<Message | null> => {
+  const record = Array.from(getMessageBucket(tenantId).values()).find((message) => message.idempotencyKey === key);
+  return record ? toMessage(record) : null;
+};
+
+export const findMessageByExternalId = async (tenantId: string, externalId: string): Promise<Message | null> => {
+  const trimmed = externalId.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const record = Array.from(getMessageBucket(tenantId).values()).find((message) => message.externalId === trimmed);
+  return record ? toMessage(record) : null;
 };
 
 export const listMessages = async (

@@ -6,6 +6,41 @@ import { CampaignStatus, resetCampaignStore, resetAllocationStore } from '@ticke
 
 vi.mock('@ticketz/storage', () => import('../test-utils/storage-mock'));
 
+const TENANT_ID = 'tenant-123';
+
+// Piloto Corban (adae3c03): a criação de campanha confere que a instância pertence ao tenant e o pull de
+// alocações carrega a campanha escopada por tenant; o fallback com leads de demonstração foi removido.
+const { prismaMock, fetchLeadsByAgreementMock } = vi.hoisted(() => ({
+  prismaMock: {
+    whatsAppInstance: { findFirst: vi.fn() },
+    campaign: { findFirst: vi.fn() },
+  },
+  fetchLeadsByAgreementMock: vi.fn(),
+}));
+
+vi.mock('../lib/prisma', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/prisma')>();
+  return { ...actual, prisma: prismaMock };
+});
+
+vi.mock('../services/lead-engine-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/lead-engine-client')>();
+  return { ...actual, leadEngineClient: { fetchLeadsByAgreement: fetchLeadsByAgreementMock } };
+});
+
+const ownedInstanceIds = new Set(['instance-1', 'instance-2', 'instance-3']);
+
+const resetPrismaMocks = () => {
+  prismaMock.whatsAppInstance.findFirst.mockReset();
+  prismaMock.whatsAppInstance.findFirst.mockImplementation(
+    async ({ where }: { where: { tenantId: string; id: string } }) =>
+      where.tenantId === TENANT_ID && ownedInstanceIds.has(where.id) ? { id: where.id } : null
+  );
+  prismaMock.campaign.findFirst.mockReset();
+  prismaMock.campaign.findFirst.mockResolvedValue(null);
+  fetchLeadsByAgreementMock.mockReset();
+};
+
 import { errorHandler } from '../middleware/error-handler';
 
 const originalLeadEngineEnv = {
@@ -49,7 +84,7 @@ const startTestServer = async (
     app.use((req, _res, next) => {
       (req as Request).user = {
         id: 'user-1',
-        tenantId: 'tenant-123',
+        tenantId: TENANT_ID,
         email: 'agent@example.com',
         name: 'Agent',
         role: 'ADMIN',
@@ -83,6 +118,7 @@ describe('Lead Engine campaigns routes', () => {
   beforeEach(async () => {
     await resetCampaignStore();
     await resetAllocationStore();
+    resetPrismaMocks();
   });
 
   afterEach(() => {
@@ -104,6 +140,7 @@ describe('Lead Engine campaigns routes', () => {
           instanceId: 'instance-1',
           name: 'New Campaign',
           status: CampaignStatus.PAUSED,
+          productType: 'generic',
         }),
       });
 
@@ -119,6 +156,9 @@ describe('Lead Engine campaigns routes', () => {
       });
       expect(body.data.id).toBeDefined();
       expect(body.data.tenantId).toBe('tenant-123');
+      expect(prismaMock.whatsAppInstance.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { tenantId: 'tenant-123', id: 'instance-1' } })
+      );
 
       // Reactivate the same campaign
       const secondResponse = await fetch(`${url}/api/lead-engine/campaigns`, {
@@ -132,6 +172,7 @@ describe('Lead Engine campaigns routes', () => {
           instanceId: 'instance-1',
           name: 'Updated Campaign Name',
           status: CampaignStatus.ACTIVE,
+          productType: 'generic',
         }),
       });
 
@@ -161,6 +202,7 @@ describe('Lead Engine campaigns routes', () => {
           agreementId: 'agreement-1',
           instanceId: 'instance-1',
           agreementName: 'Alias Campaign',
+          productType: 'generic',
         }),
       });
 
@@ -184,8 +226,30 @@ describe('Lead Engine campaigns routes', () => {
 
       expect(response.status).toBe(403);
       const body = await response.json();
-      expect(body.success).toBe(false);
       expect(body.error.code).toBe('FORBIDDEN');
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('rejects campaign creation for an instance outside the tenant', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(`${url}/api/lead-engine/campaigns`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          agreementId: 'agreement-1',
+          instanceId: 'instance-of-another-tenant',
+          name: 'Cross Tenant',
+          productType: 'generic',
+        }),
+      });
+
+      expect(response.status).toBe(404);
+      const body = await response.json();
+      expect(body).toMatchObject({ success: false, error: { code: 'INSTANCE_NOT_FOUND' } });
     } finally {
       await stopTestServer(server);
     }
@@ -201,9 +265,9 @@ describe('Lead Engine campaigns routes', () => {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            'x-tenant-id': 'tenant-xyz',
+            'x-tenant-id': TENANT_ID,
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ productType: 'generic', ...payload }),
         });
 
         expect(response.status).toBe(200);
@@ -237,7 +301,7 @@ describe('Lead Engine campaigns routes', () => {
         )}`,
         {
           headers: {
-            'x-tenant-id': 'tenant-xyz',
+            'x-tenant-id': TENANT_ID,
           },
         }
       );
@@ -285,6 +349,7 @@ describe('Lead Engine allocations routes', () => {
   beforeEach(async () => {
     await resetCampaignStore();
     await resetAllocationStore();
+    resetPrismaMocks();
   });
 
   afterEach(() => {
@@ -292,6 +357,18 @@ describe('Lead Engine allocations routes', () => {
   });
 
   it('pulls, lists, updates and exports allocations', async () => {
+    prismaMock.campaign.findFirst.mockImplementation(
+      async ({ where }: { where: { id: string; tenantId: string } }) =>
+        where.id === 'campaign-123' && where.tenantId === TENANT_ID
+          ? { id: 'campaign-123', tenantId: TENANT_ID, agreementId: 'saec-goiania', status: 'active' }
+          : null
+    );
+    fetchLeadsByAgreementMock.mockResolvedValue([
+      { id: 'lead-1', fullName: 'Ana', document: '11122233344', registrations: [], agreementId: 'saec-goiania', phone: '+5562999990001' },
+      { id: 'lead-2', fullName: 'Bruno', document: '22233344455', registrations: [], agreementId: 'saec-goiania', phone: '+5562999990002' },
+      { id: 'lead-3', fullName: 'Carla', document: '33344455566', registrations: [], agreementId: 'saec-goiania', phone: '+5562999990003' },
+    ]);
+
     const { server, url } = await startTestServer();
 
     try {
@@ -299,7 +376,7 @@ describe('Lead Engine allocations routes', () => {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-tenant-id': 'tenant-alloc',
+          'x-tenant-id': TENANT_ID,
         },
         body: JSON.stringify({
           campaignId: 'campaign-123',
@@ -312,13 +389,14 @@ describe('Lead Engine allocations routes', () => {
       const postBody = await postResponse.json();
       expect(postBody.success).toBe(true);
       expect(Array.isArray(postBody.data)).toBe(true);
-      expect(postBody.data.length).toBeGreaterThan(0);
+      expect(postBody.data).toHaveLength(3);
+      expect(fetchLeadsByAgreementMock).toHaveBeenCalledWith('saec-goiania', 3);
 
       const listResponse = await fetch(
         `${url}/api/lead-engine/allocations?campaignId=campaign-123`,
         {
           headers: {
-            'x-tenant-id': 'tenant-alloc',
+            'x-tenant-id': TENANT_ID,
           },
         }
       );
@@ -338,7 +416,7 @@ describe('Lead Engine allocations routes', () => {
           method: 'PATCH',
           headers: {
             'content-type': 'application/json',
-            'x-tenant-id': 'tenant-alloc',
+            'x-tenant-id': TENANT_ID,
           },
           body: JSON.stringify({ status: 'won' }),
         }
@@ -353,7 +431,7 @@ describe('Lead Engine allocations routes', () => {
         `${url}/api/lead-engine/allocations?campaignId=campaign-123&status=won`,
         {
           headers: {
-            'x-tenant-id': 'tenant-alloc',
+            'x-tenant-id': TENANT_ID,
           },
         }
       );
@@ -368,7 +446,7 @@ describe('Lead Engine allocations routes', () => {
         `${url}/api/lead-engine/allocations/export?campaignId=campaign-123`,
         {
           headers: {
-            'x-tenant-id': 'tenant-alloc',
+            'x-tenant-id': TENANT_ID,
           },
         }
       );
@@ -383,6 +461,58 @@ describe('Lead Engine allocations routes', () => {
     }
   });
 
+  it('does not pull leads for a campaign outside the tenant', async () => {
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(`${url}/api/lead-engine/allocations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ campaignId: 'campaign-of-another-tenant', take: 3 }),
+      });
+
+      expect(response.status).toBe(404);
+      const body = await response.json();
+      expect(body).toMatchObject({ success: false, error: { code: 'CAMPAIGN_NOT_FOUND' } });
+      expect(prismaMock.campaign.findFirst).toHaveBeenCalledWith({
+        where: { id: 'campaign-of-another-tenant', tenantId: TENANT_ID },
+      });
+      expect(fetchLeadsByAgreementMock).not.toHaveBeenCalled();
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('surfaces broker failures without falling back to demo leads', async () => {
+    prismaMock.campaign.findFirst.mockResolvedValue({
+      id: 'campaign-123',
+      tenantId: TENANT_ID,
+      agreementId: 'saec-goiania',
+      status: 'active',
+    });
+    fetchLeadsByAgreementMock.mockRejectedValue(Object.assign(new Error('broker down'), { status: 503 }));
+
+    const { server, url } = await startTestServer();
+
+    try {
+      const response = await fetch(`${url}/api/lead-engine/allocations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ campaignId: 'campaign-123', take: 3 }),
+      });
+
+      expect(response.status).toBe(503);
+      const body = await response.json();
+      expect(body).toMatchObject({ success: false, error: { code: 'ALLOCATIONS_PULL_FAILED' } });
+
+      const listResponse = await fetch(`${url}/api/lead-engine/allocations?campaignId=campaign-123`);
+      const listBody = await listResponse.json();
+      expect(listBody.data).toEqual([]);
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('rejects invalid status filters', async () => {
     const { server, url } = await startTestServer();
 
@@ -391,7 +521,7 @@ describe('Lead Engine allocations routes', () => {
         `${url}/api/lead-engine/allocations?status=unknown`,
         {
           headers: {
-            'x-tenant-id': 'tenant-alloc',
+            'x-tenant-id': TENANT_ID,
           },
         }
       );
@@ -426,7 +556,7 @@ describe('Lead Engine allocations routes', () => {
     try {
       const response = await fetch(`${url}/api/lead-engine/allocations?campaignId=campaign-123`, {
         headers: {
-          'x-tenant-id': 'tenant-alloc',
+          'x-tenant-id': TENANT_ID,
         },
       });
 

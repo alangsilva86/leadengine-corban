@@ -178,16 +178,16 @@ const extractContacts = (value: unknown): Array<{ name?: string | null; phone?: 
       const record = entry as Record<string, unknown>;
       const vcard = asRecord(record.vcard);
       const contact = asRecord(record.contact);
-      const nameCandidate =
-        record.displayName ??
-        (vcard ? vcard['name'] : undefined) ??
-        (contact ? contact['name'] : undefined);
-      const phoneCandidate =
-        (vcard ? vcard['phoneNumber'] : undefined) ??
-        (contact ? contact['phoneNumber'] : undefined) ??
-        record.phoneNumber;
-      const name = safeString(nameCandidate);
-      const phone = safeString(phoneCandidate);
+      // Normaliza cada candidato antes do fallback: um displayName em branco ('  ') não pode
+      // esconder o nome que vem no vcard/contact.
+      const name =
+        safeString(record.displayName) ??
+        safeString(vcard ? vcard['name'] : undefined) ??
+        safeString(contact ? contact['name'] : undefined);
+      const phone =
+        safeString(vcard ? vcard['phoneNumber'] : undefined) ??
+        safeString(contact ? contact['phoneNumber'] : undefined) ??
+        safeString(record.phoneNumber);
       if (!name && !phone) return null;
       return { name: name ?? null, phone: phone ?? null };
     })

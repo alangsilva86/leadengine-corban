@@ -8,8 +8,8 @@ import { logger } from '../../../config/logger';
 import { describeErrorForLog } from './errors';
 import { readBrokerErrorStatus } from './http';
 
-const modeSchema = z.enum(['db', 'snapshot', 'sync']).optional();
-const fieldsSchema = z.enum(['basic', 'metrics', 'full']).optional();
+const modeSchema = z.enum(['db', 'snapshot', 'sync']);
+const fieldsSchema = z.enum(['basic', 'metrics', 'full']);
 
 const rawQuerySchema = z.object({
   mode: z.string().optional(),
@@ -101,10 +101,15 @@ const ensureBrokerHealthy = async (tenantId: string): Promise<void> => {
       error: describeErrorForLog(error),
     });
 
+    // A opção da classe é `brokerStatus` (não `status`): com `status` o valor era descartado e a resposta
+    // caía no 502 fixo de WhatsAppBrokerError. Health check falho = broker indisponível (503); o código
+    // original do broker segue em `brokerCode` para diagnóstico.
     throw new WhatsAppBrokerError('WhatsApp broker indisponível no momento.', {
       code: 'BROKER_UNAVAILABLE',
-      status: readBrokerErrorStatus(brokerError ?? error) ?? 503,
+      brokerStatus: 503,
+      brokerCode: brokerError?.code ?? undefined,
       requestId: brokerError?.requestId,
+      cause: error,
     });
   }
 };

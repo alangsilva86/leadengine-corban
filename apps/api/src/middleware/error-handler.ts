@@ -90,6 +90,32 @@ const getWhatsAppBrokerMessage = (code: string | undefined): { code: string; mes
   return { code: normalizedCode, message };
 };
 
+/**
+ * Erros do body-parser (JSON malformado, corpo grande demais…) chegam com `type` e `status` 4xx.
+ * Sem este tratamento caíam no ramo genérico e viravam 500.
+ */
+const BODY_PARSER_ERRORS: Record<string, { status: number; code: string; message: string }> = {
+  'entity.parse.failed': { status: 400, code: 'INVALID_JSON', message: 'O corpo da requisição não é um JSON válido.' },
+  'entity.too.large': { status: 413, code: 'PAYLOAD_TOO_LARGE', message: 'O corpo da requisição é grande demais.' },
+  'encoding.unsupported': { status: 415, code: 'UNSUPPORTED_ENCODING', message: 'Codificação do corpo não suportada.' },
+  'charset.unsupported': { status: 415, code: 'UNSUPPORTED_CHARSET', message: 'Charset do corpo não suportado.' },
+  'request.aborted': { status: 400, code: 'REQUEST_ABORTED', message: 'A requisição foi interrompida.' },
+};
+
+const readBodyParserError = (error: unknown): ApiError | null => {
+  if (!error || typeof error !== 'object') return null;
+  const candidate = error as { type?: unknown; status?: unknown; statusCode?: unknown; expose?: unknown };
+  const type = typeof candidate.type === 'string' ? candidate.type : null;
+  if (!type) return null;
+  const known = BODY_PARSER_ERRORS[type];
+  if (known) return { ...known };
+  const status = typeof candidate.status === 'number' ? candidate.status : candidate.statusCode;
+  if (candidate.expose === true && typeof status === 'number' && status >= 400 && status < 500) {
+    return { status, code: 'BAD_REQUEST', message: 'Requisição inválida.' };
+  }
+  return null;
+};
+
 export const errorHandler = (
   error: Error,
   req: Request,
@@ -105,8 +131,12 @@ export const errorHandler = (
   const brokerError = toWhatsAppBrokerError(error);
   const requestId = req.rid ?? null;
 
+  const bodyParserError = readBodyParserError(error);
+
   // Tratar diferentes tipos de erro
-  if (error instanceof HandledError || hasErrorName(error, 'HandledError')) {
+  if (bodyParserError) {
+    apiError = bodyParserError;
+  } else if (error instanceof HandledError || hasErrorName(error, 'HandledError')) {
     const handled = error as unknown as HandledError & {
       status?: number;
       code?: string;
@@ -145,7 +175,13 @@ export const errorHandler = (
       code: 'UNAUTHORIZED',
       message: error.message,
     };
-  } else if (error instanceof ForbiddenError || hasErrorName(error, 'ForbiddenError')) {
+  } else if (
+    error instanceof ForbiddenError ||
+    hasErrorName(error, 'ForbiddenError') ||
+    // TenantAccessError (@ticketz/storage) é um DomainError com code FORBIDDEN; sem este ramo caía no
+    // fallback de DomainError e respondia 400 a tentativas de acesso a outro tenant.
+    hasErrorName(error, 'TenantAccessError')
+  ) {
     apiError = {
       status: 403,
       code: 'FORBIDDEN',

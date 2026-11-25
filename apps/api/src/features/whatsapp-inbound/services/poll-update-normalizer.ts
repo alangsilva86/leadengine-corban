@@ -1,8 +1,8 @@
 import { readString } from './identifiers';
 import type { InboundWhatsAppEnvelope } from './types';
 import { getPollMetadata } from './poll-metadata-service';
-import { decryptPollVote } from '@whiskeysockets/baileys';
 import { logger } from '../../../config/logger';
+import { decryptPollVote, isWhatsAppCryptoError } from '../../../lib/whatsapp-crypto';
 
 const readFirstString = (...values: unknown[]): string | null => {
   for (const value of values) {
@@ -439,9 +439,7 @@ export const normalizePollUpdate = async (
           }
         );
 
-        const decodedSelections = Array.isArray(voteMessage?.selectedOptions)
-          ? (voteMessage?.selectedOptions as Buffer[])
-          : [];
+        const decodedSelections = Array.isArray(voteMessage?.selectedOptions) ? voteMessage.selectedOptions : [];
 
         const mappedSelections: Array<{ id: string; title: string | null }> = [];
         const mappedIds: string[] = [];
@@ -468,6 +466,7 @@ export const normalizePollUpdate = async (
         logger.warn('Failed to decrypt poll vote during normalization', {
           pollId,
           voterJid: chatId,
+          errorCode: isWhatsAppCryptoError(error) ? error.code : null,
           error,
         });
       }

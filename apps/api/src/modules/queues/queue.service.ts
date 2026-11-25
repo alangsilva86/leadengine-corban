@@ -38,7 +38,7 @@ export class QueueService {
       const nextOrderIndex =
         typeof input.orderIndex === 'number'
           ? input.orderIndex
-          : await this.getNextOrderIndex(tx, tenantId);
+          : await this.lockAndGetNextOrderIndex(tx, tenantId);
 
       return tx.queue.create({
         data: {
@@ -62,10 +62,19 @@ export class QueueService {
     });
   }
 
-  private async getNextOrderIndex(
+  /**
+   * MAX(orderIndex)+1 só é seguro com as criações do tenant serializadas: em READ COMMITTED duas transações
+   * concorrentes leem o mesmo máximo e gravam o mesmo orderIndex. `SELECT … FOR UPDATE` não resolve (não
+   * bloqueia INSERTs e não há linha para travar no primeiro cadastro), então usamos um advisory lock de
+   * transação por tenant — liberado sozinho no COMMIT/ROLLBACK, sem mudar o schema.
+   * `$executeRaw` (e não `$queryRaw`): pg_advisory_xact_lock devolve `void`, que o Prisma não desserializa.
+   */
+  private async lockAndGetNextOrderIndex(
     tx: Prisma.TransactionClient,
     tenantId: string
   ): Promise<number> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('queues.order_index'), hashtext(${tenantId}))`;
+
     const lastQueue = await tx.queue.findFirst({
       where: { tenantId },
       orderBy: { orderIndex: 'desc' },

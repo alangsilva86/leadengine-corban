@@ -611,8 +611,34 @@ export const sendMessage = async (
               : typeof brokerError?.brokerStatus === 'number'
               ? brokerError.brokerStatus
               : undefined;
+          const registerCircuitFailure = () => {
+            if (!circuitKey) {
+              return;
+            }
+            const result = recordCircuitFailure(circuitKey);
+            if (result.opened) {
+              const retryAtIso = result.retryAt ? new Date(result.retryAt).toISOString() : null;
+              logger.warn('whatsapp.outbound.circuit.opened', {
+                tenantId,
+                ticketId: ticket.id,
+                instanceId,
+                failureCount: result.failureCount,
+                retryAt: retryAtIso,
+              });
+              emitToTenant(tenantId, 'whatsapp.circuit_breaker.open', {
+                instanceId,
+                failureCount: result.failureCount,
+                windowMs: circuitConfig.windowMs,
+                cooldownMs: circuitConfig.cooldownMs,
+                retryAt: retryAtIso,
+              });
+            }
+          };
           if (attemptedDispatch && (status === undefined || status >= 500)) {
             logger.warn('Envio WhatsApp aguarda conciliação', { tenantId, ticketId: ticket.id, messageId: message.id, status });
+            // A mensagem fica PENDING (resultado incerto), mas a falha do broker ainda conta para o
+            // circuit breaker; sem isso um broker fora do ar (5xx/timeout) nunca abria o circuito.
+            registerCircuitFailure();
             return message;
           }
           const rawErrorCode = transportError?.code ?? brokerError?.code;
@@ -678,26 +704,7 @@ export const sendMessage = async (
 
           await markAsFailed(failurePayload);
 
-          if (circuitKey) {
-            const result = recordCircuitFailure(circuitKey);
-            if (result.opened) {
-              const retryAtIso = result.retryAt ? new Date(result.retryAt).toISOString() : null;
-              logger.warn('whatsapp.outbound.circuit.opened', {
-                tenantId,
-                ticketId: ticket.id,
-                instanceId,
-                failureCount: result.failureCount,
-                retryAt: retryAtIso,
-              });
-              emitToTenant(tenantId, 'whatsapp.circuit_breaker.open', {
-                instanceId,
-                failureCount: result.failureCount,
-                windowMs: circuitConfig.windowMs,
-                cooldownMs: circuitConfig.cooldownMs,
-                retryAt: retryAtIso,
-              });
-            }
-          }
+          registerCircuitFailure();
 
           await emitUpdatesIfNeeded();
           throw error;
