@@ -24,7 +24,10 @@
     "dev": "pnpm -r --parallel dev",
     "lint": "eslint --max-warnings=0 --ignore-pattern 'dist/**' --ignore-pattern 'apps/**/dist/**' --ignore-pattern 'apps/api/src/routes/webhooks.test.ts' .",
     "typecheck": "pnpm exec tsc -b --pretty false",
-    "test": "pnpm --filter @ticketz/api exec vitest run src/services/__tests__/campaigns-service.spec.ts src/routes/__tests__/campaigns.spec.ts src/routes/__tests__/campaigns.e2e.spec.ts src/routes/__tests__/users.routes.spec.ts && pnpm --filter web exec vitest run src/features/users/__tests__/UsersSettingsTab.test.tsx",
+    "test": "pnpm run test:api && pnpm run test:web",
+    "test:api": "pnpm --filter @ticketz/storage run prisma:generate && cross-env DATABASE_URL= DATABASE_DIRECT_URL= pnpm --filter @ticketz/api exec vitest run",
+    "test:web": "pnpm --filter web exec vitest run",
+    "typecheck:ratchet": "node scripts/typecheck-ratchet.mjs",
     "test:playwright": "pnpm exec playwright test",
     "api:dev": "pnpm --filter @ticketz/api dev",
     "web:dev": "pnpm --filter web dev",
@@ -54,10 +57,10 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",
     "globals": "^15.12.0",
-    "minimatch": "^10.0.3",
+    "minimatch": "^10.2.6",
     "prettier": "^3.1.1",
     "prisma": "5.22.0",
-    "socket.io-client": "^4.8.1",
+    "socket.io-client": "^4.8.4",
     "ts-prune": "^0.10.3",
     "tsup": "^8.5.0",
     "tsx": "^4.6.2",
@@ -69,11 +72,6 @@
     "pnpm": "9.12.3"
   },
   "packageManager": "pnpm@9.12.3",
-  "pnpm": {
-    "overrides": {
-      "libsignal": "npm:libsignal@1.0.7"
-    }
-  },
   "keywords": [
     "tickets",
     "leads",
