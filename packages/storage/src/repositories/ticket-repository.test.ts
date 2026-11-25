@@ -99,7 +99,7 @@ describe('upsertMessageByExternalId', () => {
     expect(findFirstMock).toHaveBeenCalledOnce();
     expect(updateMock).toHaveBeenCalledOnce();
 
-    const updateArgs = updateMock.mock.calls[0][0];
+    const updateArgs = updateMock.mock.calls[0]?.[0];
     expect(updateArgs.data.type).toBe('IMAGE');
     expect(updateArgs.data.mediaUrl).toBeNull();
     expect(updateArgs.data.mediaFileName).toBe('photo.jpg');

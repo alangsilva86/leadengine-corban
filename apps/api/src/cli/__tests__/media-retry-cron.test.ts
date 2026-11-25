@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
-const processInboundMediaRetryJobsMock = vi.fn<[], Promise<void>>().mockResolvedValue();
+const processInboundMediaRetryJobsMock = vi.fn<() => Promise<void>>().mockResolvedValue();
 const loggerInfoMock = vi.fn();
 const loggerErrorMock = vi.fn();
 

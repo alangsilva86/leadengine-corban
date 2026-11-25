@@ -17,7 +17,7 @@ describe('emitCrmTelemetry', () => {
     });
 
     expect(handler).toHaveBeenCalledTimes(1);
-    const detail = handler.mock.calls[0][0].detail as Record<string, unknown>;
+    const detail = handler.mock.calls[0]?.[0].detail as Record<string, unknown>;
     expect(detail.scope).toBe('crm');
     expect(detail.event).toBe('crm.view.change');
     expect(detail.phone).toMatch(/\*\*\*\*/);

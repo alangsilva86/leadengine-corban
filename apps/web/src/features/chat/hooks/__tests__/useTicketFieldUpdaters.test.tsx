@@ -13,7 +13,7 @@ vi.mock('sonner', () => ({
 
 const apiPatchMock = vi.hoisted(() => {
   type ApiPatch = typeof import('@/lib/api.js').apiPatch;
-  return vi.fn<Parameters<ApiPatch>, ReturnType<ApiPatch>>(() =>
+  return vi.fn<ApiPatch>(() =>
     Promise.resolve({ data: {} }) as ReturnType<ApiPatch>,
   );
 });
