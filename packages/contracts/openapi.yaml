@@ -1601,8 +1601,9 @@ components:
           type: string
           nullable: true
         error:
-          $ref: '#/components/schemas/OutboundMessageError'
           nullable: true
+          allOf:
+            - $ref: '#/components/schemas/OutboundMessageError'
       additionalProperties: false
     UserRole:
       type: string
@@ -1938,8 +1939,9 @@ components:
         status:
           $ref: '#/components/schemas/AgreementStatus'
         type:
-          $ref: '#/components/schemas/AgreementType'
           nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AgreementType'
         segment:
           type: string
           nullable: true

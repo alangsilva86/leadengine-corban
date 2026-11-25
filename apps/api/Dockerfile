@@ -1,124 +1,76 @@
+# syntax=docker/dockerfile:1
 # ============================================================================
-# Multi-stage Dockerfile otimizado para Ticketz API
+# API Ticketz LeadEngine — build a partir da raiz do monorepo:
+#   docker build -f apps/api/Dockerfile -t ticketz-api .
+# Alvos:
+#   runtime (padrão)  imagem mínima, usuário não-root, `node dist/server.mjs`
+#   migrate           workspace completo para `prisma migrate deploy` (one-off)
 # ============================================================================
 
-# Stage 1: Base com dependências do sistema
-FROM node:20-alpine AS base
+ARG NODE_VERSION=20.19.5
 
-# Instalar dependências do sistema necessárias
-RUN apk add --no-cache \
-    git \
-    openssl \
-    dumb-init \
-    && rm -rf /var/cache/apk/*
-
-# Instalar pnpm globalmente
-RUN npm install -g pnpm@8
-
-# Configurar usuário não-root
-RUN addgroup -g 1001 -S nodejs \
-    && adduser -S ticketz -u 1001 -G nodejs
-
+# ----------------------------------------------------------------------------
+# base: Node + pnpm (versão do packageManager, via Corepack) + OpenSSL para o Prisma
+# ----------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-bookworm-slim AS base
+ENV PNPM_HOME=/pnpm \
+    COREPACK_HOME=/usr/local/share/corepack \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+ENV PATH=$PNPM_HOME:$PATH
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
 WORKDIR /app
 
-# ============================================================================
-# Stage 2: Instalar dependências e build
-# ============================================================================
-FROM base AS builder
+# ----------------------------------------------------------------------------
+# build: dependências completas, cliente Prisma, libs do workspace e bundle da API
+# ----------------------------------------------------------------------------
+FROM base AS build
+# Só o lockfile define o que é baixado: esta camada fica em cache até ele mudar.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm fetch --frozen-lockfile
+COPY . .
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prefer-offline
+RUN pnpm --filter @ticketz/storage run prisma:generate \
+    && pnpm --filter "@ticketz/api^..." run build \
+    && pnpm --filter @ticketz/api run build
+# Pacote autocontido da API: dependências de produção (workspace incluso) + dist.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm --filter @ticketz/api deploy --prod /out \
+    && rm -rf /out/dist && cp -R apps/api/dist /out/dist \
+    && mkdir -p /out/prisma \
+    && cp packages/storage/prisma/schema.prisma /out/prisma/schema.prisma \
+    && cd /out \
+    && /app/node_modules/.bin/prisma generate --schema prisma/schema.prisma \
+    && rm -rf /out/src /out/test /out/logs /out/*.config.ts /out/tsconfig*.json /out/Dockerfile \
+    && rm -f /out/dist/*.map
 
-# Copiar arquivos de configuração do workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY tsconfig.json tsconfig.base.json ./
+# ----------------------------------------------------------------------------
+# migrate: `docker run --rm --env-file .env <img>` aplica as migrations pendentes
+# ----------------------------------------------------------------------------
+FROM build AS migrate
+USER node
+CMD ["pnpm", "run", "db:migrate:deploy"]
 
-# Copiar configuração do Prisma
-COPY prisma ./prisma
-
-# Copiar código-fonte dos packages
-COPY packages ./packages
-
-# Copiar código-fonte da API
-COPY apps/api ./apps/api
-
-# Instalar todas as dependências (incluindo devDependencies para build)
-RUN pnpm install --frozen-lockfile
-
-# Gerar cliente Prisma
-RUN cd apps/api && pnpm db:generate
-
-# Build de todos os packages e da API
-RUN pnpm run build:libs && pnpm run build:api
-
-# ============================================================================
-# Stage 3: Preparar deployment (apenas dependências de produção)
-# ============================================================================
-FROM base AS deps
-
-# Copiar arquivos de configuração
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY tsconfig.json tsconfig.base.json ./
-COPY prisma ./prisma
-
-# Copiar apenas os package.json dos packages necessários
-COPY packages/core/package.json ./packages/core/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/storage/package.json ./packages/storage/
-COPY apps/api/package.json ./apps/api/
-
-# Instalar apenas dependências de produção
-RUN pnpm install --frozen-lockfile --prod
-
-# Gerar cliente Prisma para produção
-RUN cd apps/api && pnpm db:generate
-
-# ============================================================================
-# Stage 4: Runtime final
-# ============================================================================
-FROM base AS runtime
-
-# Definir variáveis de ambiente
-ENV NODE_ENV=production
-ENV PORT=4000
-
+# ----------------------------------------------------------------------------
+# runtime: só Node, dependências de produção e o bundle
+# ----------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl ca-certificates dumb-init \
+    && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=production \
+    PORT=4000 \
+    POLL_METADATA_STORE_PATH=/app/data/poll-metadata.json
 WORKDIR /app
-
-# Copiar dependências de produção
-COPY --from=deps --chown=ticketz:nodejs /app/node_modules ./node_modules
-COPY --from=deps --chown=ticketz:nodejs /app/apps/api/node_modules ./apps/api/node_modules
-
-# Copiar código compilado da API
-COPY --from=builder --chown=ticketz:nodejs /app/apps/api/dist ./dist
-
-# Copiar código compilado dos packages
-COPY --from=builder --chown=ticketz:nodejs /app/packages/core/dist ./packages/core/dist
-COPY --from=builder --chown=ticketz:nodejs /app/packages/shared/dist ./packages/shared/dist
-COPY --from=builder --chown=ticketz:nodejs /app/packages/storage/dist ./packages/storage/dist
-
-# Copiar package.json necessários
-COPY --from=builder --chown=ticketz:nodejs /app/apps/api/package.json ./package.json
-COPY --from=builder --chown=ticketz:nodejs /app/packages/core/package.json ./packages/core/package.json
-COPY --from=builder --chown=ticketz:nodejs /app/packages/shared/package.json ./packages/shared/package.json
-COPY --from=builder --chown=ticketz:nodejs /app/packages/storage/package.json ./packages/storage/package.json
-
-# Copiar schema do Prisma e cliente gerado
-COPY --from=deps --chown=ticketz:nodejs /app/prisma ./prisma
-COPY --from=deps --chown=ticketz:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-
-# Criar diretórios necessários
-RUN mkdir -p logs sessions uploads \
-    && chown -R ticketz:nodejs logs sessions uploads
-
-# Mudar para usuário não-root
-USER ticketz
-
-# Expor porta
+COPY --from=build --chown=node:node /out ./
+RUN mkdir -p logs data uploads && chown node:node logs data uploads
+USER node
 EXPOSE 4000
-
-# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:4000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
-
-# Usar dumb-init para gerenciamento de processos
+    CMD node -e "require('http').get('http://127.0.0.1:'+(process.env.PORT||4000)+'/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 ENTRYPOINT ["dumb-init", "--"]
-
-# Comando de inicialização
 CMD ["node", "dist/server.mjs"]

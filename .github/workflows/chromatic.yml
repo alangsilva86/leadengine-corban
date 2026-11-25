@@ -13,31 +13,46 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
 
+permissions:
+  contents: read
+
 jobs:
   chromatic:
     name: Publish preview
-    runs-on: ubuntu-latest
-    if: ${{ secrets.CHROMATIC_PROJECT_TOKEN != '' }}
+    runs-on: ubuntu-24.04
+    # `secrets` não pode ser usado no `if` do job; derivamos uma flag no env do job
+    # (que aceita o contexto secrets) e condicionamos cada passo a ela. Sem o token
+    # (ex.: PRs de forks) o job termina verde sem publicar.
+    env:
+      HAS_CHROMATIC_TOKEN: ${{ secrets.CHROMATIC_PROJECT_TOKEN != '' }}
 
     steps:
+      - name: Token ausente
+        if: env.HAS_CHROMATIC_TOKEN != 'true'
+        run: echo "::notice::CHROMATIC_PROJECT_TOKEN não configurado; publicação no Chromatic ignorada."
+
       - name: Checkout
+        if: env.HAS_CHROMATIC_TOKEN == 'true'
         uses: actions/checkout@v4
 
+      # Versão do pnpm vem do campo packageManager do package.json.
       - name: Setup pnpm
+        if: env.HAS_CHROMATIC_TOKEN == 'true'
         uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.3
 
       - name: Setup Node.js
+        if: env.HAS_CHROMATIC_TOKEN == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 20.19.0
+          node-version-file: .nvmrc
           cache: pnpm
 
       - name: Install dependencies
+        if: env.HAS_CHROMATIC_TOKEN == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Upload to Chromatic
+        if: env.HAS_CHROMATIC_TOKEN == 'true'
         run: pnpm --filter web run storybook:deploy
         env:
           CHROMATIC_PROJECT_TOKEN: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}

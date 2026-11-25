@@ -128,23 +128,59 @@ const baseConfig = tseslint.config(
       },
     },
   },
+  {
+    // Arquivos de ferramenta (configs de build/teste, scripts, seed, bootstrap de testes)
+    // não pertencem a nenhum tsconfig de pacote, então o project service não os encontra.
+    // As regras ativas (recommended + stylistic) não dependem de tipos; aqui só desligamos
+    // a análise tipada para esses arquivos, sem desligar nenhuma regra.
+    name: 'repo/tooling-files',
+    files: [
+      '**/*.config.{ts,mts,cts}',
+      'scripts/**/*.{ts,mts,cts}',
+      'config/**/*.{ts,mts,cts}',
+      'apps/*/test/**/*.{ts,mts,cts}',
+      'packages/*/prisma/**/*.{ts,mts,cts}',
+    ],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+      },
+    },
+  },
 )
 
 export default [
   {
+    // Ignorados globais: este objeto precisa conter SOMENTE `ignores` (e `name`).
+    // Com qualquer outra chave o ESLint trata `ignores` como filtro local do objeto,
+    // e as saídas de build (packages/*/dist, apps/web/.tsbuild) voltam a ser analisadas.
+    name: 'repo/global-ignores',
     ignores: [
+      // Dependências e saídas de build/ferramentas (também presentes só localmente).
+      '**/node_modules/**',
+      '.pnpm-store/**',
       '**/dist/**',
       '**/build/**',
       '**/coverage/**',
+      '**/.tsbuild/**',
       '**/.next/**',
       '**/.turbo/**',
+      '**/.vite/**',
       '**/storybook-static/**',
-      '**/node_modules/**',
+      '**/test-results/**',
+      '**/playwright-report/**',
+      // Cópias de conflito do iCloud Drive ("arquivo 2.ts", "pasta 2/").
+      '**/* [0-9]/**',
+      '**/* [0-9].*',
+      // Código gerado (ex.: openapi-typescript): regenere em vez de editar à mão.
+      '**/*.gen.ts',
       '**/apps/api/src/features/whatsapp-inbound/routes/__tests__/**',
       '**/apps/api/src/routes/webhooks.test.ts',
       '**/apps/web/src/features/chat/api/useUpdateNextStep.d.ts',
       '**/config/feature-flags.d.ts',
     ],
+  },
+  {
     linterOptions: {
       reportUnusedDisableDirectives: 'off',
     },

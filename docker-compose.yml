@@ -67,16 +67,17 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      # VITE_* entram no bundle durante o build (não têm efeito como env de runtime).
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:4000}
+        VITE_AUTH_PROVIDER: ${VITE_AUTH_PROVIDER:-internal}
+        VITE_DEFAULT_TENANT_HINT: ${VITE_DEFAULT_TENANT_HINT:-}
+        VITE_AUTH_PREFILL_EMAIL: ${VITE_AUTH_PREFILL_EMAIL:-}
+        VITE_AUTH_PREFILL_PASSWORD: ${VITE_AUTH_PREFILL_PASSWORD:-}
     container_name: ticketz-web
-    environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
-      VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:4000}
-      VITE_AUTH_PROVIDER: ${VITE_AUTH_PROVIDER:-internal}
-      VITE_DEFAULT_TENANT_HINT: ${VITE_DEFAULT_TENANT_HINT:-}
-      VITE_AUTH_PREFILL_EMAIL: ${VITE_AUTH_PREFILL_EMAIL:-}
-      VITE_AUTH_PREFILL_PASSWORD: ${VITE_AUTH_PREFILL_PASSWORD:-}
     ports:
-      - "5173:80"
+      - "5173:8080"
     depends_on:
       - api
     networks: [ticketz-network]

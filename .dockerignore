@@ -1,0 +1,44 @@
+# Contexto de build das imagens (apps/api/Dockerfile e apps/web/Dockerfile usam a raiz como contexto).
+# As dependências são instaladas e os pacotes compilados dentro da imagem; nada local deve vazar.
+
+# Controle de versão e editores
+.git
+.github
+.vscode
+.idea
+**/.DS_Store
+
+# Dependências e caches locais
+**/node_modules
+.pnpm-store
+**/.eslintcache
+
+# Saídas de build/teste (geradas de novo na imagem)
+**/dist
+**/.tsbuild
+**/*.tsbuildinfo
+**/coverage
+**/storybook-static
+**/test-results
+**/playwright-report
+**/.vite
+
+# Segredos e configuração local (somente os exemplos entram)
+**/.env
+**/.env.*
+!**/.env.example
+
+# Logs e dados de runtime locais
+**/logs
+**/*.log
+**/sessions
+**/uploads
+
+# Cópias de conflito do iCloud Drive ("arquivo 2.ts", "pasta 2/")
+**/* [0-9]
+**/* [0-9].*
+
+# Documentação e artefatos que não participam do build
+docs
+*.md
+!README.md

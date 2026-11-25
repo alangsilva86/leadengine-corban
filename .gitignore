@@ -111,8 +111,7 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# Docker
-.dockerignore
+# Docker (o .dockerignore da raiz é versionado: mantém node_modules, dist e .env* fora do contexto de build)
 
 # Database
 *.sqlite

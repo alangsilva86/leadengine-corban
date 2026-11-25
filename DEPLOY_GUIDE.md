@@ -130,12 +130,31 @@ docker compose -f docker-compose.prod.yml up -d postgres redis
 # Aguardar banco ficar pronto
 sleep 30
 
-# Executar migrações
-docker compose -f docker-compose.prod.yml run --rm api sh -c "cd apps/api && pnpm db:push && pnpm db:seed"
+# Executar migrações (imagem one-off do alvo `migrate`, na rede do Compose)
+docker build -f apps/api/Dockerfile --target migrate -t ticketz-api-migrate .
+docker run --rm --network "$(basename "$PWD")_ticketz-network" \
+  -e DATABASE_URL="postgresql://USUARIO:SENHA@postgres:5432/BANCO" \
+  -e DATABASE_DIRECT_URL="postgresql://USUARIO:SENHA@postgres:5432/BANCO" \
+  ticketz-api-migrate
 
 # Iniciar todos os serviços
 docker compose -f docker-compose.prod.yml up -d
 ```
+
+#### Imagens Docker (API e Web)
+
+As duas imagens são construídas a partir da **raiz** do monorepo (o `.dockerignore` da raiz mantém `node_modules`, `dist`, `.env*` e cópias `* 2` do iCloud fora do contexto):
+
+| Imagem | Comando | Runtime |
+| --- | --- | --- |
+| API | `docker build -f apps/api/Dockerfile -t ticketz-api .` | `node:20.19.5-bookworm-slim`, usuário `node`, `node dist/server.mjs` na porta `4000`, healthcheck em `/ready` |
+| Migrações | `docker build -f apps/api/Dockerfile --target migrate -t ticketz-api-migrate .` | workspace completo; executa `pnpm run db:migrate:deploy` |
+| Web | `docker build -f apps/web/Dockerfile -t ticketz-web --build-arg VITE_API_URL=... .` | `nginx-unprivileged` (uid 101) na porta **8080**, `/health` |
+
+- pnpm 9.12.3 vem do `packageManager` via Corepack e a instalação usa `pnpm install --frozen-lockfile`.
+- A imagem da API contém só as dependências de produção (`pnpm deploy --prod`), o cliente Prisma gerado e o bundle. Diretórios graváveis: `/app/logs`, `/app/uploads` e `/app/data` (`POLL_METADATA_STORE_PATH=/app/data/poll-metadata.json`). Com bind mounts em Linux, dê permissão de escrita ao uid `1000`.
+- As variáveis `VITE_*` do frontend são **build args** (entram no bundle); defini-las no runtime não tem efeito. Sem `VITE_API_URL` o app usa a mesma origem e o nginx encaminha `/api/` e `/socket.io/` para `API_UPSTREAM` (padrão `http://api:4000`, resolvido via DNS do Docker em `NGINX_RESOLVER=127.0.0.11`).
+- A porta do container web passou de 80 para 8080 (nginx sem root); os arquivos Compose já publicam `5173:8080` (dev) e `${WEB_PORT:-80}:8080` (prod).
 
 ### 3. Deploy no Render.com
 
@@ -196,6 +215,25 @@ Além das variáveis já definidas na seção de configuração (como `DATABASE_
   - (Opcional) `VITE_API_AUTH_TOKEN`: token JWT estático usado apenas como fallback caso nenhuma sessão seja gerada no navegador.
 
 > 🔐 Caso prefira não armazenar a senha do operador em variáveis do Render, gere manualmente um JWT válido com o comando `pnpm --filter @ticketz/api exec ts-node scripts/generate-jwt.ts --email operador@exemplo.com` e preencha o valor em `VITE_API_AUTH_TOKEN`. Sem o token ou o usuário seedado, o modal de autenticação não conseguirá criar a sessão demo.
+
+### 4. Railway (API via nixpacks)
+
+O serviço da API no Railway é construído pelo `nixpacks.toml` da raiz:
+
+| Fase | Comandos |
+| --- | --- |
+| setup | `nodejs_20` + `openssl` do nixpkgs `23f9169c4ccce521379e602cc82ed873a1f1b52b` (Node 20.19.5) |
+| install | `npm install -g corepack@0.24.1 && corepack enable` → `pnpm install --frozen-lockfile --prefer-offline` |
+| build | `pnpm --filter @ticketz/storage run prisma:generate` → `pnpm --filter @ticketz/api run build` |
+| start | `pnpm --filter @ticketz/api run start` (`node dist/server.mjs`) |
+
+Por que o arquivo mudou (nov/2026):
+
+- O `package.json` raiz exige `node >=20.19 <21` e `pnpm 9.12.3` com `engine-strict=true`. A configuração anterior (`nixPkgs = ['nodejs-20_x', 'pnpm']`) entregava, no nixpacks 1.41, Node **20.18.1** e o pnpm do nixpkgs (**9.15.x**); as duas versões fazem o `pnpm install` abortar com `ERR_PNPM_UNSUPPORTED_ENGINE` (reproduzido localmente). Agora o Node vem de um archive do nixpkgs com 20.19.5 (o mesmo que o nixpacks usa para Node 24) e o pnpm exato vem do Corepack, como o provider Node do nixpacks já faz por padrão quando existe `packageManager`.
+- `openssl` voltou à lista: o provider o adiciona automaticamente para projetos com Prisma, mas uma lista `nixPkgs` própria o remove.
+- Saíram os `echo`/`grep` de depuração e o `cat CACHE_BUSTER`; o `ls` do bundle virou desnecessário (o build falha se o `tsup` falhar).
+- **Não** é preciso rodar `build:libs` antes do build da API: o `tsup` empacota `@ticketz/{core,shared,storage,contracts,wa-contracts}` a partir do código-fonte (pelos `paths` do `apps/api/tsconfig.json`) e `@leadengine/wa-status` é compilado no `postinstall`. Validado com um clone limpo: build com os comandos acima, `node apps/api/dist/server.mjs` respondendo `/ready` 200 e login (consulta ao Postgres via Prisma) 200.
+- Migrações continuam fora do build: rode `pnpm run db:migrate:deploy` (pre-deploy command ou job manual) antes de promover a release.
 
 ### 👤 Provisionar operadores via onboarding
 

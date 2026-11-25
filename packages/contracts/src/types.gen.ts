@@ -597,7 +597,7 @@ export interface components {
       messageId: string;
       status: string;
       externalId: string | null;
-      error: components["schemas"]["OutboundMessageError"];
+      error: components["schemas"]["OutboundMessageError"] | null;
     };
     /**
      * @description Papel atribuído ao usuário dentro do tenant.
@@ -761,7 +761,7 @@ export interface components {
       name: string;
       slug: string;
       status: components["schemas"]["AgreementStatus"];
-      type?: components["schemas"]["AgreementType"];
+      type?: components["schemas"]["AgreementType"] | null;
       segment?: string | null;
       description?: string | null;
       tags: string[];

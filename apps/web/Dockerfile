@@ -1,124 +1,87 @@
+# syntax=docker/dockerfile:1
 # ============================================================================
-# Multi-stage Dockerfile otimizado para Ticketz Web (React + Vite)
+# Frontend Ticketz LeadEngine (React + Vite) servido por nginx não-root.
+#   docker build -f apps/web/Dockerfile -t ticketz-web \
+#     --build-arg VITE_API_URL=https://api.exemplo.com --build-arg VITE_WS_URL=wss://api.exemplo.com .
+# As variáveis VITE_* são lidas no BUILD (ficam no bundle); definir no runtime não tem efeito.
+# Sem VITE_API_URL o app usa a mesma origem e o nginx encaminha /api e /socket.io
+# para API_UPSTREAM (padrão http://api:4000, resolvido no momento da requisição).
 # ============================================================================
 
-# Stage 1: Base com Node.js
-FROM node:20-alpine AS base
+ARG NODE_VERSION=20.19.5
 
-# Instalar dependências do sistema
-RUN apk add --no-cache \
-    git \
-    && rm -rf /var/cache/apk/*
-
-# Instalar pnpm
-RUN npm install -g pnpm@8
-
+# ----------------------------------------------------------------------------
+# build: workspace instalado pelo lockfile e bundle estático do Vite
+# ----------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-bookworm-slim AS build
+ENV PNPM_HOME=/pnpm \
+    COREPACK_HOME=/usr/local/share/corepack \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && corepack prepare pnpm@9.12.3 --activate
 WORKDIR /app
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm fetch --frozen-lockfile
+COPY . .
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prefer-offline
+ARG VITE_API_URL
+ARG VITE_WS_URL
+ARG VITE_AUTH_PROVIDER
+ARG VITE_DEFAULT_TENANT_HINT
+ARG VITE_AUTH_PREFILL_EMAIL
+ARG VITE_AUTH_PREFILL_PASSWORD
+RUN pnpm --filter "web^..." run build \
+    && pnpm --filter web run build \
+    && test -f apps/web/dist/index.html
 
-# ============================================================================
-# Stage 2: Build da aplicação
-# ============================================================================
-FROM base AS builder
-
-# Copiar arquivos de configuração do workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY tsconfig.json tsconfig.base.json ./
-
-# Copiar código-fonte dos packages compartilhados
-COPY packages/core ./packages/core
-COPY packages/shared ./packages/shared
-
-# Copiar código-fonte do frontend
-COPY apps/web ./apps/web
-
-# Instalar dependências
-RUN pnpm install --frozen-lockfile
-
-# Build dos packages compartilhados primeiro
-RUN pnpm --filter @ticketz/core build
-RUN pnpm --filter @ticketz/shared build
-
-# Build da aplicação web
-RUN cd apps/web && pnpm build
-
-# ============================================================================
-# Stage 3: Nginx para servir arquivos estáticos
-# ============================================================================
-FROM nginx:1.25-alpine AS runtime
-
-# Instalar dependências para healthcheck
-RUN apk add --no-cache curl
-
-# Copiar arquivos buildados
-COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
-
-# Criar configuração otimizada do nginx
-RUN cat > /etc/nginx/conf.d/default.conf << 'EOF'
+# ----------------------------------------------------------------------------
+# runtime: nginx sem root (uid 101), porta 8080
+# ----------------------------------------------------------------------------
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+ENV API_UPSTREAM=http://api:4000 \
+    NGINX_RESOLVER=127.0.0.11
+COPY <<'EOF' /etc/nginx/templates/default.conf.template
 server {
-    listen 80;
+    listen 8080;
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
 
-    # Configurações de segurança
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-    # Compressão
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
-    gzip_types
-        text/plain
-        text/css
-        text/xml
-        text/javascript
-        application/javascript
-        application/xml+rss
-        application/json;
+    gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json image/svg+xml;
 
-    # Cache para assets estáticos
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    # Resolução tardia: o nginx sobe mesmo quando a API ainda não existe na rede.
+    resolver ${NGINX_RESOLVER} valid=30s ipv6=off;
+    set $api_upstream ${API_UPSTREAM};
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|webp|avif)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
         try_files $uri =404;
     }
 
-    # Cache para HTML (sem cache para permitir atualizações)
     location ~* \.html$ {
         expires -1;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
-        add_header Pragma "no-cache";
         try_files $uri =404;
     }
 
-    # SPA routing - redirecionar tudo para index.html
     location / {
         try_files $uri $uri/ /index.html;
         expires -1;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
-        add_header Pragma "no-cache";
     }
 
-    # API proxy (se necessário)
-    location /api/ {
-        proxy_pass http://api:4000/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-        proxy_read_timeout 86400;
-    }
-
-    # WebSocket proxy para Socket.IO
-    location /socket.io/ {
-        proxy_pass http://api:4000/socket.io/;
+    location ^~ /api/ {
+        proxy_pass $api_upstream;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -126,42 +89,29 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
     }
 
-    # Health check endpoint
-    location /health {
+    location ^~ /socket.io/ {
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
+    location = /health {
         access_log off;
-        return 200 "healthy\n";
         add_header Content-Type text/plain;
+        return 200 "healthy\n";
     }
-
-    # Logs
-    access_log /var/log/nginx/access.log;
-    error_log /var/log/nginx/error.log warn;
 }
 EOF
-
-# Criar usuário não-root
-RUN addgroup -g 1001 -S ticketz \
-    && adduser -S -G ticketz -u 1001 ticketz
-
-# Ajustar permissões
-RUN chown -R ticketz:ticketz /usr/share/nginx/html \
-    && chown -R ticketz:ticketz /var/cache/nginx \
-    && chown -R ticketz:ticketz /var/log/nginx \
-    && chown -R ticketz:ticketz /etc/nginx/conf.d \
-    && touch /var/run/nginx.pid \
-    && chown ticketz:ticketz /var/run/nginx.pid
-
-# Mudar para usuário não-root
-USER ticketz
-
-# Expor porta
-EXPOSE 80
-
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost/health || exit 1
-
-# Iniciar nginx
-CMD ["nginx", "-g", "daemon off;"]
+COPY --from=build --chown=101:101 /app/apps/web/dist /usr/share/nginx/html
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1

@@ -131,26 +131,27 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       target: runtime
+      # VITE_* entram no bundle durante o build (não têm efeito como env de runtime).
+      args:
+        VITE_API_URL: ${VITE_API_URL:-https://ticketzapi-production.up.railway.app}
+        VITE_WS_URL: ${VITE_WS_URL:-wss://ticketzapi-production.up.railway.app}
+        VITE_AUTH_PROVIDER: ${VITE_AUTH_PROVIDER:-invite}
+        VITE_DEFAULT_TENANT_HINT: ${VITE_DEFAULT_TENANT_HINT:-}
+        VITE_AUTH_PREFILL_EMAIL: ${VITE_AUTH_PREFILL_EMAIL:-}
+        VITE_AUTH_PREFILL_PASSWORD: ${VITE_AUTH_PREFILL_PASSWORD:-}
     container_name: ticketz-web-prod
     restart: unless-stopped
     environment:
-      NGINX_WORKER_PROCESSES: auto
-      NGINX_WORKER_CONNECTIONS: 1024
-      VITE_API_URL: ${VITE_API_URL:-https://ticketzapi-production.up.railway.app}
-      VITE_WS_URL: ${VITE_WS_URL:-wss://ticketzapi-production.up.railway.app}
-      VITE_AUTH_PROVIDER: ${VITE_AUTH_PROVIDER:-invite}
-      VITE_DEFAULT_TENANT_HINT: ${VITE_DEFAULT_TENANT_HINT:-}
-      VITE_AUTH_PREFILL_EMAIL: ${VITE_AUTH_PREFILL_EMAIL:-}
-      VITE_AUTH_PREFILL_PASSWORD: ${VITE_AUTH_PREFILL_PASSWORD:-}
+      API_UPSTREAM: ${API_UPSTREAM:-http://api:4000}
     ports:
-      - "${WEB_PORT:-80}:80"
+      - "${WEB_PORT:-80}:8080"
     depends_on:
       api:
         condition: service_healthy
     networks:
       - ticketz-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 5
