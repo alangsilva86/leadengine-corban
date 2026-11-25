@@ -6,7 +6,13 @@ import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_VIEWPORT_CLASSES =
-  'chat-scroll-area block size-full w-full min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:outline-1 focus-visible:ring-[3px] focus-visible:ring-ring/50 [scrollbar-gutter:stable_both-edges]';
+  'chat-scroll-area block size-full w-full min-w-0 overscroll-contain rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:outline-1 focus-visible:ring-[3px] focus-visible:ring-ring/50 [scrollbar-gutter:stable_both-edges]';
+
+const ORIENTATION_CLASSES = {
+  vertical: 'overflow-y-auto overflow-x-hidden',
+  horizontal: 'overflow-x-auto overflow-y-hidden',
+  both: 'overflow-auto',
+};
 
 const ScrollArea = React.forwardRef(function ScrollArea(
   {
@@ -14,6 +20,7 @@ const ScrollArea = React.forwardRef(function ScrollArea(
     viewportClassName,
     viewportRef,
     viewportProps = {},
+    orientation = 'vertical',
     children,
     ...props
   },
@@ -40,13 +47,19 @@ const ScrollArea = React.forwardRef(function ScrollArea(
       <ScrollAreaPrimitive.Viewport
         ref={viewportRef}
         data-slot="scroll-area-viewport"
-        className={cn(DEFAULT_VIEWPORT_CLASSES, viewportClassName, viewportClassNameProp)}
+        className={cn(
+          DEFAULT_VIEWPORT_CLASSES,
+          ORIENTATION_CLASSES[orientation] ?? ORIENTATION_CLASSES.vertical,
+          viewportClassName,
+          viewportClassNameProp
+        )}
         style={viewportStyle}
         {...restViewportProps}
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
-      <ScrollBar orientation="vertical" />
+      {orientation !== 'horizontal' ? <ScrollBar orientation="vertical" /> : null}
+      {orientation !== 'vertical' ? <ScrollBar orientation="horizontal" /> : null}
       <ScrollAreaPrimitive.Corner data-slot="scroll-area-corner" />
     </ScrollAreaPrimitive.Root>
   );

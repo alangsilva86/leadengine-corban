@@ -10,7 +10,7 @@ import { formatAgreementLabel } from '../../utils/campaign-formatters.js';
 const toInstanceLabel = (campaign, agreementFilter) => {
   const baseLabel = campaign.instanceId
     ? campaign.instanceName || campaign.instanceId
-    : 'Sem instância vinculada';
+    : 'Sem número';
 
   if (agreementFilter === ALL_FILTER_VALUE && campaign.instanceId) {
     return `${baseLabel} • ${formatAgreementLabel(campaign)}`;

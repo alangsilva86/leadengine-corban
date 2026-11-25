@@ -1,16 +1,30 @@
-import { useMemo } from 'react';
+import {
+  LEAD_EXIT_STAGES,
+  LEAD_PIPELINE_STAGES,
+  LEAD_STAGE_DEFINITIONS,
+  type LeadStage,
+  type LeadStageTone,
+} from '../utils/lead-stage';
 
-const DEFAULT_STAGES = [
-  { id: 'qualification', title: 'Qualificação' },
-  { id: 'proposal', title: 'Proposta' },
-  { id: 'negotiation', title: 'Negociação' },
-  { id: 'closed-won', title: 'Ganho' },
-  { id: 'closed-lost', title: 'Perdido' },
-];
-
-export const useKanbanStages = () => {
-  const stages = useMemo(() => DEFAULT_STAGES, []);
-  return stages;
+export type KanbanStage = {
+  id: LeadStage;
+  title: string;
+  description: string;
+  tone: LeadStageTone;
+  exit: boolean;
 };
+
+const toKanbanStage = (id: LeadStage): KanbanStage => {
+  const definition = LEAD_STAGE_DEFINITIONS[id];
+  return { id, title: definition.label, description: definition.description, tone: definition.tone, exit: definition.exit };
+};
+
+/** Colunas do funil (7 etapas, em ordem) e saídas (Ganho, Perdido, Reciclar) — direto do contrato. */
+const KANBAN_STAGES = {
+  pipeline: LEAD_PIPELINE_STAGES.map(toKanbanStage),
+  exits: LEAD_EXIT_STAGES.map(toKanbanStage),
+};
+
+export const useKanbanStages = () => KANBAN_STAGES;
 
 export default useKanbanStages;

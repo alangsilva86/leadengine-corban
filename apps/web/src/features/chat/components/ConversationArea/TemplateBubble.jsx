@@ -5,14 +5,14 @@ export const TemplateBubble = ({ template, caption }) => {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-col gap-1 rounded-lg bg-surface-overlay-quiet px-3 py-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground-muted">
+      <div className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           Mensagem modelo
         </span>
         {name ? <span className="text-sm font-medium text-foreground">{name}</span> : null}
-        {language ? <span className="text-xs text-foreground-muted">Idioma: {language}</span> : null}
+        {language ? <span className="text-xs text-muted-foreground">Idioma: {language}</span> : null}
         {components.length > 0 ? (
-          <ul className="ml-4 list-disc text-xs text-foreground-muted">
+          <ul className="ml-4 list-disc text-xs text-muted-foreground">
             {components.map((component, index) => (
               <li key={`component-${index}`}>
                 {component?.type ?? 'Componente'}
@@ -22,7 +22,7 @@ export const TemplateBubble = ({ template, caption }) => {
           </ul>
         ) : null}
       </div>
-      {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+      {caption ? <p className="text-xs text-muted-foreground">{caption}</p> : null}
     </div>
   );
 };

@@ -2,49 +2,57 @@ import { forwardRef, memo, useMemo } from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
 import useInstancePresentation from '../../hooks/useInstancePresentation.js';
+import { toSentenceCase } from '../ConversationArea/utils/presentation.js';
 
-const DEFAULT_COLOR = '#94A3B8';
-
+/**
+ * Número de WhatsApp (instância) por onde a conversa passa.
+ * Texto neutro (contraste garantido) + ponto na cor do número.
+ */
 const InstanceChip = memo(
-  forwardRef(function InstanceChip({ label, color, withDot = true, className }, ref) {
-    const dotStyle = useMemo(() => ({ backgroundColor: color ?? DEFAULT_COLOR }), [color]);
-    const textStyle = useMemo(() => ({ color: color ?? DEFAULT_COLOR }), [color]);
-    const backgroundStyle = useMemo(() => {
-      const resolved = color ?? DEFAULT_COLOR;
-      return {
-        backgroundColor: `${resolved}1A`,
-        borderColor: `${resolved}33`,
-      };
-    }, [color]);
+  forwardRef(function InstanceChip({ label, color, withDot = true, className, variant = 'chip' }, ref) {
+    const dotStyle = useMemo(() => (color ? { backgroundColor: color } : undefined), [color]);
 
     return (
       <span
         ref={ref}
         className={cn(
-          'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
-          className
+          'inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground',
+          variant === 'chip' && 'rounded-md border border-border bg-surface-sunken px-1.5 py-0.5',
+          className,
         )}
-        style={backgroundStyle}
       >
-        {withDot ? <span className="h-1.5 w-1.5 rounded-full" style={dotStyle} /> : null}
-        <span style={textStyle}>{label}</span>
+        {withDot ? (
+          <span
+            className={cn('size-1.5 shrink-0 rounded-full', !color && 'bg-subtle-foreground')}
+            style={dotStyle}
+            aria-hidden
+          />
+        ) : null}
+        <span className="truncate">{label}</span>
       </span>
     );
-  })
+  }),
 );
 
 export const InstanceBadge = memo(function InstanceBadge({
   instanceId,
   withTooltip = true,
   withDot = true,
-  fallbackLabel = 'Instância desconhecida',
+  fallbackLabel = 'Número não identificado',
+  variant = 'chip',
   className,
 }) {
   const presentation = useInstancePresentation(instanceId);
-  const label = presentation.label ?? fallbackLabel;
+  const label = toSentenceCase(presentation.label ?? fallbackLabel);
   const tooltip = presentation.phone ?? presentation.number ?? null;
   const chip = (
-    <InstanceChip label={label} color={presentation.color} withDot={withDot} className={className} />
+    <InstanceChip
+      label={label}
+      color={presentation.known ? presentation.color : null}
+      withDot={withDot}
+      variant={variant}
+      className={className}
+    />
   );
 
   if (!withTooltip || !tooltip) {
@@ -52,12 +60,12 @@ export const InstanceBadge = memo(function InstanceBadge({
   }
 
   return (
-    <Tooltip delayDuration={120}>
+    <Tooltip delayDuration={200}>
       <TooltipTrigger asChild>{chip}</TooltipTrigger>
       <TooltipContent className="text-xs">
         <div className="flex flex-col">
           <span className="font-semibold">{label}</span>
-          <span className="text-foreground-muted">{tooltip}</span>
+          <span>{tooltip}</span>
         </div>
       </TooltipContent>
     </Tooltip>

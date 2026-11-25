@@ -78,37 +78,3 @@ describe('useUpdateContactField', () => {
     client.clear();
   });
 });
-
-describe('useUpdateLeadField', () => {
-  let useUpdateLeadField: typeof import('../useUpdateLeadField').useUpdateLeadField;
-
-  beforeEach(async () => {
-    ({ useUpdateLeadField } = await import('../useUpdateLeadField'));
-  });
-
-  afterEach(() => {
-    apiPatchMock.mockReset();
-  });
-
-  it('updates a lead and invalidates relevant caches', async () => {
-    const client = new QueryClient();
-    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
-
-    apiPatchMock.mockResolvedValue({ data: { id: 'lead-1', status: 'qualified' } });
-
-    const { result } = renderHook(() => useUpdateLeadField({ leadId: 'lead-1' }), {
-      wrapper: createWrapper(client),
-    });
-
-    await act(async () => {
-      await result.current.mutateAsync({ data: { status: 'qualified' } });
-    });
-
-    expect(apiPatchMock).toHaveBeenCalledWith('/api/leads/lead-1', { status: 'qualified' });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['chat', 'tickets'] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['leads', 'lead-1'] });
-
-    invalidateSpy.mockRestore();
-    client.clear();
-  });
-});

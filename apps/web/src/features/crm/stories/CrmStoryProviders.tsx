@@ -8,7 +8,7 @@ import type { CrmMetricPrimitive } from '../state/metrics';
 const queryClient = new QueryClient();
 
 const defaultFilters: CrmFilterState = normalizeCrmFilters({
-  stages: ['qualification'],
+  stages: ['qualificacao'],
   owners: ['owner:me'],
   origins: ['web'],
   channels: ['whatsapp'],
@@ -36,10 +36,10 @@ const agingPayload = {
     generatedAt: new Date().toISOString(),
     filters: {},
     buckets: [
-      { stageId: 'qualification', stageName: 'Qualificação', bucketId: '0-1', bucketLabel: '0-1 dia', leadCount: 6, potentialValue: 12000, sampleLeadId: 'lead-1', sampleLeadName: 'Lead 1' },
-      { stageId: 'qualification', stageName: 'Qualificação', bucketId: '2-3', bucketLabel: '2-3 dias', leadCount: 4, potentialValue: 9000, sampleLeadId: 'lead-2', sampleLeadName: 'Lead 2' },
-      { stageId: 'proposal', stageName: 'Proposta', bucketId: '0-1', bucketLabel: '0-1 dia', leadCount: 3, potentialValue: 15000, sampleLeadId: 'lead-3', sampleLeadName: 'Lead 3' },
-      { stageId: 'proposal', stageName: 'Proposta', bucketId: '2-3', bucketLabel: '2-3 dias', leadCount: 5, potentialValue: 22000, sampleLeadId: 'lead-4', sampleLeadName: 'Lead 4' },
+      { stageId: 'qualificacao', stageName: 'Qualificação', bucketId: '0-1', bucketLabel: '0-1 dia', leadCount: 6, potentialValue: 12000, sampleLeadId: 'lead-1', sampleLeadName: 'Lead 1' },
+      { stageId: 'qualificacao', stageName: 'Qualificação', bucketId: '2-3', bucketLabel: '2-3 dias', leadCount: 4, potentialValue: 9000, sampleLeadId: 'lead-2', sampleLeadName: 'Lead 2' },
+      { stageId: 'proposta', stageName: 'Proposta', bucketId: '0-1', bucketLabel: '0-1 dia', leadCount: 3, potentialValue: 15000, sampleLeadId: 'lead-3', sampleLeadName: 'Lead 3' },
+      { stageId: 'proposta', stageName: 'Proposta', bucketId: '2-3', bucketLabel: '2-3 dias', leadCount: 5, potentialValue: 22000, sampleLeadId: 'lead-4', sampleLeadName: 'Lead 4' },
     ],
   },
 };

@@ -8,13 +8,20 @@ import {
   fetchCampaigns,
   fetchCampaignImpact,
   reassignCampaign as reassignCampaignRequest,
+  renameCampaign as renameCampaignRequest,
   updateCampaignStatus as updateCampaignStatusRequest,
 } from '../services/campaignService';
-import type { CampaignActionState, WhatsAppConnectAction, WhatsAppConnectState } from '../useWhatsAppConnect';
+import type { CampaignActionState, CampaignState, CampaignStateAction } from '../../campaigns/campaignState';
+import { resolveWhatsAppError } from '../../lib/errors';
+
+/** Regras listadas na tela (encerradas aparecem no histórico da origem). */
+const LISTED_STATUSES = ['active', 'paused', 'draft'];
+
+const friendlyMessage = (err: any, fallbackTitle: string) => resolveWhatsAppError(err, fallbackTitle).message;
 
 interface UseWhatsappCampaignActionsParams {
-  state: WhatsAppConnectState;
-  dispatch: (action: WhatsAppConnectAction) => void;
+  state: CampaignState;
+  dispatch: (action: CampaignStateAction) => void;
   selectedAgreement: any;
   activeCampaign: any | undefined;
   instance: any;
@@ -64,24 +71,18 @@ const useWhatsappCampaignActions = ({
     async ({
       preferredAgreementId,
       preferredCampaignId,
-      preferredInstanceId,
     }: {
       preferredAgreementId?: string | null;
       preferredCampaignId?: string | null;
       preferredInstanceId?: string | null;
     } = {}) => {
+      // Sem origem selecionada, listamos todas as regras da empresa da sessão.
       const agreementId = preferredAgreementId ?? selectedAgreement?.id ?? null;
-
-      if (!agreementId) {
-        dispatch({ type: 'set-campaigns', value: [] });
-        dispatch({ type: 'set-campaign-error', value: null });
-        return;
-      }
 
       dispatch({ type: 'set-campaigns-loading', value: true });
       dispatch({ type: 'set-campaign-error', value: null });
       try {
-        const items = await fetchCampaigns({ agreementId, instanceId: preferredInstanceId ?? undefined });
+        const items = await fetchCampaigns({ agreementId, statuses: LISTED_STATUSES });
         dispatch({ type: 'set-campaigns', value: items });
 
         if (preferredCampaignId) {
@@ -89,15 +90,15 @@ const useWhatsappCampaignActions = ({
           dispatch({ type: 'set-campaign', value: found });
         }
       } catch (err: any) {
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Falha ao carregar campanhas');
-        dispatch({ type: 'set-campaign-error', value: message });
+        if (err?.status === 401) {
+          handleAuthFallback({ error: err });
+        }
+        dispatch({ type: 'set-campaign-error', value: friendlyMessage(err, 'Não foi possível carregar as regras') });
       } finally {
         dispatch({ type: 'set-campaigns-loading', value: false });
       }
     },
-    [dispatch, selectedAgreement?.id]
+    [dispatch, handleAuthFallback, selectedAgreement?.id]
   );
 
   useEffect(() => {
@@ -107,18 +108,15 @@ const useWhatsappCampaignActions = ({
   useEffect(() => {
     void loadCampaigns({
       preferredAgreementId: selectedAgreement?.id ?? null,
-      preferredCampaignId: state.campaign?.id ?? null,
-      preferredInstanceId: instance?.id ?? null,
     });
-  }, [loadCampaigns, selectedAgreement?.id, instance?.id, state.campaign?.id]);
+  }, [loadCampaigns, selectedAgreement?.id]);
 
   const reloadCampaigns = useCallback(() => {
     return loadCampaigns({
       preferredAgreementId: selectedAgreement?.id ?? null,
       preferredCampaignId: state.campaign?.id ?? null,
-      preferredInstanceId: instance?.id ?? null,
     });
-  }, [loadCampaigns, selectedAgreement?.id, state.campaign?.id, instance?.id]);
+  }, [loadCampaigns, selectedAgreement?.id, state.campaign?.id]);
 
   const createCampaign = useCallback(
     async ({
@@ -157,20 +155,17 @@ const useWhatsappCampaignActions = ({
         segments,
       });
       if (!parsed.success) {
-        const message = parsed.error.errors[0]?.message ?? 'Falha ao validar os dados da campanha.';
-        dispatch({ type: 'set-campaign-error', value: message });
+        const message = parsed.error.errors[0]?.message ?? 'Falha ao validar os dados da regra.';
         throw new Error(message);
       }
 
       const targetInstance = instances.find((entry) => entry && entry.id === parsed.data.instanceId) ?? null;
       if (!targetInstance) {
-        const message = 'Selecione uma instância válida para criar a campanha.';
-        dispatch({ type: 'set-campaign-error', value: message });
+        const message = 'Escolha um número de WhatsApp para a regra.';
         throw new Error(message);
       }
       if (!targetInstance.connected) {
-        const message = 'A campanha exige uma instância conectada para receber leads.';
-        dispatch({ type: 'set-campaign-error', value: message });
+        const message = 'O número escolhido precisa estar conectado para receber leads.';
         throw new Error(message);
       }
       const brokerId =
@@ -181,7 +176,6 @@ const useWhatsappCampaignActions = ({
       const resolvedAgreementId = parsed.data.agreementId;
       const resolvedAgreementName = parsed.data.agreementName || agreementName || selectedAgreement?.name || '';
 
-      dispatch({ type: 'set-campaign-error', value: null });
       dispatch({ type: 'set-campaign-action', value: { id: null, type: 'create' } });
 
       try {
@@ -210,7 +204,7 @@ const useWhatsappCampaignActions = ({
           preferredCampaignId: payload?.id ?? null,
           preferredInstanceId: payload?.instanceId ?? instance?.id ?? null,
         });
-        toast.success('Campanha criada com sucesso.');
+        toast.success('Regra de roteamento criada.');
         return payload;
       } catch (err: any) {
         if (err?.payload?.status === 401 || err?.status === 401) {
@@ -218,12 +212,8 @@ const useWhatsappCampaignActions = ({
           throw err;
         }
 
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Não foi possível criar a campanha');
-        dispatch({ type: 'set-campaign-error', value: message });
-        logError('Falha ao criar campanha WhatsApp', err);
-        toast.error('Falha ao criar campanha', { description: message });
+        const message = friendlyMessage(err, 'Não foi possível criar a regra');
+        logError('Falha ao criar regra WhatsApp', err);
         throw err instanceof Error ? err : new Error(message);
       } finally {
         dispatch({ type: 'set-campaign-action', value: null });
@@ -238,7 +228,6 @@ const useWhatsappCampaignActions = ({
         return;
       }
 
-      dispatch({ type: 'set-campaign-error', value: null });
       dispatch({ type: 'set-campaign-action', value: { id: target.id, type: nextStatus } });
 
       try {
@@ -249,19 +238,16 @@ const useWhatsappCampaignActions = ({
           preferredCampaignId: target?.id ?? null,
           preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
         });
-        toast.success(nextStatus === 'active' ? 'Campanha ativada com sucesso.' : 'Campanha pausada.');
+        toast.success(nextStatus === 'active' ? 'Regra retomada.' : 'Regra pausada. Novos leads desta origem não serão distribuídos.');
       } catch (err: any) {
         if (err?.payload?.status === 401 || err?.status === 401) {
           handleAuthFallback({ error: err });
           throw err;
         }
 
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Não foi possível atualizar a campanha');
-        dispatch({ type: 'set-campaign-error', value: message });
-        toast.error('Falha ao atualizar campanha', { description: message });
-        logError('Falha ao atualizar status da campanha', err);
+        const message = friendlyMessage(err, 'Não foi possível atualizar a regra');
+        toast.error('Não foi possível atualizar a regra', { description: message });
+        logError('Falha ao atualizar status da regra', err);
         throw err instanceof Error ? err : new Error(message);
       } finally {
         dispatch({ type: 'set-campaign-action', value: null });
@@ -276,7 +262,6 @@ const useWhatsappCampaignActions = ({
         return;
       }
 
-      dispatch({ type: 'set-campaign-error', value: null });
       dispatch({ type: 'set-campaign-action', value: { id: target.id, type: 'delete' } });
       const currentCampaignId = state.campaign?.id ?? null;
 
@@ -287,19 +272,16 @@ const useWhatsappCampaignActions = ({
           preferredCampaignId: currentCampaignId === target.id ? null : currentCampaignId,
           preferredInstanceId: target?.instanceId ?? instance?.id ?? null,
         });
-        toast.success('Campanha removida com sucesso.');
+        toast.success('Regra encerrada. O histórico continua disponível.');
       } catch (err: any) {
         if (err?.payload?.status === 401 || err?.status === 401) {
           handleAuthFallback({ error: err });
           throw err;
         }
 
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Não foi possível remover a campanha');
-        dispatch({ type: 'set-campaign-error', value: message });
-        toast.error('Falha ao remover campanha', { description: message });
-        logError('Falha ao remover campanha WhatsApp', err);
+        const message = friendlyMessage(err, 'Não foi possível encerrar a regra');
+        toast.error('Não foi possível encerrar a regra', { description: message });
+        logError('Falha ao remover regra WhatsApp', err);
         throw err instanceof Error ? err : new Error(message);
       } finally {
         dispatch({ type: 'set-campaign-action', value: null });
@@ -314,7 +296,6 @@ const useWhatsappCampaignActions = ({
         return;
       }
 
-      dispatch({ type: 'set-campaign-error', value: null });
       dispatch({ type: 'set-campaign-action', value: { id: target.id, type: 'reassign' } });
 
       try {
@@ -325,29 +306,48 @@ const useWhatsappCampaignActions = ({
           preferredCampaignId: target?.id ?? null,
           preferredInstanceId: requestedInstanceId ?? instance?.id ?? null,
         });
-        toast.success(
-          requestedInstanceId
-            ? 'Campanha reatribuída com sucesso.'
-            : 'Campanha desvinculada da instância.'
-        );
+        toast.success(requestedInstanceId ? 'Número da regra atualizado.' : 'Regra sem número por enquanto.');
       } catch (err: any) {
         if (err?.payload?.status === 401 || err?.status === 401) {
           handleAuthFallback({ error: err });
           throw err;
         }
 
-        const message =
-          err?.payload?.error?.message ||
-          (err instanceof Error ? err.message : 'Não foi possível reatribuir a campanha');
-        dispatch({ type: 'set-campaign-error', value: message });
-        toast.error('Falha ao reatribuir campanha', { description: message });
-        logError('Falha ao reatribuir campanha WhatsApp', err);
+        const message = friendlyMessage(err, 'Não foi possível trocar o número');
+        toast.error('Não foi possível trocar o número', { description: message });
+        logError('Falha ao reatribuir regra WhatsApp', err);
         throw err instanceof Error ? err : new Error(message);
       } finally {
         dispatch({ type: 'set-campaign-action', value: null });
       }
     },
     [dispatch, selectedAgreement?.id, instance?.id, handleAuthFallback, logError]
+  );
+
+  const renameCampaign = useCallback(
+    async (target: any, nextName: string) => {
+      const name = nextName.trim();
+      if (!target?.id || !name) {
+        return;
+      }
+      dispatch({ type: 'set-campaign-action', value: { id: target.id, type: 'rename' } });
+      try {
+        await renameCampaignRequest(target.id, name);
+        await loadCampaignsRef.current?.({ preferredCampaignId: target.id });
+        toast.success('Nome da regra atualizado.');
+      } catch (err: any) {
+        if (err?.payload?.status === 401 || err?.status === 401) {
+          handleAuthFallback({ error: err });
+        }
+        const message = friendlyMessage(err, 'Não foi possível renomear a regra');
+        toast.error('Não foi possível renomear a regra', { description: message });
+        logError('Falha ao renomear regra WhatsApp', err);
+        throw err instanceof Error ? err : new Error(message);
+      } finally {
+        dispatch({ type: 'set-campaign-action', value: null });
+      }
+    },
+    [dispatch, handleAuthFallback, logError]
   );
 
   const setCreateCampaignOpen = useCallback(
@@ -373,12 +373,14 @@ const useWhatsappCampaignActions = ({
     campaign: state.campaign,
     campaigns: state.campaigns,
     campaignsLoading: state.campaignsLoading,
+    campaignsLoaded: state.campaignsLoaded,
     campaignError: state.campaignError,
     campaignAction: state.campaignAction as CampaignActionState | null,
     createCampaign,
     updateCampaignStatus,
     deleteCampaign,
     reassignCampaign,
+    renameCampaign,
     reloadCampaigns,
     fetchCampaignImpact,
     setCreateCampaignOpen,

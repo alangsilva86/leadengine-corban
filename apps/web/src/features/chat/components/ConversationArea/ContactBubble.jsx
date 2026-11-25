@@ -22,24 +22,24 @@ export const ContactBubble = ({ contacts = [], caption }) => (
       return (
         <div
           key={`${name}-${index}`}
-          className="flex flex-col gap-1 rounded-lg bg-surface-overlay-quiet px-3 py-2"
+          className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2"
         >
           <div className="flex items-center gap-2">
             <Phone className="h-3.5 w-3.5 text-foreground" aria-hidden="true" />
             <span className="text-sm font-medium text-foreground">{name}</span>
           </div>
           {phones.length > 0 ? (
-            <ul className="ml-5 list-disc text-xs text-foreground-muted">
+            <ul className="ml-5 list-disc text-xs text-muted-foreground">
               {phones.map((phone, phoneIndex) => (
                 <li key={`${name}-${phoneIndex}`}>{phone}</li>
               ))}
             </ul>
           ) : null}
-          {contact?.org ? <span className="text-xs text-foreground-muted">{contact.org}</span> : null}
+          {contact?.org ? <span className="text-xs text-muted-foreground">{contact.org}</span> : null}
         </div>
       );
     })}
-    {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+    {caption ? <p className="text-xs text-muted-foreground">{caption}</p> : null}
   </div>
 );
 

@@ -1,79 +1,59 @@
-import { Clock, FileText, Sparkles, StickyNote, ClipboardList, CircleDollarSign, ScrollText } from 'lucide-react';
+import { CircleDollarSign, ClipboardList, FileText, History } from 'lucide-react';
+import { formatMessageTime } from './utils/presentation.js';
 
-import { cn } from '@/lib/utils.js';
-import { formatJson } from '@/features/chat/utils/simulation.js';
-
-const TYPE_PRESENTATION = {
-  note: { icon: StickyNote, toneClass: 'text-[color:var(--accent-inbox-primary)]' },
-  event: { icon: Sparkles, toneClass: 'text-[color:var(--accent-inbox-primary)]' },
-  simulation: { icon: ClipboardList, toneClass: 'text-[color:var(--accent-inbox-primary)]' },
-  proposal: { icon: FileText, toneClass: 'text-[color:var(--accent-inbox-primary)]' },
-  deal: { icon: CircleDollarSign, toneClass: 'text-success-strong' },
+const TYPE_ICONS = {
+  simulation: ClipboardList,
+  proposal: FileText,
+  deal: CircleDollarSign,
 };
 
+const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const toNumber = (value) => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return null;
+};
+
+/** Resumo legível de uma simulação/proposta (nunca JSON cru). */
+export const summarizeSnapshot = (snapshot) => {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  const bank = snapshot.bank?.label ?? snapshot.bank?.name ?? (typeof snapshot.bank === 'string' ? snapshot.bank : null);
+  const term = toNumber(snapshot.term ?? snapshot.prazo);
+  const installment = toNumber(snapshot.installment ?? snapshot.installmentValue ?? snapshot.parcela);
+  const net = toNumber(snapshot.netAmount ?? snapshot.netValue ?? snapshot.valorLiquido);
+  const parts = [
+    bank,
+    term && installment ? `${term}x de ${currency.format(installment)}` : term ? `${term}x` : installment ? `parcela ${currency.format(installment)}` : null,
+    net ? `líquido ${currency.format(net)}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : null;
+};
+
+/**
+ * Evento da conversa (simulação, proposta, venda, mudanças): pílula discreta e centralizada.
+ */
 export const EventCard = ({ entry }) => {
   if (!entry) return null;
-
-  const presentation = TYPE_PRESENTATION[entry.type] ?? {
-    icon: Clock,
-    toneClass: 'text-[color:var(--accent-inbox-primary)]',
-  };
-  const Icon = presentation.icon ?? Clock;
-  const toneClass = presentation.toneClass ?? 'text-[color:var(--accent-inbox-primary)]';
-
   const payload = entry.payload ?? {};
+  const Icon = TYPE_ICONS[entry.type] ?? History;
   const label = payload.label ?? entry.label ?? 'Atualização';
-  const description = payload.description ?? payload.body ?? payload.metadata?.description ?? null;
-  const timestamp = entry.date ? new Date(entry.date) : null;
-
-  const snapshotJson = formatJson(payload.calculationSnapshot ?? payload.snapshot ?? null);
-  const metadataJson = formatJson(payload.metadata ?? null);
+  const description =
+    (typeof payload.description === 'string' && payload.description.trim()) ||
+    summarizeSnapshot(payload.calculationSnapshot ?? payload.snapshot ?? null) ||
+    (payload.stageLabel ? `Etapa: ${payload.stageLabel}` : null);
+  const time = formatMessageTime(entry.date);
 
   return (
-    <div
-      className={cn(
-        'flex max-w-[70%] flex-col gap-2 rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] px-3 py-2 text-xs text-[color:var(--color-inbox-foreground-muted)] shadow-[0_12px_32px_-24px_rgba(15,23,42,0.9)]',
-      )}
-    >
-      <div className="flex flex-wrap items-center gap-2 text-[color:var(--color-inbox-foreground)]">
-        <Icon className={cn('h-4 w-4', toneClass)} aria-hidden />
-        <span className="font-semibold">{label}</span>
+    <div className="my-2 flex justify-center" role="note">
+      <div className="inline-flex min-w-0 max-w-[90%] items-center gap-1.5 rounded-full bg-surface-sunken px-3 py-1 text-xs text-muted-foreground">
+        <Icon className="size-3.5 shrink-0" aria-hidden />
+        <span className="shrink-0 whitespace-nowrap font-medium text-foreground">{label}</span>
+        {description ? <span className="min-w-0 truncate">· {description}</span> : null}
+        {time ? <span className="shrink-0 text-subtle-foreground">· {time}</span> : null}
       </div>
-      {description ? <p className="text-xs text-[color:var(--color-inbox-foreground)]">{description}</p> : null}
-      {timestamp ? (
-        <span className="text-[11px] uppercase tracking-[0.18em] text-[color:var(--color-inbox-foreground-muted)]">
-          {timestamp.toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
-        </span>
-      ) : null}
-      {snapshotJson || metadataJson ? (
-        <details className="group rounded-lg border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)]/60 px-3 py-2">
-          <summary className="cursor-pointer list-none text-[11px] font-semibold text-[color:var(--color-inbox-foreground)]">
-            <span className="inline-flex items-center gap-1">
-              <ScrollText className="h-3.5 w-3.5 text-[color:var(--accent-inbox-primary)]" aria-hidden />
-              Ver detalhes avançados
-            </span>
-          </summary>
-          {snapshotJson ? (
-            <div className="mt-2">
-              <p className="text-[10px] uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Snapshot</p>
-              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 font-mono text-[11px] leading-relaxed text-[color:var(--color-inbox-foreground-muted)]">
-                {snapshotJson}
-              </pre>
-            </div>
-          ) : null}
-          {metadataJson ? (
-            <div className="mt-2">
-              <p className="text-[10px] uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]">Metadata</p>
-              <pre className="mt-1 max-h-48 overflow-auto rounded-md bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 font-mono text-[11px] leading-relaxed text-[color:var(--color-inbox-foreground-muted)]">
-                {metadataJson}
-              </pre>
-            </div>
-          ) : null}
-        </details>
-      ) : null}
     </div>
   );
 };
 
 export default EventCard;
-

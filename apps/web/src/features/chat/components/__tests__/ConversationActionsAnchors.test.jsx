@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ConversationHeader } from '../ConversationArea/ConversationHeader.jsx';
 import { CONVERSATION_ACTION_IDS } from '../../actions/commandAnchors.js';
@@ -39,9 +39,9 @@ vi.mock('@/hooks/use-clipboard.js', () => ({
   }),
 }));
 
-vi.mock('../ConversationArea/QuickComposer.jsx', () => ({
+vi.mock('../../hooks/useInstancePresentation.js', () => ({
   __esModule: true,
-  default: () => <div data-testid="quick-composer">QuickComposer</div>,
+  default: () => ({ label: 'Corban SP', color: null, phone: null, number: null, known: true }),
 }));
 
 vi.mock('../ConversationArea/CallResultDialog.jsx', () => ({
@@ -117,7 +117,6 @@ describe('Conversation actions anchors', () => {
         onScheduleFollowUp={vi.fn()}
         onRegisterResult={vi.fn()}
         onRegisterCallResult={vi.fn()}
-        onSendTemplate={vi.fn()}
         onCreateNextStep={vi.fn()}
         onGenerateProposal={vi.fn()}
       />
@@ -131,59 +130,39 @@ describe('Conversation actions anchors', () => {
       expect(target).toHaveAttribute('aria-hidden', 'true');
     });
 
-    const assignButton = screen.getByRole('button', { name: /Atribuir/i });
+    const assignButton = screen.getByRole('button', { name: 'Atribuir conversa' });
     expect(assignButton).toBeInTheDocument();
   });
 
-  it('expande e foca o editor de próximo passo ao executar a ação de qualificação', async () => {
+  it('assume a conversa sem responsável pela ação principal', async () => {
     const ticket = {
-      id: 'ticket-qualify',
+      id: 'ticket-unassigned',
       subject: 'Conversa importante',
       pipelineStep: 'Qualificação',
-      contact: {
-        id: 'contact-qualify',
-        name: 'Cliente Qualificação',
-        phone: '+55 11 91111-1111',
-      },
+      channel: 'WHATSAPP',
+      contact: { id: 'contact-qualify', name: 'Cliente Qualificação', phone: '+55 11 91111-1111' },
       metadata: {},
     };
 
-    const onScheduleFollowUp = vi.fn();
-    const onFocusComposer = vi.fn();
+    const onAssign = vi.fn();
 
     render(
       <ConversationHeader
         ticket={ticket}
         typingAgents={[]}
-        onAssign={vi.fn()}
-        onScheduleFollowUp={onScheduleFollowUp}
+        currentUser={{ id: 'agent-007', name: 'Bond' }}
+        onAssign={onAssign}
+        onScheduleFollowUp={vi.fn()}
         onRegisterResult={vi.fn()}
         onRegisterCallResult={vi.fn()}
-        onSendTemplate={vi.fn()}
-        onCreateNextStep={vi.fn()}
-        onGenerateProposal={vi.fn()}
-        onAttachFile={vi.fn()}
-        onFocusComposer={onFocusComposer}
-        nextStepValue=""
-        onNextStepSave={vi.fn()}
       />
     );
 
-    const primaryAction = screen.getByRole('button', { name: 'Registrar próximo passo' });
-    fireEvent.click(primaryAction);
+    fireEvent.click(screen.getByRole('button', { name: 'Assumir conversa' }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Recolher detalhes')).toBeInTheDocument();
+      expect(onAssign).toHaveBeenCalledWith(ticket, 'agent-007');
     });
-
-    const textarea = screen.getByPlaceholderText('Descreva o próximo passo combinado');
-
-    await waitFor(() => {
-      expect(textarea).toHaveFocus();
-    });
-
-    expect(onScheduleFollowUp).not.toHaveBeenCalled();
-    expect(onFocusComposer).not.toHaveBeenCalled();
   });
 
   it('abre o seletor de atribuição e envia o userId escolhido', async () => {
@@ -214,13 +193,12 @@ describe('Conversation actions anchors', () => {
         onScheduleFollowUp={vi.fn()}
         onRegisterResult={vi.fn()}
         onRegisterCallResult={vi.fn()}
-        onSendTemplate={vi.fn()}
         onCreateNextStep={vi.fn()}
         onGenerateProposal={vi.fn()}
       />
     );
 
-    const assignButton = screen.getByRole('button', { name: /Atribuir/i });
+    const assignButton = screen.getByRole('button', { name: 'Atribuir conversa' });
     fireEvent.click(assignButton);
 
     await waitFor(() => {

@@ -3,11 +3,11 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { usePollMessage } from '../../hooks/usePollMessage.js';
+import { usePollMessage } from '../../../hooks/usePollMessage.js';
 
 import { MessageBubble } from '../MessageBubble.jsx';
 
-vi.mock('../../hooks/usePollMessage.js', () => {
+vi.mock('../../../hooks/usePollMessage.js', () => {
   const usePollMessageMock = vi.fn();
   return {
     __esModule: true,
@@ -65,7 +65,7 @@ describe('MessageBubble', () => {
     );
 
     expect(screen.getByText('Carregando enquete…')).toBeInTheDocument();
-    await screen.findByText('Resposta preferida');
+    expect((await screen.findAllByText('Resposta preferida')).length).toBeGreaterThan(0);
     expect(screen.queryByText('[Mensagem]')).not.toBeInTheDocument();
   });
 
@@ -102,5 +102,47 @@ describe('MessageBubble', () => {
     });
     expect(screen.getByText('Mensagem sem fallback')).toBeInTheDocument();
     expect(screen.queryByText('Carregando enquete…')).not.toBeInTheDocument();
+  });
+
+  it('mostra confirmação de leitura apenas em mensagens enviadas', () => {
+    usePollMessage.mockReturnValue({
+      textContent: 'Proposta enviada',
+      shouldForceText: false,
+      voteBubble: { shouldRender: false },
+      pollBubble: { shouldRender: false },
+    });
+
+    const { rerender } = render(
+      <MessageBubble
+        message={{ id: 'out-1', direction: 'OUTBOUND', status: 'READ', type: 'text', text: 'Proposta enviada', createdAt: '2024-01-01T12:00:00.000Z' }}
+        authorLabel="Você"
+      />,
+    );
+
+    expect(screen.getByText('Lida')).toBeInTheDocument();
+    expect(screen.getByText('Você')).toBeInTheDocument();
+    expect(screen.queryByText('IN')).not.toBeInTheDocument();
+    expect(screen.queryByText('OUT')).not.toBeInTheDocument();
+
+    rerender(
+      <MessageBubble
+        message={{ id: 'in-1', direction: 'INBOUND', status: 'READ', type: 'text', text: 'Proposta enviada', createdAt: '2024-01-01T12:00:00.000Z' }}
+      />,
+    );
+
+    expect(screen.queryByText('Lida')).not.toBeInTheDocument();
+  });
+
+  it('sinaliza falha no envio', () => {
+    usePollMessage.mockReturnValue({
+      textContent: 'Oi',
+      shouldForceText: false,
+      voteBubble: { shouldRender: false },
+      pollBubble: { shouldRender: false },
+    });
+
+    render(<MessageBubble message={{ id: 'failed', direction: 'outbound', status: 'FAILED', type: 'text', text: 'Oi' }} />);
+
+    expect(screen.getAllByText(/Falha no envio/).length).toBeGreaterThan(0);
   });
 });

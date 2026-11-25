@@ -12,14 +12,18 @@ import { Card } from '@/components/ui/card.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
 import { Separator } from '@/components/ui/separator.jsx';
 import { ScrollArea } from '@/components/ui/scroll-area.jsx';
+import { Activity, RotateCw } from 'lucide-react';
+import { EmptyState } from '@/components/page/EmptyState.jsx';
+import { getFriendlyErrorMessage } from '@/lib/errors.js';
 import { formatDateTime, useBaileysEvents } from './hooks/useBaileysEvents.ts';
 
 const LIMIT_OPTIONS = [20, 50, 100, 150];
 const STATUS_PAGE_URL = 'https://status.leadengine.com.br';
 
+const DIRECTION_LABEL = { inbound: 'Recebida', outbound: 'Enviada' };
 const directionTone = {
-  inbound: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300',
-  outbound: 'bg-sky-500/15 text-sky-600 dark:text-sky-300',
+  inbound: 'bg-success-soft text-success-soft-foreground',
+  outbound: 'bg-info-soft text-info-soft-foreground',
 };
 
 const stringifyJson = (value) => {
@@ -33,7 +37,6 @@ const stringifyJson = (value) => {
 const BaileysLogs = () => {
   const [limit, setLimit] = useState(50);
   const [direction, setDirection] = useState('all');
-  const [tenantId, setTenantId] = useState('');
   const [chatId, setChatId] = useState('');
 
   const buildQuery = useCallback(() => {
@@ -42,14 +45,11 @@ const BaileysLogs = () => {
     if (direction !== 'all') {
       params.set('direction', direction);
     }
-    if (tenantId.trim().length > 0) {
-      params.set('tenantId', tenantId.trim());
-    }
     if (chatId.trim().length > 0) {
       params.set('chatId', chatId.trim());
     }
     return params.toString();
-  }, [chatId, direction, limit, tenantId]);
+  }, [chatId, direction, limit]);
 
   const { events: logs, loading, error, degradedMode, refresh } = useBaileysEvents({
     buildQuery,
@@ -67,7 +67,6 @@ const BaileysLogs = () => {
     const latest = logs[0];
     return {
       lastDirection: latest.direction ?? '—',
-      lastTenant: latest.tenantId ?? '—',
       lastInstance: latest.instanceId ?? '—',
       lastChatId: latest.chatId ?? '—',
       lastReceivedAt: formatDateTime(latest.createdAt),
@@ -78,29 +77,27 @@ const BaileysLogs = () => {
     <div className="space-y-6" data-degraded-mode={degradedMode ? 'true' : 'false'}>
       <div className="flex flex-col gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Logs do Baileys
-          </h1>
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Diagnóstico do WhatsApp</h2>
           <p className="text-sm text-muted-foreground">
-            Visualize os payloads recebidos do conector Baileys para diagnosticar
-            diferenças de formato entre instâncias.
+            Eventos brutos recebidos dos seus números. Use para investigar mensagens que não chegaram ao Inbox
+            ou chegaram com formato inesperado.
           </p>
         </div>
 
-        <Card className="border border-border/60 bg-card/70 p-4 backdrop-blur">
+        <Card className="p-4">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="grid w-full max-w-5xl grid-cols-1 gap-3 md:grid-cols-5">
+            <div className="grid w-full max-w-4xl grid-cols-1 gap-3 md:grid-cols-4">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium uppercase text-muted-foreground">
-                  Limite
+                <label htmlFor="diag-limit" className="text-sm font-medium text-foreground">
+                  Quantidade
                 </label>
                 <Select
                   value={String(limit)}
                   onValueChange={(value) => setLimit(Number(value))}
                   disabled={loading}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Limite" />
+                  <SelectTrigger id="diag-limit">
+                    <SelectValue placeholder="Quantidade" />
                   </SelectTrigger>
                   <SelectContent>
                     {LIMIT_OPTIONS.map((option) => (
@@ -113,7 +110,7 @@ const BaileysLogs = () => {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium uppercase text-muted-foreground">
+                <label htmlFor="diag-direction" className="text-sm font-medium text-foreground">
                   Direção
                 </label>
                 <Select
@@ -121,34 +118,23 @@ const BaileysLogs = () => {
                   onValueChange={setDirection}
                   disabled={loading}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="diag-direction">
                     <SelectValue placeholder="Direção" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="inbound">Inbound</SelectItem>
-                    <SelectItem value="outbound">Outbound</SelectItem>
+                    <SelectItem value="inbound">Recebidas</SelectItem>
+                    <SelectItem value="outbound">Enviadas</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium uppercase text-muted-foreground">
-                  Tenant
-                </label>
-                <Input
-                  value={tenantId}
-                  onChange={(event) => setTenantId(event.target.value)}
-                  placeholder="Ex: demo-tenant"
-                  disabled={loading}
-                />
-              </div>
-
               <div className="flex flex-col gap-1.5 md:col-span-2">
-                <label className="text-xs font-medium uppercase text-muted-foreground">
-                  Chat / remoteJid
+                <label htmlFor="diag-chat" className="text-sm font-medium text-foreground">
+                  Conversa (ID do WhatsApp)
                 </label>
                 <Input
+                  id="diag-chat"
                   value={chatId}
                   onChange={(event) => setChatId(event.target.value)}
                   placeholder="Ex: 5562...@s.whatsapp.net"
@@ -162,12 +148,12 @@ const BaileysLogs = () => {
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  setTenantId('');
                   setChatId('');
+                  setDirection('all');
                 }}
                 disabled={loading}
               >
-                Limpar
+                Limpar filtros
               </Button>
               <Button
                 type="button"
@@ -182,41 +168,33 @@ const BaileysLogs = () => {
           {summary ? (
             <>
               <Separator className="my-4" />
-              <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-5">
+              <div className="grid gap-3 text-sm text-muted-foreground md:grid-cols-4">
                 <div>
-                  <span className="text-xs uppercase text-muted-foreground/70">
-                    Última mensagem
+                  <span className="text-xs text-muted-foreground">
+                    Último evento
                   </span>
                   <p className="font-medium text-foreground">
-                    {summary.lastDirection}
+                    {DIRECTION_LABEL[summary.lastDirection] ?? summary.lastDirection}
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs uppercase text-muted-foreground/70">
-                    Tenant
-                  </span>
-                  <p className="font-medium text-foreground">
-                    {summary.lastTenant}
-                  </p>
-                </div>
-                <div>
-                  <span className="text-xs uppercase text-muted-foreground/70">
-                    Instância
+                  <span className="text-xs text-muted-foreground">
+                    Número (ID)
                   </span>
                   <p className="font-medium text-foreground">
                     {summary.lastInstance}
                   </p>
                 </div>
                 <div className="truncate">
-                  <span className="text-xs uppercase text-muted-foreground/70">
-                    Chat
+                  <span className="text-xs text-muted-foreground">
+                    Conversa
                   </span>
                   <p className="font-medium text-foreground">
                     {summary.lastChatId}
                   </p>
                 </div>
                 <div>
-                  <span className="text-xs uppercase text-muted-foreground/70">
+                  <span className="text-xs text-muted-foreground">
                     Recebido em
                   </span>
                   <p className="font-medium text-foreground">
@@ -230,73 +208,50 @@ const BaileysLogs = () => {
       </div>
 
       {error ? (
-        <div className="space-y-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-900 dark:border-amber-300/40 dark:bg-amber-400/10 dark:text-amber-100">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide">
-                <Badge
-                  variant="outline"
-                  className="border-amber-500 bg-amber-500/10 text-amber-900 dark:border-amber-200 dark:bg-amber-200/10 dark:text-amber-50"
-                >
-                  Modo degradado ativo
-                </Badge>
-                {typeof error.status === 'number' ? (
-                  <span className="text-amber-800/80 dark:text-amber-100/80">
-                    Código {error.status}
-                  </span>
+        <div role="alert" className="space-y-3 rounded-lg border border-warning-soft-border bg-warning-soft p-4 text-sm text-warning-soft-foreground">
+          <div className="space-y-1">
+            <p className="font-medium">Não foi possível carregar os eventos.</p>
+            <p>
+              {error.status === 404
+                ? 'O registro de eventos do WhatsApp não está ativado neste ambiente.'
+                : getFriendlyErrorMessage(error)}
+            </p>
+            {error.recoveryHint ? <p className="text-xs">{error.recoveryHint}</p> : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={refresh} disabled={loading}>
+              <RotateCw aria-hidden="true" />
+              {loading ? 'Recarregando…' : 'Tentar novamente'}
+            </Button>
+            <Button asChild size="sm" variant="ghost">
+              <a href={STATUS_PAGE_URL} target="_blank" rel="noreferrer">
+                Ver status do serviço
+              </a>
+            </Button>
+          </div>
+          {typeof error.status === 'number' || error.requestId || error.payload ? (
+            <details className="text-xs">
+              <summary className="cursor-pointer select-none">Detalhes técnicos</summary>
+              <div className="mt-2 space-y-1 font-mono">
+                {typeof error.status === 'number' ? <p>HTTP {error.status}</p> : null}
+                {error.requestId ? <p>ID da falha: {error.requestId}</p> : null}
+                {error.payload ? (
+                  <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{stringifyJson(error.payload)}</pre>
                 ) : null}
               </div>
-              <p className="text-base font-medium text-amber-900 dark:text-amber-100">
-                {error.message}
-              </p>
-              {error.fallbackMessage && error.fallbackMessage !== error.message ? (
-                <p className="text-xs text-amber-800/70 dark:text-amber-100/70">
-                  Detalhes técnicos: {error.fallbackMessage}
-                </p>
-              ) : null}
-              {error.requestId ? (
-                <p className="text-xs text-amber-800/70 dark:text-amber-100/70">
-                  ID da falha: <code>{error.requestId}</code>
-                </p>
-              ) : null}
-              {error.recoveryHint ? (
-                <p className="text-xs text-amber-800/70 dark:text-amber-100/70">{error.recoveryHint}</p>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={refresh} disabled={loading}>
-                {loading ? 'Recarregando…' : 'Tentar novamente'}
-              </Button>
-              <Button asChild variant="outline">
-                <a
-                  href={STATUS_PAGE_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Abrir status page
-                </a>
-              </Button>
-            </div>
-          </div>
-
-          {error.payload ? (
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-900 dark:border-amber-200/30 dark:bg-amber-200/5 dark:text-amber-50">
-              <p className="mb-2 font-semibold uppercase tracking-wide">
-                Último payload recebido
-              </p>
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-[11px] leading-relaxed">
-                {stringifyJson(error.payload)}
-              </pre>
-            </div>
+            </details>
           ) : null}
         </div>
       ) : null}
 
-      {!logs.length && !loading ? (
-        <div className="rounded-lg border border-border/60 bg-muted/50 p-8 text-center text-sm text-muted-foreground">
-          Nenhum payload do Baileys encontrado para os filtros informados.
-        </div>
+      {!logs.length && !loading && !error ? (
+        <Card className="p-0">
+          <EmptyState
+            icon={Activity}
+            title="Nenhum evento encontrado"
+            description="Quando seus números receberem ou enviarem mensagens, os eventos aparecem aqui."
+          />
+        </Card>
       ) : null}
 
       <div className="space-y-4">
@@ -306,24 +261,21 @@ const BaileysLogs = () => {
           return (
             <Card
               key={entry.id}
-              className="border border-border/60 bg-card/80 p-4"
+              className="gap-0 p-4"
             >
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Badge className={directionToneClass}>
-                  {entry.direction ?? '—'}
+                  {DIRECTION_LABEL[entry.direction] ?? entry.direction ?? '—'}
                 </Badge>
-                <Badge variant="outline">
-                  tenant: {entry.tenantId ?? '—'}
+                <Badge variant="outline" className="font-mono">
+                  número: {entry.instanceId ?? '—'}
                 </Badge>
-                <Badge variant="outline">
-                  iid: {entry.instanceId ?? '—'}
-                </Badge>
-                  <Badge variant="outline">
-                    chat: {entry.chatId ?? '—'}
+                  <Badge variant="outline" className="font-mono">
+                    conversa: {entry.chatId ?? '—'}
                   </Badge>
-                  <Badge variant="outline">
-                    msg: {entry.messageId ?? '—'}
+                  <Badge variant="outline" className="font-mono">
+                    mensagem: {entry.messageId ?? '—'}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -334,7 +286,7 @@ const BaileysLogs = () => {
               <Separator className="my-3" />
 
               <ScrollArea
-                className="rounded-md border border-border/60 bg-muted/40 p-3"
+                className="rounded-md border border-border bg-surface-sunken p-3"
                 viewportProps={{ className: 'max-h-[320px] overflow-auto' }}
               >
                 <pre className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">

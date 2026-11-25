@@ -1,117 +1,164 @@
+import { Loader2, MessageSquareDashed } from 'lucide-react';
+import { Button } from '@/components/ui/button.jsx';
+import { Skeleton } from '@/components/ui/skeleton.jsx';
+import { EmptyState, ErrorState } from '@/components/page';
+import { cn } from '@/lib/utils.js';
 import MessageBubble from './MessageBubble.jsx';
 import EventCard from './EventCard.jsx';
+import NoteCard from './NoteCard.jsx';
+import { resolveMessageAuthor } from './utils/presentation.js';
 
-const Divider = ({ label }) => (
-  <div className="my-4 flex items-center gap-2 text-[11px] uppercase tracking-[0.3em] text-foreground-muted">
-    <span className="h-px flex-1 bg-surface-overlay-glass-border" />
-    <span className="px-2 text-foreground">{label}</span>
-    <span className="h-px flex-1 bg-surface-overlay-glass-border" />
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
+const DayDivider = ({ label }) => (
+  <div className="sticky top-2 z-10 my-3 flex justify-center" role="separator" aria-label={label}>
+    <span className="rounded-full border border-border bg-surface px-3 py-0.5 text-xs font-medium text-muted-foreground shadow-xs">
+      {label}
+    </span>
   </div>
 );
 
-const resolveAuthorKey = (payload = {}) => {
-  const direction = typeof payload.direction === 'string' ? payload.direction.toLowerCase() : 'inbound';
-  const authorCandidate =
-    payload.authorId ??
-    payload.userId ??
-    payload.agentId ??
-    payload.contactId ??
-    payload.contact?.id ??
-    payload.metadata?.whatsapp?.remoteJid ??
-    payload.metadata?.remoteJid ??
-    payload.metadata?.contactPhone ??
-    payload.remoteJid ??
-    payload.chatId ??
-    payload.contact?.phone ??
-    '';
-  return `${direction}|${authorCandidate}`;
+const resolveDirection = (payload) =>
+  typeof payload?.direction === 'string' ? payload.direction.toLowerCase() : 'inbound';
+
+const resolveAuthorKey = (payload, author) => {
+  const direction = resolveDirection(payload);
+  if (direction === 'outbound') {
+    return `outbound|${author?.key ?? 'team'}`;
+  }
+  return 'inbound|contact';
 };
 
-export const MessageTimeline = ({
-  items,
-  loading,
-  hasMore,
-  onLoadMore,
-  typingAgents = [],
-  showNewMessagesHint = false,
-  onScrollToBottom,
-}) => (
-  <div
-    className="chat-scroll-content relative flex h-full min-h-0 flex-col gap-3"
-    role="log"
-    aria-live="polite"
-    aria-relevant="additions"
-  >
-    {hasMore ? (
-      <button
-        type="button"
-        onClick={() => onLoadMore?.()}
-        className="mx-auto mt-2 rounded-full bg-surface-overlay-quiet px-4 py-1 text-xs text-foreground-muted ring-1 ring-surface-overlay-glass-border transition hover:bg-surface-overlay-strong"
-      >
-        {loading ? 'Carregando...' : 'Carregar anteriores'}
-      </button>
-    ) : null}
+const toTime = (entry) => (entry?.date instanceof Date ? entry.date.getTime() : null);
 
-    {items?.map((entry, index) => {
-      if (entry.type === 'divider') {
-        return <Divider key={entry.id} label={entry.label} />;
-      }
-
-      if (entry.type === 'message') {
-        const payload = entry.payload;
-        const previousEntry = index > 0 ? items[index - 1] : null;
-        const nextEntry = index < items.length - 1 ? items[index + 1] : null;
-        const previousPayload = previousEntry?.type === 'message' ? previousEntry.payload : null;
-        const nextPayload = nextEntry?.type === 'message' ? nextEntry.payload : null;
-        const currentKey = resolveAuthorKey(payload);
-        const sameAsPrevious = previousPayload ? resolveAuthorKey(previousPayload) === currentKey : false;
-        const sameAsNext = nextPayload ? resolveAuthorKey(nextPayload) === currentKey : false;
-        const shouldShowMetadata = !sameAsPrevious;
-        return (
-          <MessageBubble
-            key={entry.id}
-            message={payload}
-            isContinuation={sameAsPrevious}
-            isTail={!sameAsNext}
-            isFirst={!previousPayload}
-            showMetadata={shouldShowMetadata}
-          />
-        );
-      }
-
-      return <EventCard key={entry.id} entry={entry} />;
-    })}
-
-    {typingAgents.length > 0 ? (
-      <div className="flex items-center gap-2 rounded-full bg-success-soft px-3 py-1 text-xs text-success-strong">
-        <div className="h-2 w-2 animate-pulse rounded-full bg-success" />
-        {typingAgents[0].userName ?? 'Agente'} digitando…
+const TimelineSkeleton = () => (
+  <div className="flex flex-col gap-3 py-2" aria-hidden>
+    {[
+      { side: 'start', width: 'w-56' },
+      { side: 'start', width: 'w-40' },
+      { side: 'end', width: 'w-64' },
+      { side: 'start', width: 'w-48' },
+      { side: 'end', width: 'w-36' },
+    ].map((item, index) => (
+      <div key={index} className={cn('flex', item.side === 'end' ? 'justify-end' : 'justify-start')}>
+        <Skeleton className={cn('h-10 rounded-2xl bg-surface-sunken', item.width)} />
       </div>
-    ) : null}
-
-    {showNewMessagesHint ? (
-      <>
-        <div
-          role="separator"
-          aria-label="Novas mensagens"
-          className="my-6 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.35em] text-foreground-muted"
-        >
-          <span className="h-px flex-1 bg-surface-overlay-glass-border/80" />
-          <span>Novas mensagens</span>
-          <span className="h-px flex-1 bg-surface-overlay-glass-border/80" />
-        </div>
-        <button
-          type="button"
-          onClick={() => onScrollToBottom?.()}
-          disabled={!onScrollToBottom}
-          className="pointer-events-auto absolute bottom-4 right-4 inline-flex items-center gap-1 rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet/90 px-3 py-1.5 text-[11px] font-semibold text-foreground shadow-[0_16px_32px_-24px_rgba(15,23,42,0.9)] transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Pular para o fim
-          <span aria-hidden="true">↓</span>
-        </button>
-      </>
-    ) : null}
+    ))}
   </div>
 );
+
+const TypingBubble = ({ agents }) => {
+  const label = `${agents[0]?.userName ?? 'Alguém da equipe'} digitando…`;
+  return (
+    <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bubble-in px-3 py-2">
+        <span className="size-1.5 animate-bounce rounded-full bg-subtle-foreground [animation-delay:-0.2s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-subtle-foreground [animation-delay:-0.1s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-subtle-foreground" />
+      </span>
+      <span>{label}</span>
+    </div>
+  );
+};
+
+/**
+ * Linha do tempo da conversa: divisores de dia, mensagens agrupadas por autor,
+ * notas internas e eventos. Estados de carregamento, erro e vazio incluídos.
+ */
+export const MessageTimeline = ({
+  items = [],
+  loading = false,
+  hasMore = false,
+  onLoadMore,
+  typingAgents = [],
+  isInitialLoading = false,
+  error = null,
+  onRetry,
+  emptyTitle = 'Nenhuma mensagem ainda',
+  emptyDescription = 'Escreva abaixo para começar a conversa.',
+  currentUser = null,
+}) => {
+  if (isInitialLoading && items.length === 0) {
+    return (
+      <div role="status" aria-label="Carregando mensagens">
+        <TimelineSkeleton />
+      </div>
+    );
+  }
+
+  if (error && items.length === 0) {
+    return <ErrorState size="compact" title="Não foi possível carregar as mensagens" error={error} onRetry={onRetry} />;
+  }
+
+  const hasContent = items.some((entry) => entry.type !== 'divider');
+
+  return (
+    <div className="relative flex min-h-full flex-col" role="log" aria-live="polite" aria-relevant="additions" aria-label="Mensagens">
+      {hasMore ? (
+        <div className="flex justify-center pb-2">
+          <Button type="button" variant="ghost" size="xs" onClick={() => onLoadMore?.()} disabled={loading}>
+            {loading ? <Loader2 className="animate-spin" aria-hidden /> : null}
+            {loading ? 'Carregando…' : 'Carregar mensagens anteriores'}
+          </Button>
+        </div>
+      ) : null}
+
+      {!hasContent ? (
+        <div className="flex flex-1 items-center justify-center">
+          <EmptyState icon={MessageSquareDashed} size="compact" title={emptyTitle} description={emptyDescription} />
+        </div>
+      ) : null}
+
+      {items.map((entry, index) => {
+        if (entry.type === 'divider') {
+          return <DayDivider key={entry.id} label={entry.label} />;
+        }
+
+        if (entry.type === 'message') {
+          const payload = entry.payload ?? {};
+          const author = resolveMessageAuthor(payload, currentUser);
+          const previousEntry = index > 0 ? items[index - 1] : null;
+          const nextEntry = index < items.length - 1 ? items[index + 1] : null;
+          const currentKey = resolveAuthorKey(payload, author);
+          const previousKey =
+            previousEntry?.type === 'message'
+              ? resolveAuthorKey(previousEntry.payload, resolveMessageAuthor(previousEntry.payload, currentUser))
+              : null;
+          const nextKey =
+            nextEntry?.type === 'message'
+              ? resolveAuthorKey(nextEntry.payload, resolveMessageAuthor(nextEntry.payload, currentUser))
+              : null;
+          const currentTime = toTime(entry);
+          const closeToPrevious =
+            previousKey === currentKey &&
+            (currentTime === null || toTime(previousEntry) === null || currentTime - toTime(previousEntry) <= GROUP_WINDOW_MS);
+          const closeToNext =
+            nextKey === currentKey &&
+            (currentTime === null || toTime(nextEntry) === null || toTime(nextEntry) - currentTime <= GROUP_WINDOW_MS);
+
+          return (
+            <MessageBubble
+              key={entry.id}
+              message={payload}
+              isContinuation={closeToPrevious}
+              isTail={!closeToNext}
+              isFirst={previousEntry?.type === 'divider' || !previousEntry}
+              showMetadata={!closeToPrevious}
+              authorLabel={author?.label ?? null}
+            />
+          );
+        }
+
+        if (entry.type === 'note') {
+          return <NoteCard key={entry.id} entry={entry} currentUser={currentUser} />;
+        }
+
+        return <EventCard key={entry.id} entry={entry} />;
+      })}
+
+      {typingAgents.length > 0 ? <TypingBubble agents={typingAgents} /> : null}
+    </div>
+  );
+};
 
 export default MessageTimeline;

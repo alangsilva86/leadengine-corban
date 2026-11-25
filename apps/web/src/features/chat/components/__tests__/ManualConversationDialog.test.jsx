@@ -60,7 +60,7 @@ describe('ManualConversationDialog', () => {
       <ManualConversationDialog open onOpenChange={() => {}} onSubmit={vi.fn()} onSuccess={vi.fn()} />
     );
 
-    const trigger = screen.getByRole('combobox', { name: /instância do whatsapp/i });
+    const trigger = screen.getByRole('combobox', { name: /número de whatsapp/i });
     const user = userEvent.setup();
     await user.click(trigger);
 
@@ -95,7 +95,7 @@ describe('ManualConversationDialog', () => {
     await user.type(screen.getByLabelText(/telefone/i), '(11) 99999-1234');
     await user.type(screen.getByLabelText(/mensagem inicial/i), ' Olá ');
 
-    const trigger = screen.getByRole('combobox', { name: /instância do whatsapp/i });
+    const trigger = screen.getByRole('combobox', { name: /número de whatsapp/i });
     await user.click(trigger);
     await user.click(await screen.findByRole('option', { name: 'Instância A' }));
 

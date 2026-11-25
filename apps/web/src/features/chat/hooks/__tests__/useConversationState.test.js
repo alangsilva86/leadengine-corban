@@ -70,11 +70,14 @@ describe('useConversationState', () => {
     const simulationEntry = timeline.find((entry) => entry.type === 'simulation');
     expect(simulationEntry?.payload.label).toBe('Simulação registrada');
     expect(simulationEntry?.payload.stageLabel).toBe('Qualificação');
-    expect(simulationEntry?.payload.stageValue).toBe('qualificando');
-    expect(simulationEntry?.payload.legacyStageValue).toBe('qualificacao');
+    // Valor antigo ("qualificando") vira a etapa do funil único.
+    expect(simulationEntry?.payload.stage).toBe('qualificacao');
     expect(simulationEntry?.payload.calculationSnapshot).toEqual({ amount: 1000 });
 
     const dealEntry = timeline.find((entry) => entry.type === 'deal');
+    expect(dealEntry?.payload.label).toBe('Venda registrada');
+    expect(dealEntry?.payload.stage).toBe('ganho');
+    expect(dealEntry?.payload.stageLabel).toBe('Ganho');
     expect(dealEntry?.payload.metadata).toEqual({ origin: 'crm' });
   });
 
@@ -100,6 +103,6 @@ describe('useConversationState', () => {
     const customEntry = result.current.timeline.find((entry) => entry.type === 'custom');
     expect(customEntry?.payload.label).toBe('Atualização de vendas');
     expect(customEntry?.payload.stageLabel).toBe('Novo');
-    expect(customEntry?.payload.stageValue).toBe('novo');
+    expect(customEntry?.payload.stage).toBe('novo');
   });
 });

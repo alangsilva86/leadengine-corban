@@ -1,25 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
-  Menu,
-  Home,
-  Users,
-  Layers,
-  QrCode,
+  LayoutDashboard,
+  Route,
   MessageSquare,
-  Megaphone,
   Settings,
-  Ticket,
-  User,
-  LogOut,
-  ChevronsLeft,
-  ChevronsRight,
-  Sun,
-  Moon,
-  ScrollText,
+  Smartphone,
+  KanbanSquare,
+  Users,
+  Menu,
+  Search,
 } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils.js';
-import { Button } from '@/components/ui/button.jsx';
+import { apiGet } from '@/lib/api.js';
 import { useAuth } from '@/features/auth/AuthProvider.jsx';
 import {
   Sidebar,
@@ -31,388 +25,266 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarSeparator,
+  SidebarRail,
+  SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar.jsx';
-import HealthIndicator from './HealthIndicator.jsx';
-import { CONTEXTUAL_NAVIGATION_IDS, NAVIGATION_PAGES, PRIMARY_NAVIGATION_IDS } from '@/features/navigation/routes.ts';
+import { Separator } from '@/components/ui/separator.jsx';
+import { NAVIGATION_PAGES, canAccessPage, getNavigationSections } from '@/features/navigation/routes.ts';
+import ConnectionStatus from './shell/ConnectionStatus.jsx';
+import UserMenu from './shell/UserMenu.jsx';
+import BrandMark from './shell/BrandMark.jsx';
+import CommandPalette, { isMacPlatform, useCommandPaletteShortcut } from './shell/CommandPalette.jsx';
 
 const NAVIGATION_ICON_MAP = {
-  [NAVIGATION_PAGES.dashboard.id]: Home,
-  [NAVIGATION_PAGES.channels.id]: QrCode,
-  [NAVIGATION_PAGES.campaigns.id]: Megaphone,
-  [NAVIGATION_PAGES.inbox.id]: MessageSquare,
-  [NAVIGATION_PAGES.contacts.id]: Users,
-  [NAVIGATION_PAGES.crm.id]: Layers,
-  [NAVIGATION_PAGES['baileys-logs'].id]: ScrollText,
-  [NAVIGATION_PAGES.settings.id]: Settings,
+  inbox: MessageSquare,
+  contacts: Users,
+  crm: KanbanSquare,
+  dashboard: LayoutDashboard,
+  campaigns: Route,
+  channels: Smartphone,
+  settings: Settings,
 };
 
-const NAVIGATION_ITEMS = (() => {
-  const buildNavigationSection = (ids) =>
-    ids
-      .map((id) => {
-        const definition = NAVIGATION_PAGES[id];
-        if (!definition) {
-          return null;
-        }
+// Subpáginas mostradas no cabeçalho como "Seção / Subpágina".
+const SUBPAGE_LABELS = [
+  [/^\/crm\/opportunities/, 'Oportunidades'],
+  [/^\/crm\/leads\//, 'Lead'],
+  [/^\/contacts\/[^/]+/, 'Detalhes do contato'],
+  [/^\/settings\/company/, 'Empresa'],
+  [/^\/settings\/users/, 'Equipe'],
+  [/^\/settings\/queues/, 'Filas'],
+  [/^\/settings\/integrations/, 'Meta Ads'],
+  [/^\/settings\/ai/, 'IA'],
+  [/^\/settings\/diagnostics/, 'Diagnóstico'],
+];
 
-        const IconComponent = NAVIGATION_ICON_MAP[id] ?? Menu;
-        return { ...definition, icon: IconComponent };
-      })
-      .filter(Boolean);
+const PAGES_BY_PATH = Object.values(NAVIGATION_PAGES)
+  .filter((page) => page.path && page.id !== 'whatsapp' && page.id !== 'baileys-logs')
+  .sort((a, b) => b.path.length - a.path.length);
 
-  return {
-    primary: buildNavigationSection(PRIMARY_NAVIGATION_IDS),
-    contextual: buildNavigationSection(CONTEXTUAL_NAVIGATION_IDS),
-  };
-})();
+export const resolveCurrentPage = (pathname) =>
+  PAGES_BY_PATH.find((page) => (page.path === '/' ? pathname === '/' : pathname === page.path || pathname.startsWith(`${page.path}/`))) ??
+  null;
 
-const LayoutHeader = ({ children, className }) => (
-  <header
-    className={cn(
-      'flex h-16 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60 md:px-6',
-      className
-    )}
-  >
-    {children}
-  </header>
-);
+const INBOX_COUNT_QUERY_KEY = ['shell', 'inbox-open-count'];
 
-const LayoutContent = ({
-  children,
-  className,
-  stickyFooterPaddingClass,
-  paddingVariant = 'default',
-  disableInnerWrapper = false,
-}) => {
-  const containerClassName = cn('page-content flex flex-1 min-h-0 flex-col', className);
+/** Quantidade de conversas abertas para o selo do menu. Leve: pede 1 item e lê o total. */
+const useOpenConversationsCount = () =>
+  useQuery({
+    queryKey: INBOX_COUNT_QUERY_KEY,
+    queryFn: async () => {
+      const payload = await apiGet('/api/tickets?limit=1&status=OPEN');
+      const total = payload?.data?.total ?? payload?.data?.pagination?.total;
+      return typeof total === 'number' ? total : null;
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: false,
+  });
 
-  if (disableInnerWrapper) {
-    return (
-      <div className={cn(containerClassName, stickyFooterPaddingClass)}>
-        {children}
-      </div>
-    );
-  }
+const formatBadge = (count) => (count > 99 ? '99+' : String(count));
+
+const AppSidebar = ({ user, onLogout, authBusy, activePageId }) => {
+  const { isMobile, setOpenMobile } = useSidebar();
+  const sections = useMemo(() => getNavigationSections(user?.role), [user?.role]);
+  const { data: openCount } = useOpenConversationsCount();
 
   return (
-    <div className={containerClassName}>
-      <div
-        className={cn(
-          'page-content-inner mx-auto flex w-full max-w-7xl flex-1 min-h-0 min-w-0 flex-col gap-6 overflow-y-auto',
-          paddingVariant === 'none' ? 'p-0' : 'p-6 md:p-8',
-          stickyFooterPaddingClass
-        )}
-      >
-        {children}
-      </div>
-    </div>
-  );
-};
-
-const OnboardingTrack = ({ stages, activeStep }) => {
-  if (!stages?.length) {
-    return null;
-  }
-
-  return (
-    <div className="inline-flex flex-wrap items-center gap-2 rounded-full border border-border/60 bg-muted/60 p-1.5 pr-2 text-xs">
-      {stages.map((stage, index) => {
-        const status =
-          index < activeStep ? 'done' : index === activeStep ? 'current' : 'todo';
-
-        return (
-          <div
-            key={stage.id}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors',
-              status === 'done' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
-              status === 'current' && 'bg-primary/10 text-primary',
-              status === 'todo' && 'text-muted-foreground'
-            )}
-          >
-            <span
-              className={cn(
-                'flex size-5 items-center justify-center rounded-full border text-[0.65rem] font-semibold',
-                status === 'done' && 'border-transparent bg-emerald-500 text-emerald-50',
-                status === 'current' && 'border-transparent bg-primary text-primary-foreground',
-                status === 'todo' && 'border-transparent bg-muted text-muted-foreground'
-              )}
-            >
-              {index + 1}
-            </span>
-            <span className="whitespace-nowrap">{stage.label}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const LayoutShell = ({
-  children,
-  navigation,
-  currentPage,
-  onNavigate,
-  shouldShowOnboardingTrack,
-  stageList,
-  activeOnboardingStep,
-  isDarkMode,
-  themeMounted,
-  setTheme,
-  contentPaddingVariant = 'default',
-  disableContentInnerWrapper = false,
-  fullWidthContent = false,
-}) => {
-  const { isMobile, state, setOpenMobile, toggleSidebar } = useSidebar();
-  const isSidebarCollapsed = state === 'collapsed';
-  const { user, logout, status: authStatus } = useAuth();
-  const displayName = user?.name ?? 'Operador';
-  const displayRole = user?.role ?? 'Sem papel definido';
-  const handleLogout = () => {
-    logout?.();
-  };
-
-  const handleNavigate = (page) => (event) => {
-    event.preventDefault();
-    onNavigate?.(page);
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-  };
-
-  const navigationSections = navigation ?? { primary: [], contextual: [] };
-
-  const renderNavigationItems = useCallback(
-    (items) =>
-      items.map((item) => (
-          <SidebarMenuItem key={item.id}>
-            <SidebarMenuButton
-              type="button"
-              onClick={handleNavigate(item.id)}
-              isActive={currentPage === item.id}
-              tooltip={item.label}
-              aria-label={item.label}
-            >
-              <item.icon className="h-4 w-4" />
-              <span className="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
-            </SidebarMenuButton>
+    <Sidebar collapsible="icon" variant="sidebar">
+      <SidebarHeader className="h-14 justify-center border-b border-sidebar-border px-3 py-0">
+        <Link
+          to="/"
+          className="flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring group-data-[collapsible=icon]:justify-center"
+          aria-label="Lead Engine — ir para a visão geral"
+        >
+          <BrandMark className="size-8 shrink-0" />
+          <span className="min-w-0 group-data-[collapsible=icon]:hidden">
+            <span className="block truncate text-sm font-semibold text-foreground">Lead Engine</span>
+            {user?.tenant?.name ? (
+              <span className="block truncate text-xs text-muted-foreground">{user.tenant.name}</span>
+            ) : null}
+          </span>
+        </Link>
+      </SidebarHeader>
+      <SidebarContent className="py-2">
+        <nav aria-label="Principal">
+          {sections.map((section) => (
+            <SidebarGroup key={section.id} className="py-1">
+              {section.label ? <SidebarGroupLabel>{section.label}</SidebarGroupLabel> : null}
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {section.items.map((id) => {
+                    const page = NAVIGATION_PAGES[id];
+                    const Icon = NAVIGATION_ICON_MAP[id] ?? LayoutDashboard;
+                    const showBadge = id === 'inbox' && typeof openCount === 'number' && openCount > 0;
+                    return (
+                      <SidebarMenuItem key={id}>
+                        <SidebarMenuButton asChild tooltip={page.label} isActive={activePageId === id}>
+                          <NavLink
+                            to={page.path}
+                            end={page.path === '/'}
+                            onClick={() => {
+                              if (isMobile) setOpenMobile(false);
+                            }}
+                          >
+                            <Icon aria-hidden="true" />
+                            <span>{page.label}</span>
+                          </NavLink>
+                        </SidebarMenuButton>
+                        {showBadge ? (
+                          <SidebarMenuBadge
+                            className="rounded-full bg-primary px-1.5 text-2xs font-semibold text-primary-foreground tabular-nums"
+                            aria-label={`${openCount} conversas abertas`}
+                          >
+                            {formatBadge(openCount)}
+                          </SidebarMenuBadge>
+                        ) : null}
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
+        </nav>
+      </SidebarContent>
+      <SidebarFooter className="border-t border-sidebar-border p-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <UserMenu user={user} onLogout={onLogout} disabled={authBusy} />
           </SidebarMenuItem>
-        )),
-    [currentPage, handleNavigate]
+        </SidebarMenu>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
   );
+};
 
+const AppHeader = ({ currentPage, subpageLabel, canManageChannels, onOpenSearch }) => {
+  const { isMobile, setOpenMobile } = useSidebar();
   return (
-    <div className="flex h-full min-h-0 w-full overflow-hidden bg-background text-foreground">
-      <Sidebar collapsible="icon" variant="inset">
-        <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
-          <div className="flex w-full items-center gap-3">
-            <div className="flex flex-1 items-center gap-3 group-data-[collapsible=icon]:justify-center">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                <Ticket className="h-5 w-5" />
-              </div>
-              <div className="space-y-1 group-data-[collapsible=icon]:hidden">
-                <p className="text-sm font-semibold leading-none">Lead Engine</p>
-                <p className="text-xs text-muted-foreground">Máquina de Vendas</p>
-              </div>
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground group-data-[collapsible=icon]:flex"
-              onClick={toggleSidebar}
-              aria-label={isSidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
-            >
-              {isSidebarCollapsed ? (
-                <ChevronsRight className="h-4 w-4" aria-hidden="true" />
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/90 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/75 md:px-4">
+      {isMobile ? (
+        <button
+          type="button"
+          onClick={() => setOpenMobile(true)}
+          className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label="Abrir navegação"
+        >
+          <Menu className="size-5" aria-hidden="true" />
+        </button>
+      ) : (
+        <SidebarTrigger className="text-muted-foreground" />
+      )}
+      <Separator orientation="vertical" className="mx-1 h-5" />
+      <nav aria-label="Você está em" className="min-w-0 flex-1">
+        <ol className="flex min-w-0 items-center gap-1.5 text-sm">
+          {currentPage ? (
+            <li className={cn('truncate', subpageLabel ? 'text-muted-foreground' : 'font-medium text-foreground')}>
+              {subpageLabel ? (
+                <Link to={currentPage.path} className="hover:text-foreground">
+                  {currentPage.label}
+                </Link>
               ) : (
-                <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
+                currentPage.label
               )}
-            </Button>
-          </div>
-        </SidebarHeader>
-        <SidebarContent className="px-2 py-4">
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>{renderNavigationItems(navigationSections.primary)}</SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-          {navigationSections.contextual.length > 0 ? (
+            </li>
+          ) : null}
+          {subpageLabel ? (
             <>
-              <SidebarSeparator />
-              <SidebarGroup>
-                <SidebarGroupLabel>Contexto</SidebarGroupLabel>
-                <SidebarGroupContent>
-                  <SidebarMenu>{renderNavigationItems(navigationSections.contextual)}</SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
+              <li aria-hidden="true" className="text-subtle-foreground">
+                /
+              </li>
+              <li className="truncate font-medium text-foreground" aria-current="page">
+                {subpageLabel}
+              </li>
             </>
           ) : null}
-        </SidebarContent>
-        <SidebarFooter className="border-t border-sidebar-border px-4 py-4">
-          <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
-            <div className="flex size-9 items-center justify-center rounded-full bg-primary/15 text-primary">
-              <User className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1 space-y-0.5 group-data-[collapsible=icon]:hidden">
-              <p className="truncate text-sm font-medium leading-none">{displayName}</p>
-              <p className="text-xs text-muted-foreground">{displayRole}</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={handleLogout}
-              disabled={authStatus === 'checking'}
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="sr-only">Sair</span>
-            </Button>
-          </div>
-        </SidebarFooter>
-      </Sidebar>
-      <SidebarInset className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <LayoutHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden"
-              onClick={() => setOpenMobile(true)}
-              aria-label="Abrir navegação"
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-            {user?.tenant?.name && <span className="truncate text-sm font-medium">{user.tenant.name}</span>}
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
-              aria-label={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
-              title={isDarkMode ? 'Ativar tema claro' : 'Ativar tema escuro'}
-            >
-              {themeMounted ? (
-                isDarkMode ? (
-                  <Moon className="h-5 w-5" aria-hidden="true" />
-                ) : (
-                  <Sun className="h-5 w-5" aria-hidden="true" />
-                )
-              ) : (
-                <Sun className="h-5 w-5 opacity-0" aria-hidden="true" />
-              )}
-              <span className="sr-only">Alternar tema</span>
-            </Button>
-            <HealthIndicator />
-          </div>
-        </LayoutHeader>
-        <LayoutContent
-          className="h-full min-h-0"
-          paddingVariant={contentPaddingVariant}
-          disableInnerWrapper={disableContentInnerWrapper || fullWidthContent}
-        >
-          {shouldShowOnboardingTrack ? (
-            <OnboardingTrack stages={stageList} activeStep={activeOnboardingStep} />
-          ) : null}
-          {children}
-        </LayoutContent>
-      </SidebarInset>
-    </div>
+        </ol>
+      </nav>
+      <button
+        type="button"
+        onClick={onOpenSearch}
+        className="hidden h-8 items-center gap-2 rounded-md border border-border bg-surface px-2.5 text-sm text-muted-foreground shadow-xs transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:inline-flex"
+        aria-label="Buscar ou ir para (atalho: Ctrl ou Command + K)"
+      >
+        <Search className="size-4" aria-hidden="true" />
+        <span className="pr-6">Buscar ou ir para…</span>
+        <kbd className="rounded border border-border bg-surface-sunken px-1.5 font-sans text-2xs text-muted-foreground">
+          {isMacPlatform() ? '⌘K' : 'Ctrl K'}
+        </kbd>
+      </button>
+      <ConnectionStatus canManageChannels={canManageChannels} />
+    </header>
   );
 };
 
-const Layout = ({
-  children,
-  currentPage = 'dashboard',
-  onNavigate,
-  onboarding,
-  fullWidthContent = false,
-}) => {
-  const [inboxCount, setInboxCount] = useState(
-    typeof onboarding?.metrics?.inboxCount === 'number' ? onboarding.metrics.inboxCount : null
-  );
-  const [themeMounted, setThemeMounted] = useState(false);
-  const { resolvedTheme, setTheme } = useTheme();
+/**
+ * Shell único do app: sidebar + cabeçalho + área de conteúdo.
+ * Montado uma vez como rota de layout; as páginas trocam só o conteúdo (sem piscar a navegação).
+ */
+const Layout = ({ children, fullWidthContent = false }) => {
+  const { user, logout, status: authStatus } = useAuth();
+  const location = useLocation();
+  const mainRef = useRef(null);
+  const currentPage = resolveCurrentPage(location.pathname);
+  const subpageLabel = SUBPAGE_LABELS.find(([pattern]) => pattern.test(location.pathname))?.[1] ?? null;
+  const isFullWidth = fullWidthContent || currentPage?.id === 'inbox';
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useCommandPaletteShortcut(setPaletteOpen);
 
+  // Leva o foco ao conteúdo quando a página muda (leitores de tela anunciam a nova página).
+  const previousPathRef = useRef(location.pathname);
   useEffect(() => {
-    if (typeof onboarding?.metrics?.inboxCount === 'number') {
-      setInboxCount(onboarding.metrics.inboxCount);
-    }
-  }, [onboarding?.metrics?.inboxCount]);
-
-  useEffect(() => {
-    setThemeMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    const handler = (event) => {
-      if (typeof event?.detail === 'number') {
-        setInboxCount(event.detail);
-      }
-    };
-    window.addEventListener('leadengine:inbox-count', handler);
-    return () => window.removeEventListener('leadengine:inbox-count', handler);
-  }, []);
-
-  const navigation = useMemo(() => {
-    const mapItems = (items) =>
-      items.map((item) => {
-        if (item.id !== 'inbox') {
-          return item;
-        }
-
-        const inboxLabel =
-          typeof inboxCount === 'number' ? `Inbox (${inboxCount})` : 'Inbox';
-
-        return {
-          ...item,
-          label: inboxLabel,
-        };
-      });
-
-    return {
-      primary: mapItems(NAVIGATION_ITEMS.primary),
-      contextual: mapItems(NAVIGATION_ITEMS.contextual),
-    };
-  }, [inboxCount]);
-
-  const stageList = onboarding?.stages ?? [];
-
-  const shouldShowOnboardingTrack = stageList.length > 0 && currentPage !== 'inbox';
-  const isDarkMode = themeMounted ? resolvedTheme === 'dark' : false;
-  const activeOnboardingStep = onboarding?.activeStep ?? 0;
-
-  const isInboxPage = currentPage === 'inbox';
-  const contentPaddingVariant = isInboxPage ? 'none' : 'default';
-  const shouldDisableContentInnerWrapper = isInboxPage;
+    if (previousPathRef.current === location.pathname) return;
+    previousPathRef.current = location.pathname;
+    mainRef.current?.focus({ preventScroll: true });
+  }, [location.pathname]);
 
   return (
-    <SidebarProvider defaultOpen={false}>
-      <LayoutShell
-        navigation={navigation}
-        currentPage={currentPage}
-        onNavigate={onNavigate}
-        shouldShowOnboardingTrack={shouldShowOnboardingTrack}
-        stageList={stageList}
-        activeOnboardingStep={activeOnboardingStep}
-        isDarkMode={isDarkMode}
-        themeMounted={themeMounted}
-        setTheme={setTheme}
-        contentPaddingVariant={contentPaddingVariant}
-        disableContentInnerWrapper={shouldDisableContentInnerWrapper}
-        fullWidthContent={fullWidthContent}
+    <SidebarProvider defaultOpen>
+      <a
+        href="#conteudo"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
       >
-        {children}
-      </LayoutShell>
+        Pular para o conteúdo
+      </a>
+      <div className="flex h-svh min-h-0 w-full overflow-hidden bg-background text-foreground">
+        <AppSidebar
+          user={user}
+          onLogout={() => logout?.()}
+          authBusy={authStatus === 'checking'}
+          activePageId={currentPage?.id}
+        />
+        <SidebarInset className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <AppHeader
+            currentPage={currentPage}
+            subpageLabel={subpageLabel}
+            canManageChannels={canAccessPage('channels', user?.role)}
+            onOpenSearch={() => setPaletteOpen(true)}
+          />
+          <main
+            id="conteudo"
+            ref={mainRef}
+            tabIndex={-1}
+            className={cn('flex min-h-0 flex-1 flex-col outline-none', isFullWidth ? 'overflow-hidden' : 'overflow-y-auto')}
+          >
+            {isFullWidth ? (
+              children
+            ) : (
+              <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-1 flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
+                {children}
+              </div>
+            )}
+          </main>
+        </SidebarInset>
+      </div>
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} role={user?.role} onLogout={() => logout?.()} />
     </SidebarProvider>
   );
 };

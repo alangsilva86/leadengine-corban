@@ -128,8 +128,8 @@ const UsersSettingsTab = ({ currentUserId, canManage = true }: { currentUserId?:
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div className="space-y-1">
-            <CardTitle>Equipe do workspace</CardTitle>
-            <CardDescription>Consulte os usuários e suas permissões na organização.</CardDescription>
+            <CardTitle>Equipe</CardTitle>
+            <CardDescription>Convide pessoas e defina o que cada uma pode fazer no Lead Engine.</CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => usersQuery.refetch()} disabled={usersQuery.isFetching}>

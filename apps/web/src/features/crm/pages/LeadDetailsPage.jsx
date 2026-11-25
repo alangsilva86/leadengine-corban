@@ -1,19 +1,25 @@
-import { useParams } from 'react-router-dom';
+import { Navigate, useParams } from 'react-router-dom';
+import useLeadDetails from '../hooks/useLeadDetails';
 
+/**
+ * Rota legada /crm/leads/:leadId. O detalhe do lead vive no painel do CRM e no contato:
+ * redireciona para o contato do lead (ou para o CRM, se o lead não existir).
+ */
 const LeadDetailsPage = () => {
   const { leadId } = useParams();
+  const { lead, isLoading, error } = useLeadDetails(leadId ?? null);
+
+  if (lead?.contactId) {
+    return <Navigate to={`/contacts/${encodeURIComponent(lead.contactId)}`} replace />;
+  }
+
+  if (error || (!isLoading && !lead)) {
+    return <Navigate to="/crm" replace />;
+  }
 
   return (
-    <div className="flex h-full flex-col gap-4">
-      <header>
-        <h1 className="text-2xl font-semibold text-foreground">Lead {leadId}</h1>
-        <p className="text-muted-foreground">
-          Detalhes aprofundados do lead serão exibidos aqui conforme as etapas futuras do CRM forem implementadas.
-        </p>
-      </header>
-      <div className="rounded-lg border border-dashed border-border/80 p-6 text-sm text-muted-foreground">
-        Placeholder do drawer e conteúdo detalhado do lead.
-      </div>
+    <div className="flex h-40 items-center justify-center text-sm text-muted-foreground" role="status">
+      Abrindo lead…
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import { normalizeQrPayload as normalizeQrPayloadContract } from '@ticketz/wa-contracts';
+import { normalizeQrPayload as normalizeQrPayloadContract } from '@ticketz/wa-contracts/v1/qr';
 
 const isDataUrl = (value) => typeof value === 'string' && value.trim().toLowerCase().startsWith('data:');
 

@@ -22,8 +22,10 @@ const limitTimelineEntries = (timeline, limit = MAX_AI_TIMELINE_ITEMS) => {
   if (!Array.isArray(timeline) || limit <= 0) {
     return [];
   }
-  const startIndex = Math.max(timeline.length - limit, 0);
-  return timeline.slice(startIndex);
+  // Divisores de dia ("Hoje", "Ontem") são só apresentação: não entram no contexto da IA.
+  const entries = timeline.filter((entry) => entry?.type !== 'divider');
+  const startIndex = Math.max(entries.length - limit, 0);
+  return entries.slice(startIndex);
 };
 
 const extractEntryPayload = (entry) => {

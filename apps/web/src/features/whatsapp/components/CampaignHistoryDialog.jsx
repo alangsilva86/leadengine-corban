@@ -1,148 +1,99 @@
 import { useEffect, useState } from 'react';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-} from '@/components/ui/dialog.jsx';
-import { Button } from '@/components/ui/button.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
-import { apiGet } from '@/lib/api.js';
-import { Loader2, History } from 'lucide-react';
-import usePlayfulLogger from '../../shared/usePlayfulLogger.js';
-import { getCampaignStatusTone, statusMeta } from '../utils/campaign-helpers.js';
+import { Loader2 } from 'lucide-react';
 
-const CampaignHistoryDialog = ({ agreementId }) => {
-  const { log, warn } = usePlayfulLogger('🎯 LeadEngine • Campanhas');
-  const [open, setOpen] = useState(false);
-  const [campaigns, setCampaigns] = useState([]);
+import { Badge } from '@/components/ui/badge.jsx';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
+import { ScrollArea } from '@/components/ui/scroll-area.jsx';
+
+import { fetchCampaigns } from '../connect/services/campaignService';
+import { resolveWhatsAppError } from '../lib/errors';
+import { formatTimestampLabel } from '../lib/formatting';
+import { statusMeta } from '../utils/campaign-helpers.js';
+
+const STATUS_BADGE = { active: 'success', paused: 'warning', draft: 'secondary', ended: 'secondary', archived: 'secondary' };
+const ALL_STATUSES = ['active', 'paused', 'draft', 'ended'];
+
+/**
+ * Histórico das regras de uma origem (convênio ou parceiro), inclusive as encerradas.
+ * Controlado pela página: abre a partir do menu "⋯" do cartão.
+ */
+const CampaignHistoryDialog = ({ open, onOpenChange, campaign, numbersById }) => {
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const agreementId = campaign?.agreementId ?? null;
+  const originLabel = campaign?.agreementName || 'esta origem';
 
   useEffect(() => {
     if (!open || !agreementId) {
       return undefined;
     }
-
     let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setErrorMessage(null);
-      try {
-        log('📚 Listando campanhas cadastradas', { agreementId });
-        const response = await apiGet(
-          `/api/campaigns?agreementId=${agreementId}&status=active,paused,draft,ended`
-        );
+    setLoading(true);
+    setErrorMessage(null);
+    fetchCampaigns({ agreementId, statuses: ALL_STATUSES })
+      .then((list) => {
         if (cancelled) return;
-        const items = Array.isArray(response?.items)
-          ? response.items
-          : Array.isArray(response?.data)
-          ? response.data
-          : [];
-        setCampaigns(items);
-        if (items.length === 0) {
-          warn('Origem ainda não possui campanhas registradas', { agreementId });
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setErrorMessage(error instanceof Error ? error.message : 'Não foi possível carregar campanhas');
-        }
-        warn('Falha ao listar campanhas', error);
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void load();
-
+        const sorted = [...list].sort(
+          (a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime(),
+        );
+        setItems(sorted);
+      })
+      .catch((error) => {
+        if (!cancelled) setErrorMessage(resolveWhatsAppError(error, 'Não foi possível carregar o histórico').message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [agreementId, log, warn, open]);
-
-  const renderStatus = (campaign) => {
-    const tone = getCampaignStatusTone(campaign.status);
-    const label = statusMeta[campaign.status]?.label ?? campaign.status;
-    return (
-      <Badge variant="status" tone={tone} className="gap-2 text-[0.65rem] font-semibold uppercase">
-        {label}
-      </Badge>
-    );
-  };
+  }, [agreementId, open]);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={!agreementId}>
-          <History className="mr-2 h-4 w-4" /> Ver campanhas
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-xl">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Campanhas da origem</DialogTitle>
-          <DialogDescription>
-            Histórico das campanhas vinculadas à origem selecionada (convênio, parceiro ou carteira) para garantir rastreabilidade.
-          </DialogDescription>
+          <DialogTitle>Histórico de {originLabel}</DialogTitle>
+          <DialogDescription>Todas as regras desta origem, inclusive as encerradas.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          {loading ? (
-            <div className="flex items-center justify-center py-6 text-muted-foreground">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Carregando campanhas...
-            </div>
-          ) : null}
 
-          {errorMessage ? (
-            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          {!loading && !errorMessage ? (
-            <ScrollArea className="max-h-80">
-              <div className="space-y-3 pr-4">
-                {campaigns.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-4 text-sm text-muted-foreground">
-                    Nenhuma campanha encontrada ainda. Crie uma nova ao confirmar o WhatsApp e voltamos a listar por aqui.
-                  </div>
-                ) : (
-                  campaigns.map((campaign) => (
-                    <div
-                      key={campaign.id}
-                      className="glass-surface space-y-2 rounded-[var(--radius)] border border-[color:var(--color-inbox-border)] p-4"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">{campaign.name}</p>
-                          <p className="text-xs text-muted-foreground">{campaign.id}</p>
-                        </div>
-                        {renderStatus(campaign)}
-                      </div>
-                      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                        <span>Instância: {campaign.instanceId || '—'}</span>
-                        <span>Lead cap: {campaign.leadCap ?? '—'}</span>
-                        {campaign.updatedAt ? (
-                          <span>
-                            Atualizada em{' '}
-                            {new Date(campaign.updatedAt).toLocaleString('pt-BR', {
-                              dateStyle: 'short',
-                              timeStyle: 'short',
-                            })}
-                          </span>
-                        ) : null}
-                      </div>
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground" role="status">
+            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+            Carregando histórico…
+          </div>
+        ) : errorMessage ? (
+          <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-soft-foreground">
+            {errorMessage}
+          </p>
+        ) : items.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma regra encontrada para esta origem.</p>
+        ) : (
+          <ScrollArea className="max-h-80">
+            <ul className="divide-y divide-border pr-3">
+              {items.map((item) => {
+                const numberName = item.instanceId
+                  ? numbersById?.get(item.instanceId)?.name ?? item.instanceName ?? 'Número removido'
+                  : 'Sem número';
+                return (
+                  <li key={item.id} className="flex items-start justify-between gap-3 py-3">
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {numberName}
+                        {item.updatedAt ? ` · atualizada em ${formatTimestampLabel(item.updatedAt)}` : ''}
+                      </p>
                     </div>
-                  ))
-                )}
-              </div>
-            </ScrollArea>
-          ) : null}
-        </div>
+                    <Badge variant={STATUS_BADGE[item.status] ?? 'secondary'} className="shrink-0">
+                      {statusMeta[item.status]?.label ?? 'Rascunho'}
+                    </Badge>
+                  </li>
+                );
+              })}
+            </ul>
+          </ScrollArea>
+        )}
       </DialogContent>
     </Dialog>
   );

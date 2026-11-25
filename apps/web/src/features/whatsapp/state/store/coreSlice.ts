@@ -17,7 +17,7 @@ const DEFAULT_CONFIG: InstancesConfig = {
   campaignInstanceId: null,
   autoRefresh: false,
   pauseWhenHidden: true,
-  autoGenerateQr: true,
+  autoGenerateQr: false,
   initialFetch: false,
 };
 

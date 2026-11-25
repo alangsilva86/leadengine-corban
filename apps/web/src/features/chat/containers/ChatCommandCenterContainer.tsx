@@ -10,11 +10,20 @@ import useChatController from '../hooks/useChatController.js';
 import useManualConversationFlow from '../hooks/useManualConversationFlow';
 import useTicketFieldUpdaters from '../hooks/useTicketFieldUpdaters';
 import useWhatsAppAvailability from '../hooks/useWhatsAppAvailability';
+import useOnlineStatus from '../hooks/useOnlineStatus.js';
+import useOptionalAuthUser from '../hooks/useOptionalAuthUser.js';
+import useContactDeepLink from '../hooks/useContactDeepLink.js';
+import { useMediaQuery } from '@/hooks/use-media-query.js';
 import emitInboxTelemetry from '../utils/telemetry.js';
+import useTicketStageMutation from '../api/useTicketStageMutation.js';
+import { getTicketLeadStage } from '../utils/leadStage.js';
 import {
-  getLegacyStageValue,
-  normalizeStage,
-} from '../components/ConversationArea/utils/stage.js';
+  LEAD_STAGE_DEFINITIONS,
+  canTransitionLeadStage,
+  getLeadStageTransitionBlockReason,
+  type LeadStage,
+} from '@/features/crm/utils/lead-stage';
+import { getFriendlyErrorMessage } from '@/lib/errors.js';
 import { getTenantId } from '@/lib/auth.js';
 import { apiGet, apiPost } from '@/lib/api.js';
 import LossReasonDialog from '../components/ConversationArea/LossReasonDialog.jsx';
@@ -274,9 +283,14 @@ export interface ChatCommandCenterContainerProps {
   currentUser?: { id?: string | null } | null;
 }
 
-export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser }: ChatCommandCenterContainerProps) => {
+export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser: currentUserProp }: ChatCommandCenterContainerProps) => {
+  const authUser = useOptionalAuthUser() as { id?: string | null; name?: string | null } | null;
+  const currentUser = currentUserProp ?? authUser ?? null;
   const tenantId = tenantIdProp ?? getTenantId() ?? 'demo-tenant';
-  const controller = useChatController({ tenantId, currentUser });
+  // Em telas estreitas a lista é a primeira tela: nada abre sozinho.
+  const isWideLayout = useMediaQuery('(min-width: 1024px)');
+  const isOnline = useOnlineStatus();
+  const controller = useChatController({ tenantId, currentUser, autoSelect: isWideLayout });
   const selectedTicket = controller.selectedTicket ?? null;
   const selectedContact = selectedTicket?.contact ?? null;
   const selectedLead = selectedTicket?.lead ?? null;
@@ -450,6 +464,9 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
   }, [isAiModeReady, selectedTicketIdValue, selectedTicketQueueId, setAiModeForTicket]);
 
   const manualConversation = useManualConversationFlow({ controller });
+  // `/inbox?contactId=...` (links "Abrir conversa" do CRM/Contatos).
+  const contactLink = useContactDeepLink({ enabled: Boolean(tenantId), onSelectTicket: controller.selectTicket });
+  const contactLinkContact = (contactLink.contact ?? null) as { name?: string | null; phone?: string | null } | null;
   const availability = useWhatsAppAvailability({ selectedTicketId: controller.selectedTicketId });
   const fieldUpdaters = useTicketFieldUpdaters({
     controller,
@@ -708,6 +725,57 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     [controller]
   );
 
+  const stageMutation = useTicketStageMutation();
+
+  /**
+   * Mudança de etapa do lead feita no Inbox. O backend sincroniza o lead (CRM) e as outras conversas
+   * abertas do contato; aqui a tela muda na hora e volta se a API recusar.
+   */
+  const handleStageChange = useCallback(
+    async (target: LeadStage) => {
+      const ticket = selectedTicket as { id?: string | null } | null;
+      if (!ticket?.id) return;
+      const current = getTicketLeadStage(ticket);
+      if (current === target) return;
+
+      const blocked = getLeadStageTransitionBlockReason(current, target);
+      if (blocked) {
+        toast.error('Não é possível mudar a etapa do lead', { description: blocked });
+        return;
+      }
+
+      emitInboxTelemetry('chat.lead.stage_change', { ticketId: ticket.id, fromStage: current, toStage: target });
+      try {
+        await stageMutation.mutateAsync({ ticketId: ticket.id, stage: target });
+        toast.success(`Lead em ${LEAD_STAGE_DEFINITIONS[target].label}`, {
+          description: 'Etapa atualizada no CRM e nas conversas deste contato.',
+        });
+      } catch (error) {
+        toast.error('Não foi possível mudar a etapa do lead', {
+          description: getFriendlyErrorMessage(error, 'Tente de novo em instantes.'),
+        });
+      }
+    },
+    [selectedTicket, stageMutation]
+  );
+
+  const stageVariables = stageMutation.variables as { ticketId?: string; stage?: LeadStage } | undefined;
+  const pendingStage =
+    stageMutation.isPending && stageVariables && selectedTicket?.id && stageVariables.ticketId === selectedTicket.id
+      ? stageVariables.stage ?? null
+      : null;
+
+  /** Resultado da conversa também fecha o lead: ganho → Ganho, perda → Perdido (quando a regra do funil permite). */
+  const syncLeadStageForOutcome = useCallback(
+    async (ticket: { id?: string | null } | null | undefined, target: LeadStage) => {
+      if (!ticket?.id) return;
+      const current = getTicketLeadStage(ticket);
+      if (current === target || !canTransitionLeadStage(current, target)) return;
+      await stageMutation.mutateAsync({ ticketId: ticket.id, stage: target });
+    },
+    [stageMutation]
+  );
+
   const registerResult = useCallback(
     async ({ outcome, reason }: { outcome: string; reason?: string }) => {
       if (!controller.selectedTicketId) return;
@@ -722,16 +790,17 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
       }
 
       try {
+        await syncLeadStageForOutcome(selectedTicket, outcome === 'won' ? 'ganho' : 'perdido');
         await controller.statusMutation.mutateAsync(payload);
         toast.success('Resultado registrado.');
       } catch (error: any) {
         toast.error('Não foi possível concluir. Tente novamente.', {
-          description: error?.message,
+          description: getFriendlyErrorMessage(error, 'Tente de novo em instantes.'),
         });
         throw error;
       }
     },
-    [controller]
+    [controller, selectedTicket, syncLeadStageForOutcome]
   );
 
 
@@ -739,7 +808,7 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     async ({ reason, notes }: { reason: string; notes?: string }) => {
       const ticketIds = controller.selectedTicketIds ?? [];
       if (ticketIds.length === 0) {
-        toast.error('Selecione ao menos um ticket para registrar perda.');
+        toast.error('Selecione ao menos uma conversa para registrar perda.');
         return;
       }
 
@@ -748,7 +817,9 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
 
       setBulkLossSubmitting(true);
       try {
+        const listed = (controller.tickets ?? []) as Array<{ id?: string | null }>;
         for (const ticketId of ticketIds) {
+          await syncLeadStageForOutcome(listed.find((entry) => entry?.id === ticketId) ?? { id: ticketId }, 'perdido');
           await controller.statusMutation.mutateAsync({
             ticketId,
             status: 'CLOSED',
@@ -758,36 +829,36 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
 
         const message =
           ticketIds.length === 1
-            ? 'Perda registrada para 1 ticket.'
-            : `Perda registrada para ${ticketIds.length} tickets.`;
+            ? 'Perda registrada para 1 conversa.'
+            : `Perda registrada para ${ticketIds.length} conversas.`;
         toast.success(message);
         controller.clearTicketSelection();
         setBulkLossDialogOpen(false);
       } catch (error: any) {
         toast.error('Não foi possível concluir. Tente novamente.', {
-          description: error?.message,
+          description: getFriendlyErrorMessage(error, 'Tente de novo em instantes.'),
         });
       } finally {
         setBulkLossSubmitting(false);
       }
     },
-    [controller],
+    [controller, syncLeadStageForOutcome],
   );
 
   const assignToMe = useCallback(
     (ticket?: { id?: string | null }, targetUserId?: string | null) => {
       const ticketId = ticket?.id ?? controller.selectedTicketId;
       if (!ticketId) {
-        toast.error('Selecione um atendimento para atribuir', {
-          description: 'Escolha um ticket antes de definir o responsável.',
+        toast.error('Selecione uma conversa para atribuir', {
+          description: 'Abra uma conversa antes de definir o responsável.',
         });
         return;
       }
 
       const resolvedUserId = targetUserId ?? currentUser?.id ?? null;
       if (!resolvedUserId) {
-        toast.error('Informe o responsável pelo ticket', {
-          description: 'Escolha um agente ou faça login novamente para assumir o atendimento.',
+        toast.error('Informe o responsável pela conversa', {
+          description: 'Escolha um agente ou entre novamente para assumir a conversa.',
         });
         return;
       }
@@ -797,17 +868,18 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
         userId: resolvedUserId,
       };
       controller.assignMutation.mutate(payload, {
-        onSuccess: () => toast.success('Ticket atribuído'),
-        onError: (error: any) => toast.error('Erro ao atribuir ticket', { description: error?.message }),
+        onSuccess: () =>
+          toast.success(resolvedUserId === currentUser?.id ? 'Você assumiu a conversa.' : 'Conversa atribuída.'),
+        onError: (error: any) => toast.error('Não foi possível atribuir a conversa.', { description: error?.message }),
       });
     },
     [controller, currentUser?.id]
-	  );
+  );
 
-	  const handleScheduleFollowUp = useCallback(() => {
-	    toast.info('Agendar follow-up', {
-	      description: 'Conecte um calendário para programar o próximo contato.',
-	    });
+  const handleScheduleFollowUp = useCallback(() => {
+    toast.info('Agendar follow-up', {
+      description: 'Conecte um calendário para programar o próximo contato.',
+    });
     emitInboxTelemetry('chat.follow_up.requested', {
       ticketId: controller.selectedTicketId,
     });
@@ -836,13 +908,16 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     [controller.selectedTicketId]
   );
 
-  const handleSendTemplate = useCallback(
-    (template: any) => {
-      if (!template) return;
-      sendMessage({ content: template.body ?? template.content ?? '', template });
-    },
-    [sendMessage]
-  );
+  const handleReopen = useCallback(async () => {
+    const ticketId = controller.selectedTicketId;
+    if (!ticketId) return;
+    try {
+      await controller.statusMutation.mutateAsync({ ticketId, status: 'OPEN' });
+      toast.success('Conversa reaberta.');
+    } catch (error: any) {
+      toast.error('Não foi possível reabrir a conversa.', { description: error?.message });
+    }
+  }, [controller]);
 
   const handleCreateNextStep = useCallback(
     async ({ description, dueAt }: { description: string; dueAt?: string }) => {
@@ -906,56 +981,14 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     [controller.tickets]
   );
 
-  const lastQueueAlertRef = useRef<number | null>(null);
+  // Fila padrão ausente: vira um aviso dentro da lista (não um toast que some).
+  const queueMissing = Array.isArray(controller.queueAlerts)
+    ? (controller.queueAlerts as QueueAlertLike[]).length > 0
+    : false;
 
-  useEffect(() => {
-    const alerts = Array.isArray(controller.queueAlerts)
-      ? (controller.queueAlerts as QueueAlertLike[])
-      : [];
-    if (alerts.length === 0) {
-      return;
-    }
-    const [latest] = alerts;
-    const latestTimestamp =
-      typeof latest?.timestamp === 'number' ? latest.timestamp : null;
-    if (latestTimestamp === null) {
-      return;
-    }
-    if (lastQueueAlertRef.current === latestTimestamp) {
-      return;
-    }
-    lastQueueAlertRef.current = latestTimestamp;
-    toast.warning('🚨 Fila padrão ausente', {
-      description:
-        'Nenhuma fila ativa foi encontrada para o tenant. Configure em Configurações → Filas para destravar o atendimento inbound.',
-    });
-  }, [controller.queueAlerts]);
-
+  // Atualização silenciosa: o próprio botão mostra o progresso e erros aparecem na lista.
   const handleManualSync = useCallback(() => {
-    const toastId = 'chat-sync-tickets';
-    toast.loading('🔄 Sincronizando tickets diretamente da API...', { id: toastId });
-    controller.ticketsQuery
-      .refetch({ cancelRefetch: false, throwOnError: false })
-      .then((result: any) => {
-        if (result.error) {
-          toast.error('Falha ao sincronizar tickets', {
-            id: toastId,
-            description: result.error?.message ?? 'Erro não identificado. Tente novamente em instantes.',
-          });
-          return;
-        }
-        const total = Array.isArray(result.data?.items) ? result.data.items.length : '—';
-        toast.success('Tickets sincronizados com sucesso', {
-          id: toastId,
-          description: `Total retornado agora: ${total}. Atualização forçada sem cache executada.`,
-        });
-      })
-      .catch((error: any) => {
-        toast.error('Falha ao sincronizar tickets', {
-          id: toastId,
-          description: error?.message ?? 'Erro não identificado. Tente novamente em instantes.',
-        });
-      });
+    void controller.ticketsQuery?.refetch?.({ cancelRefetch: false, throwOnError: false });
   }, [controller.ticketsQuery]);
 
   const canAssign = Boolean(selectedTicket);
@@ -978,12 +1011,28 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     isOpen: manualConversation.isDialogOpen,
     onOpenChange: manualConversation.setDialogOpen,
     onSubmit: manualConversation.onSubmit,
-    onSuccess: manualConversation.onSuccess,
+    onSuccess: (...args: any[]) => {
+      contactLink.dismiss();
+      return (manualConversation.onSuccess as any)?.(...args);
+    },
     isPending: manualConversation.isPending,
     error: manualConversation.error,
     unavailableReason: manualConversation.unavailableReason,
     openDialog: manualConversation.openDialog,
+    defaultPhone: contactLink.status === 'not-found' ? contactLinkContact?.phone ?? '' : '',
   };
+
+  const ticketsQueryState = controller.ticketsQuery ?? {};
+  const hasActiveFilters = Boolean(
+    (filters?.search ?? '').trim() ||
+      controller.quickFilter ||
+      (filters?.state && filters.state !== 'open') ||
+      filters?.instanceId ||
+      filters?.campaignId ||
+      filters?.productType ||
+      filters?.strategy ||
+      filters?.stage,
+  );
 
   const queueListProps = {
     tickets: controller.tickets,
@@ -992,10 +1041,42 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     onSelectTicket: controller.selectTicket,
     onToggleTicketSelection: controller.toggleTicketSelection,
     onClearSelection: controller.clearTicketSelection,
-    loading: controller.ticketsQuery.isFetching,
+    loading: Boolean(ticketsQueryState.isFetching),
+    isInitialLoading: Boolean(ticketsQueryState.isLoading),
+    error: ticketsQueryState.isError && !(controller.tickets ?? []).length ? ticketsQueryState.error : null,
+    onRetry: handleManualSync,
     onRefresh: handleManualSync,
     typingAgents: controller.typingIndicator?.agentsTyping ?? [],
     metrics,
+    currentUser,
+    total: controller.totalTickets,
+    loadedCount: Array.isArray(controller.allTickets) ? controller.allTickets.length : (controller.tickets ?? []).length,
+    hasMore: Boolean(controller.hasMoreTickets),
+    isLoadingMore: Boolean(controller.isLoadingMoreTickets),
+    onLoadMore: controller.loadMoreTickets,
+    hasActiveFilters,
+    onClearFilters: () => {
+      controller.setQuickFilter?.(null);
+      controller.setSearch?.('');
+      controller.setFilters?.({
+        state: 'open',
+        instanceId: null,
+        campaignId: null,
+        productType: null,
+        strategy: null,
+        stage: null,
+      });
+    },
+    queueMissing,
+    contactLink:
+      contactLink.status === 'loading' || contactLink.status === 'not-found' || contactLink.status === 'error'
+        ? {
+            status: contactLink.status,
+            contactName: contactLinkContact?.name ?? null,
+            onStartConversation: manualConversation.isAvailable ? manualConversation.openDialog : undefined,
+            onDismiss: contactLink.dismiss,
+          }
+        : null,
     onBulkRegisterLoss: () => setBulkLossDialogOpen(true),
     bulkActionPending: isBulkLossSubmitting,
     bulkActionsDisabled: isBulkLossSubmitting || !hasBulkSelection,
@@ -1006,8 +1087,12 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     onSearchChange: controller.setSearch,
     filters,
     onFiltersChange: controller.setFilters,
-    loading: controller.ticketsQuery.isFetching,
+    loading: Boolean(ticketsQueryState.isFetching),
     onRefresh: handleManualSync,
+    total: controller.totalTickets,
+    quickFilter: controller.quickFilter ?? null,
+    onQuickFilterChange: controller.setQuickFilter,
+    canFilterMine: Boolean(currentUser?.id),
     instanceOptions: filterOptionSets.instanceOptions,
     campaignOptions: filterOptionSets.campaignOptions,
     productTypeOptions: filterOptionSets.productTypeOptions,
@@ -1023,7 +1108,8 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     messagesQuery: controller.messagesQuery,
     onSendMessage: sendMessage,
     onCreateNote: createNote,
-    onSendTemplate: handleSendTemplate,
+    onReopen: selectedTicket ? handleReopen : undefined,
+    onBack: () => controller.selectTicket(null),
     onCreateNextStep: handleCreateNextStep,
     onRegisterResult: conversationRegisterResultHandler,
     onRegisterCallResult: conversationRegisterCallResultHandler,
@@ -1042,6 +1128,8 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     onDealFieldSave: fieldUpdaters.onDealFieldSave,
     nextStepValue: fieldUpdaters.nextStepValue,
     onNextStepSave: fieldUpdaters.onNextStepSave,
+    onStageChange: selectedTicket ? handleStageChange : undefined,
+    pendingStage,
     aiMode,
     aiConfidence,
     aiModeChangeDisabled: !isAiModeReady,
@@ -1054,6 +1142,17 @@ export const ChatCommandCenterContainer = ({ tenantId: tenantIdProp, currentUser
     <>
       <ChatCommandCenter
         currentUser={currentUser}
+        hasSelection={Boolean(selectedTicket)}
+        onBackToList={() => controller.selectTicket(null)}
+        connection={{
+          online: isOnline,
+          connected: controller.realtime?.connected !== false,
+          status: controller.realtime?.status ?? 'connected',
+          onRetry: () => {
+            controller.realtime?.reconnect?.();
+            handleManualSync();
+          },
+        }}
         manualConversation={manualConversationProps}
         queueList={queueListProps}
         filterToolbar={filterToolbarProps}

@@ -1,66 +1,86 @@
-import { Building2, Mail, Phone, User, Workflow, CalendarClock } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import LeadHealthBadge from './LeadHealthBadge';
+import type { ReactNode } from 'react';
 import type { LeadDetail } from '../../state/leads';
+import {
+  formatBRL,
+  formatDateTime,
+  formatRelativeShort,
+  getSourceIcon,
+  getSourceLabel,
+  IDLE_TONE_CLASS,
+  getIdleTone,
+} from '../../utils/labels';
+import { formatPhone } from '@/features/contacts/utils/format.js';
 
 type LeadHeaderProps = {
   lead: LeadDetail;
+  /** Dados do contato (telefone/e-mail) quando disponíveis. */
+  contact?: { phone?: string | null; email?: string | null } | null;
 };
 
-const formatRelativeTime = (value: string | null | undefined) => {
-  if (!value) {
-    return 'Sem atividade recente';
-  }
-  try {
-    return `Última atividade ${formatDistanceToNow(new Date(value), { addSuffix: true, locale: ptBR })}`;
-  } catch {
-    return 'Última atividade indisponível';
-  }
-};
+const Item = ({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) => (
+  <div className={wide ? 'col-span-2 min-w-0 space-y-0.5' : 'min-w-0 space-y-0.5'}>
+    <dt className="text-xs text-muted-foreground">{label}</dt>
+    <dd className="truncate text-sm text-foreground">{children}</dd>
+  </div>
+);
 
-const LeadHeader = ({ lead }: LeadHeaderProps) => {
+/** Dados do lead no painel lateral. Só mostra o que a API informa (sem "Sem e-mail" com link vazio). */
+const LeadHeader = ({ lead, contact }: LeadHeaderProps) => {
+  const sourceLabel = getSourceLabel(lead.source);
+  const SourceIcon = getSourceIcon(lead.source);
+  const value = formatBRL(lead.potentialValue);
+  const phone = formatPhone(contact?.phone ?? lead.phone);
+  const email = contact?.email ?? lead.email ?? null;
+  const relative = formatRelativeShort(lead.lastActivityAt);
+
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-            <Workflow className="h-4 w-4" />
-            <span>{lead.stage ?? 'Etapa desconhecida'}</span>
-          </div>
-          <h2 className="text-xl font-semibold text-foreground">{lead.name}</h2>
-          <p className="text-sm text-muted-foreground">{formatRelativeTime(lead.lastActivityAt)}</p>
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+      <Item label="Valor potencial">
+        {value ? <span className="tabular-nums">{value}</span> : <span className="text-muted-foreground">Não informado</span>}
+      </Item>
+      <Item label="Responsável">
+        {lead.ownerName ?? <span className="text-muted-foreground">Sem responsável</span>}
+      </Item>
+      <Item label="Origem">
+        {sourceLabel ? (
+          <span className="inline-flex items-center gap-1">
+            <SourceIcon className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            {sourceLabel}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Não informada</span>
+        )}
+      </Item>
+      <Item label="Última atividade">
+        {relative ? (
+          <span className={IDLE_TONE_CLASS[getIdleTone(lead.lastActivityAt)]} title={formatDateTime(lead.lastActivityAt) ?? undefined}>
+            {relative}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Sem atividade</span>
+        )}
+      </Item>
+      {phone ? (
+        <Item label="WhatsApp">
+          <a href={`tel:${contact?.phone ?? lead.phone}`} className="tabular-nums hover:underline">
+            {phone}
+          </a>
+        </Item>
+      ) : null}
+      {email ? (
+        <Item label="E-mail" wide>
+          <a href={`mailto:${email}`} className="hover:underline">
+            {email}
+          </a>
+        </Item>
+      ) : null}
+      {lead.notes ? (
+        <div className="col-span-2 space-y-0.5">
+          <dt className="text-xs text-muted-foreground">Observações</dt>
+          <dd className="whitespace-pre-line text-sm text-foreground">{lead.notes}</dd>
         </div>
-        <LeadHealthBadge status={lead.health ?? undefined} />
-      </div>
-
-      <div className="grid gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground sm:grid-cols-2">
-        <span className="flex items-center gap-2">
-          <User className="h-4 w-4" />
-          Responsável: <strong className="text-foreground">{lead.ownerName ?? 'Não atribuído'}</strong>
-        </span>
-        <span className="flex items-center gap-2">
-          <Building2 className="h-4 w-4" />
-          Empresa: <strong className="text-foreground">{lead.company ?? 'Não informado'}</strong>
-        </span>
-        <span className="flex items-center gap-2">
-          <Mail className="h-4 w-4" />
-          <a href={lead.email ? `mailto:${lead.email}` : '#'} className="text-primary hover:underline">
-            {lead.email ?? 'Sem e-mail'}
-          </a>
-        </span>
-        <span className="flex items-center gap-2">
-          <Phone className="h-4 w-4" />
-          <a href={lead.phone ? `tel:${lead.phone}` : '#'} className="text-primary hover:underline">
-            {lead.phone ?? 'Sem telefone'}
-          </a>
-        </span>
-        <span className="flex items-center gap-2">
-          <CalendarClock className="h-4 w-4" />
-          Canal: <strong className="text-foreground">{lead.channel ?? 'Desconhecido'}</strong>
-        </span>
-      </div>
-    </section>
+      ) : null}
+    </dl>
   );
 };
 

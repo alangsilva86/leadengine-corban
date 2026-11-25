@@ -1,116 +1,123 @@
 import { useMemo } from 'react';
-import { Card } from '@/components/ui/card.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
-import { Button } from '@/components/ui/button.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
-import { formatCurrency } from '@/lib/formatters/currency.ts';
+import { Hourglass } from 'lucide-react';
+import { EmptyState, ErrorState } from '@/components/page';
+import { Skeleton } from '@/components/ui/skeleton.jsx';
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table.jsx';
+import { cn } from '@/lib/utils.js';
 import useCrmAging from '../hooks/useCrmAging';
-import { useCrmViewContext, useCrmViewState } from '../state/view-context';
+import { useCrmViewState } from '../state/view-context';
 import type { LeadAgingBucket } from '../state/leads';
-import emitCrmTelemetry from '../utils/telemetry';
+import { formatDateTime } from '../utils/labels';
+import { LEAD_STAGE_DEFINITIONS, LEAD_STAGE_TONE_CLASSES, normalizeLeadStage, type LeadStage } from '../utils/lead-stage';
+
+/** Ordem numérica das faixas ("0–1", "2–3", "4–7", "8–14", "15+"), não alfabética. */
+const bucketStart = (bucket: LeadAgingBucket) => {
+  const match = /\d+/.exec(bucket.bucketId ?? bucket.bucketLabel ?? '');
+  return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
+};
+
+/** Intensidade do mapa de calor com tokens da marca (sem cores fixas). */
+const HEAT_CLASSES = ['', 'bg-primary/5', 'bg-primary/10', 'bg-primary/20', 'bg-primary/30'];
+
+const heatClass = (count: number, max: number) => {
+  if (!count || !max) return HEAT_CLASSES[0];
+  const level = Math.min(HEAT_CLASSES.length - 1, Math.max(1, Math.ceil((count / max) * (HEAT_CLASSES.length - 1))));
+  return HEAT_CLASSES[level];
+};
 
 const LeadAgingView = () => {
   const { filters } = useCrmViewState();
-  const { selectIds, clearSelection, openLeadDrawer } = useCrmViewContext();
-  const { summary, isLoading } = useCrmAging(filters);
-
+  const { summary, isLoading, error, refetch } = useCrmAging(filters);
   const { stages, buckets, maxCount, totalLeads } = useMemo(() => buildMatrix(summary.buckets), [summary.buckets]);
 
-  return (
-    <div className="flex flex-col gap-6">
-      <Card className="border border-border/60 bg-background/80 p-4">
-        <header className="flex flex-wrap items-center gap-3">
-          <h2 className="text-base font-semibold text-foreground">Envelhecimento por etapa</h2>
-          <Badge variant="secondary">{totalLeads} lead(s) analisados</Badge>
-          <Badge variant="outline">Atualizado em {new Date(summary.generatedAt).toLocaleString('pt-BR')}</Badge>
-        </header>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Utilize o mapa para identificar gargalos. Clique em "puxar para frente" para criar uma tarefa de retomada no lead.
-        </p>
-      </Card>
+  if (error) {
+    return (
+      <div className="rounded-lg border border-border bg-surface">
+        <ErrorState title="Não foi possível carregar o envelhecimento" error={error} onRetry={() => void refetch()} />
+      </div>
+    );
+  }
 
-      <ScrollArea className="w-full overflow-auto rounded-xl border border-border/60 bg-background/60">
-        <table className="min-w-[680px] table-fixed border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border/60 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-4 py-3 text-left">Etapa</th>
+  if (isLoading) {
+    return <Skeleton className="h-72 w-full rounded-lg" />;
+  }
+
+  if (totalLeads === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-surface">
+        <EmptyState icon={Hourglass} title="Nenhum lead para analisar" description="Ajuste os filtros para ver há quanto tempo os leads estão parados." />
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-3" aria-labelledby="crm-aging-title">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 id="crm-aging-title" className="text-sm font-medium text-foreground">
+            Há quanto tempo cada lead está sem atualização
+          </h2>
+          <p className="text-sm text-muted-foreground">Quanto mais escuro, mais leads na faixa. Olhe primeiro as colunas da direita.</p>
+        </div>
+        {summary.generatedAt ? (
+          <span className="text-xs text-muted-foreground">Atualizado {formatDateTime(summary.generatedAt)}</span>
+        ) : null}
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+        <table data-slot="table" className="w-full min-w-[640px] text-sm">
+          <caption className="sr-only">Leads por etapa e tempo sem atualização</caption>
+          <TableHeader className="[&_tr]:border-border">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="h-10 bg-surface-sunken pl-4 text-xs font-medium text-muted-foreground">Etapa</TableHead>
               {buckets.map((bucket) => (
-                <th key={bucket.bucketId} className="px-4 py-3 text-center">
+                <TableHead key={bucket.bucketId} className="h-10 bg-surface-sunken text-center text-xs font-medium text-muted-foreground">
                   {bucket.bucketLabel}
-                </th>
+                </TableHead>
               ))}
-              <th className="px-4 py-3 text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
+              <TableHead className="h-10 bg-surface-sunken pr-4 text-right text-xs font-medium text-muted-foreground">Total</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {stages.map((stage) => (
-              <tr key={stage.stageId} className="border-b border-border/40">
-                <td className="px-4 py-3 font-medium text-foreground">
-                  <div className="flex flex-col">
-                    <span>{stage.stageName}</span>
-                    <span className="text-xs text-muted-foreground">{stage.total} lead(s)</span>
-                  </div>
-                </td>
+              <TableRow key={stage.stageId} className="border-border hover:bg-transparent">
+                <TableCell className="py-2 pl-4 font-medium text-foreground">
+                  <span className="inline-flex items-center gap-2">
+                    <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', LEAD_STAGE_TONE_CLASSES[LEAD_STAGE_DEFINITIONS[stage.stageId].tone].dot)} />
+                    {stage.stageName}
+                  </span>
+                </TableCell>
                 {buckets.map((bucket) => {
-                  const cell = stage.buckets[bucket.bucketId];
-                  const intensity = cell ? Math.min(1, cell.leadCount / Math.max(1, maxCount)) : 0;
+                  const count = stage.buckets[bucket.bucketId]?.leadCount ?? 0;
                   return (
-                    <td key={bucket.bucketId} className="px-2 py-2 text-center">
-                      <div
-                        className="relative flex flex-col items-center justify-center rounded-lg border border-border/40 px-3 py-2"
-                        style={{
-                          backgroundColor: `rgba(30, 64, 175, ${intensity * 0.18})`,
-                        }}
+                    <TableCell key={bucket.bucketId} className="p-1 text-center">
+                      <span
+                        className={cn(
+                          'flex h-9 items-center justify-center rounded-md tabular-nums',
+                          heatClass(count, maxCount),
+                          count ? 'font-medium text-foreground' : 'text-subtle-foreground'
+                        )}
                       >
-                        <span className="text-sm font-semibold text-foreground">{cell?.leadCount ?? 0}</span>
-                        <span className="text-[0.7rem] text-muted-foreground">
-                          {formatCurrency(cell?.potentialValue ?? null, {
-                            fallback: '—',
-                            minimumFractionDigits: 0,
-                            maximumFractionDigits: 0,
-                          })}
-                        </span>
-                        {cell && cell.leadCount > 0 ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="mt-1 h-7 px-2 text-[0.65rem]"
-                            onClick={() => {
-                              if (!cell.sampleLeadId) {
-                                return;
-                              }
-                              clearSelection();
-                              selectIds([cell.sampleLeadId]);
-                              openLeadDrawer(cell.sampleLeadId);
-                              emitCrmTelemetry('crm.lead.pull_forward', {
-                                stageId: stage.stageId,
-                                bucketId: bucket.bucketId,
-                                leadId: cell.sampleLeadId,
-                              });
-                            }}
-                          >
-                            Puxar para frente
-                          </Button>
-                        ) : null}
-                      </div>
-                    </td>
+                        {count || '—'}
+                      </span>
+                    </TableCell>
                   );
                 })}
-                <td className="px-4 py-3 text-right font-semibold text-foreground">{stage.total}</td>
-              </tr>
+                <TableCell className="py-2 pr-4 text-right font-medium tabular-nums text-foreground">{stage.total}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
+          </TableBody>
         </table>
-      </ScrollArea>
-
-      {isLoading ? <p className="text-sm text-muted-foreground">Carregando envelhecimento…</p> : null}
-    </div>
+      </div>
+    </section>
   );
 };
 
+type StageRow = { stageId: LeadStage; stageName: string; buckets: Record<string, LeadAgingBucket>; total: number };
+
+/** Agrupa por etapa do funil único (valores antigos da API são normalizados e somados). */
 const buildMatrix = (buckets: LeadAgingBucket[]) => {
-  const stageMap = new Map<string, { stageId: string; stageName: string; buckets: Record<string, LeadAgingBucket>; total: number }>();
+  const stageMap = new Map<LeadStage, StageRow>();
   const bucketOrder: Record<string, LeadAgingBucket> = {};
   let maxCount = 0;
   let totalLeads = 0;
@@ -119,22 +126,24 @@ const buildMatrix = (buckets: LeadAgingBucket[]) => {
     if (!bucketOrder[entry.bucketId]) {
       bucketOrder[entry.bucketId] = entry;
     }
-    if (!stageMap.has(entry.stageId)) {
-      stageMap.set(entry.stageId, { stageId: entry.stageId, stageName: entry.stageName, buckets: {}, total: 0 });
+    const stageId = normalizeLeadStage(entry.stageId);
+    if (!stageMap.has(stageId)) {
+      stageMap.set(stageId, { stageId, stageName: LEAD_STAGE_DEFINITIONS[stageId].label, buckets: {}, total: 0 });
     }
-    const stage = stageMap.get(entry.stageId)!;
-    stage.buckets[entry.bucketId] = entry;
+    const stage = stageMap.get(stageId)!;
+    const existing = stage.buckets[entry.bucketId];
+    const merged = existing ? { ...existing, leadCount: existing.leadCount + entry.leadCount } : entry;
+    stage.buckets[entry.bucketId] = merged;
     stage.total += entry.leadCount;
-    maxCount = Math.max(maxCount, entry.leadCount);
+    maxCount = Math.max(maxCount, merged.leadCount);
     totalLeads += entry.leadCount;
   });
 
-  const orderedBuckets = Object.values(bucketOrder).sort((a, b) => a.bucketLabel.localeCompare(b.bucketLabel));
-  const orderedStages = Array.from(stageMap.values());
-
   return {
-    stages: orderedStages,
-    buckets: orderedBuckets,
+    stages: Array.from(stageMap.values()).sort(
+      (a, b) => LEAD_STAGE_DEFINITIONS[a.stageId].order - LEAD_STAGE_DEFINITIONS[b.stageId].order
+    ),
+    buckets: Object.values(bucketOrder).sort((a, b) => bucketStart(a) - bucketStart(b)),
     maxCount,
     totalLeads,
   };

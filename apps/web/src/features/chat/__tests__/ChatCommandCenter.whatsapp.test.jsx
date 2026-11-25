@@ -1,10 +1,14 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render as rtlRender, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+
+// O Inbox lê parâmetros de URL (deep link ?contactId=) pelo roteador, como no app.
+const render = (ui, options) => rtlRender(ui, { wrapper: MemoryRouter, ...options });
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
-import ChatCommandCenter from '../containers/ChatCommandCenterContainer.js';
+import ChatCommandCenter from '../containers/ChatCommandCenterContainer.tsx';
 
 const apiMock = vi.hoisted(() => ({
   apiGet: vi.fn(async () => ({ mode: 'assist' })),
@@ -113,6 +117,11 @@ vi.mock('../api/useUpdateContactField', () => ({
   }),
 }));
 
+vi.mock('../api/useTicketStageMutation.js', () => ({
+  __esModule: true,
+  default: () => ({ mutateAsync: vi.fn(async () => ({})), isPending: false, variables: undefined }),
+}));
+
 vi.mock('../api/useUpdateDealFields.js', () => ({
   __esModule: true,
   default: () => ({
@@ -172,6 +181,7 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
       },
       sendMessageMutation: {
         mutate: sendMessageMutate,
+        mutateAsync: sendMessageMutate,
         isPending: false,
         error: null,
       },
@@ -198,11 +208,11 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
   });
 
   it('locks the composer and shows WhatsApp configuration guidance on broker errors', async () => {
-    sendMessageMutate.mockImplementation((_payload, options) => {
-      options?.onError?.({
+    sendMessageMutate.mockImplementation(async () => {
+      throw {
         message: 'Broker indisponível',
         payload: { code: 'BROKER_NOT_CONFIGURED' },
-      });
+      };
     });
 
     render(<ChatCommandCenter tenantId="tenant-x" currentUser={{ id: 'agent-1' }} />);
@@ -211,13 +221,15 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
     const initialProps = ConversationAreaMock.props;
     expect(initialProps.composerDisabled).toBe(false);
 
-    initialProps.onSendMessage?.({ content: 'Olá', attachments: [] });
+    await act(async () => {
+      await initialProps.onSendMessage?.({ content: 'Olá', attachments: [] });
+    });
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(
         'WhatsApp não configurado',
         expect.objectContaining({
-          description: expect.stringContaining('Conecte uma instância do WhatsApp'),
+          description: expect.stringContaining('Conecte um número de WhatsApp'),
         })
       );
     });
@@ -233,17 +245,19 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
   });
 
   it('exposes offline notice with request metadata for transient broker errors', async () => {
-    sendMessageMutate.mockImplementation((_payload, options) => {
-      options?.onError?.({
+    sendMessageMutate.mockImplementation(async () => {
+      throw {
         status: 502,
         message: 'BROKER_ERROR',
         payload: { error: { code: 'BROKER_ERROR', requestId: 'req-123', recoveryHint: 'Guardamos a mensagem.' } },
-      });
+      };
     });
 
     render(<ChatCommandCenter tenantId="tenant-x" currentUser={{ id: 'agent-1' }} />);
     const props = ConversationAreaMock.props;
-    props.onSendMessage?.({ content: 'Oi', attachments: [] });
+    await act(async () => {
+      await props.onSendMessage?.({ content: 'Oi', attachments: [] });
+    });
 
     await waitFor(() => {
       expect(ConversationAreaMock.props?.composerNotice).toMatchObject({
@@ -254,9 +268,15 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
     });
   });
 
+  it('não envia texto automático ao escolher modelos (sem onSendTemplate)', () => {
+    render(<ChatCommandCenter tenantId="tenant-x" currentUser={{ id: 'agent-1' }} />);
+    expect(ConversationAreaMock.props.onSendTemplate).toBeUndefined();
+    expect(sendMessageMutate).not.toHaveBeenCalled();
+  });
+
   it('exibe toast com requestId ao falhar com erro 500 do broker', async () => {
-    sendMessageMutate.mockImplementation((_payload, options) => {
-      options?.onError?.({
+    sendMessageMutate.mockImplementation(async () => {
+      throw {
         status: 500,
         message: 'Erro interno',
         error: {
@@ -265,12 +285,14 @@ describe('ChatCommandCenter WhatsApp integration errors', () => {
           requestId: 'req-500',
           recoveryHint: 'Reinicie a instância antes de reenviar.',
         },
-      });
+      };
     });
 
     render(<ChatCommandCenter tenantId="tenant-x" currentUser={{ id: 'agent-1' }} />);
     const props = ConversationAreaMock.props;
-    props.onSendMessage?.({ content: 'Falhou', attachments: [] });
+    await act(async () => {
+      await props.onSendMessage?.({ content: 'Falhou', attachments: [] });
+    });
 
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(

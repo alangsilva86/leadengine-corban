@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { AlertCircle, AlertTriangle } from 'lucide-react';
 
 import {
   Dialog,
@@ -13,33 +15,40 @@ import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
 import { Textarea } from '@/components/ui/textarea.jsx';
-import { Checkbox } from '@/components/ui/checkbox.jsx';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select.jsx';
-
-const STATUS_OPTIONS = [
-  { value: 'ACTIVE', label: 'Ativo' },
-  { value: 'INACTIVE', label: 'Inativo' },
-  { value: 'ARCHIVED', label: 'Arquivado' },
-];
+import { apiGet } from '@/lib/api.js';
+import useDebouncedValue from '../hooks/useDebouncedValue.js';
+import { formatPhone, maskPhoneInput, toE164 } from '../utils/format.js';
 
 const DEFAULT_VALUES = {
   name: '',
   phone: '',
   email: '',
   document: '',
-  status: 'ACTIVE',
   notes: '',
-  isBlocked: false,
+};
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Procura contato existente com o mesmo telefone (a busca da API compara o telefone por trecho). */
+const useDuplicatePhone = (e164, enabled) => {
+  const debounced = useDebouncedValue(e164, 400);
+  return useQuery({
+    queryKey: ['contacts', 'duplicate-check', debounced],
+    enabled: enabled && Boolean(debounced),
+    staleTime: 30_000,
+    queryFn: async () => {
+      const digits = String(debounced).replace(/\D/g, '');
+      const response = await apiGet(`/api/contacts?${new URLSearchParams({ search: digits.slice(-11), limit: '3' })}`);
+      const data = response?.data ?? response;
+      const items = Array.isArray(data?.items) ? data.items : [];
+      return items.find((item) => String(item.phone ?? '').replace(/\D/g, '').endsWith(digits.slice(-11))) ?? null;
+    },
+  });
 };
 
 const ContactCreateDialog = ({ open, onOpenChange, onSubmit }) => {
   const [values, setValues] = useState(DEFAULT_VALUES);
+  const [touched, setTouched] = useState({});
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -48,11 +57,22 @@ const ContactCreateDialog = ({ open, onOpenChange, onSubmit }) => {
       return;
     }
     setValues(DEFAULT_VALUES);
+    setTouched({});
     setError(null);
     setSubmitting(false);
   }, [open]);
 
-  const canSubmit = useMemo(() => values.name.trim().length > 0, [values.name]);
+  const phoneE164 = useMemo(() => toE164(values.phone), [values.phone]);
+  const emailValid = !values.email.trim() || EMAIL_PATTERN.test(values.email.trim());
+  const duplicate = useDuplicatePhone(phoneE164, open);
+  const existing = duplicate.data;
+
+  const errors = {
+    name: values.name.trim() ? null : 'Informe o nome do contato.',
+    phone: phoneE164 ? null : 'Informe um WhatsApp válido com DDD, ex.: (62) 99977-6655.',
+    email: emailValid ? null : 'Confira o e-mail digitado.',
+  };
+  const canSubmit = !errors.name && !errors.phone && !errors.email;
 
   const handleClose = (nextOpen) => {
     if (submitting) {
@@ -67,6 +87,7 @@ const ContactCreateDialog = ({ open, onOpenChange, onSubmit }) => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setTouched({ name: true, phone: true, email: true });
     if (!canSubmit || submitting) {
       return;
     }
@@ -76,11 +97,9 @@ const ContactCreateDialog = ({ open, onOpenChange, onSubmit }) => {
 
     const payload = {
       name: values.name.trim(),
-      phone: values.phone.trim() || undefined,
+      phone: phoneE164,
       email: values.email.trim() || undefined,
-      document: values.document.trim() || undefined,
-      status: values.status,
-      isBlocked: values.isBlocked || undefined,
+      document: values.document.replace(/\D/g, '') || undefined,
       notes: values.notes.trim() || undefined,
     };
 
@@ -88,127 +107,139 @@ const ContactCreateDialog = ({ open, onOpenChange, onSubmit }) => {
       await onSubmit?.(payload);
       onOpenChange?.(false);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Não foi possível criar o contato. Tente novamente.';
-      setError(message);
+      setError(err instanceof Error && err.message ? err.message : 'Não foi possível criar o contato. Tente novamente.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  const fieldError = (field) =>
+    touched[field] && errors[field] ? (
+      <p id={`contact-create-${field}-error`} className="text-xs text-danger-soft-foreground">
+        {errors[field]}
+      </p>
+    ) : null;
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Novo contato</DialogTitle>
-          <DialogDescription>
-            Cadastre rapidamente um contato para iniciar um atendimento ou disparar uma campanha.
-          </DialogDescription>
+          <DialogDescription>Cadastre o cliente com o WhatsApp para poder iniciar a conversa.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="space-y-2">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+          <div className="space-y-1.5">
             <Label htmlFor="contact-create-name">Nome completo</Label>
             <Input
               id="contact-create-name"
               value={values.name}
               onChange={(event) => setField('name', event.target.value)}
-              placeholder="Nome do contato"
+                            placeholder="Nome do cliente"
+              autoComplete="off"
               required
               autoFocus
               disabled={submitting}
+              aria-invalid={Boolean(touched.name && errors.name)}
+              aria-describedby={touched.name && errors.name ? 'contact-create-name-error' : undefined}
             />
+            {fieldError('name')}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="contact-create-phone">Telefone</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="contact-create-phone">WhatsApp</Label>
               <Input
                 id="contact-create-phone"
+                type="tel"
+                inputMode="tel"
                 value={values.phone}
-                onChange={(event) => setField('phone', event.target.value)}
-                placeholder="(11) 99999-0000"
+                onChange={(event) => setField('phone', maskPhoneInput(event.target.value))}
+                onBlur={() => values.phone && setTouched((prev) => ({ ...prev, phone: true }))}
+                placeholder="(62) 99977-6655"
+                autoComplete="off"
+                required
                 disabled={submitting}
+                className="tabular-nums"
+                aria-invalid={Boolean(touched.phone && errors.phone)}
+                aria-describedby={touched.phone && errors.phone ? 'contact-create-phone-error' : undefined}
               />
+              {fieldError('phone')}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="contact-create-email">E-mail</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="contact-create-email">
+                E-mail <span className="font-normal text-muted-foreground">(opcional)</span>
+              </Label>
               <Input
                 id="contact-create-email"
                 type="email"
                 value={values.email}
                 onChange={(event) => setField('email', event.target.value)}
-                placeholder="cliente@empresa.com"
+                onBlur={() => values.email && setTouched((prev) => ({ ...prev, email: true }))}
+                placeholder="cliente@email.com"
                 disabled={submitting}
+                aria-invalid={Boolean(touched.email && errors.email)}
+                aria-describedby={touched.email && errors.email ? 'contact-create-email-error' : undefined}
               />
+              {fieldError('email')}
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="contact-create-document">Documento</Label>
-              <Input
-                id="contact-create-document"
-                value={values.document}
-                onChange={(event) => setField('document', event.target.value)}
-                placeholder="CPF/CNPJ (opcional)"
-                disabled={submitting}
-              />
+          {existing ? (
+            <div role="status" className="flex items-start gap-2 rounded-md bg-warning-soft p-3 text-sm text-warning-soft-foreground">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <p>
+                Já existe um contato com este WhatsApp: <strong>{existing.name}</strong>
+                {existing.phone ? ` (${formatPhone(existing.phone)})` : ''}.{' '}
+                <Link to={`/contacts/${existing.id}`} className="font-medium underline" onClick={() => onOpenChange?.(false)}>
+                  Abrir contato existente
+                </Link>
+              </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="contact-create-status">Status</Label>
-              <Select
-                value={values.status}
-                onValueChange={(nextStatus) => setField('status', nextStatus)}
-                disabled={submitting}
-              >
-                <SelectTrigger id="contact-create-status">
-                  <SelectValue placeholder="Selecione o status" />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          ) : null}
+
+          <div className="space-y-1.5">
+            <Label htmlFor="contact-create-document">
+              CPF <span className="font-normal text-muted-foreground">(opcional)</span>
+            </Label>
+            <Input
+              id="contact-create-document"
+              value={values.document}
+              onChange={(event) => setField('document', event.target.value.replace(/[^\d.\-/]/g, '').slice(0, 18))}
+              placeholder="000.000.000-00"
+              inputMode="numeric"
+              autoComplete="off"
+              disabled={submitting}
+              className="tabular-nums"
+            />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="contact-create-notes">Notas internas</Label>
+          <div className="space-y-1.5">
+            <Label htmlFor="contact-create-notes">
+              Observações <span className="font-normal text-muted-foreground">(opcional)</span>
+            </Label>
             <Textarea
               id="contact-create-notes"
               value={values.notes}
               onChange={(event) => setField('notes', event.target.value)}
-              placeholder="Contexto inicial, preferências ou instruções importantes."
-              rows={4}
+              placeholder="Convênio, margem informada, melhor horário para contato…"
+              rows={3}
               disabled={submitting}
             />
           </div>
 
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <Checkbox
-              checked={values.isBlocked}
-              onCheckedChange={(nextValue) => setField('isBlocked', Boolean(nextValue))}
-              disabled={submitting}
-            />
-            Bloquear contato para campanhas automáticas
-          </label>
-
           {error ? (
-            <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-              <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
+            <div role="alert" className="flex items-start gap-2 rounded-md bg-danger-soft p-3 text-sm text-danger-soft-foreground">
+              <AlertCircle className="mt-0.5 size-4 flex-none" aria-hidden="true" />
               <span>{error}</span>
             </div>
           ) : null}
 
-          <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <DialogFooter className="gap-2">
             <Button type="button" variant="ghost" disabled={submitting} onClick={() => handleClose(false)}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={!canSubmit || submitting}>
-              {submitting ? 'Criando...' : 'Criar contato'}
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Criando…' : 'Criar contato'}
             </Button>
           </DialogFooter>
         </form>

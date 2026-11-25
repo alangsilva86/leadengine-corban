@@ -1,278 +1,217 @@
-import { memo, useMemo } from 'react';
-import {
-  CalendarPlus,
-  Clock,
-  ListTodo,
-  Mail,
-  MessageCircle,
-  Phone,
-  Ticket,
-} from 'lucide-react';
-import { format, formatDistanceToNow, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { memo } from 'react';
+import { Link } from 'react-router-dom';
+import { CalendarPlus, MessageCircle, MoreHorizontal, Pencil, UserRound } from 'lucide-react';
 
-import { Button } from '@/components/ui/button.jsx';
-import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
-import StatusPill from '@/components/ui/status-pill.jsx';
+import { Button } from '@/components/ui/button.jsx';
+import { Checkbox } from '@/components/ui/checkbox.jsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.jsx';
+import { TableCell, TableRow } from '@/components/ui/table.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
+import {
+  formatBRL,
+  formatDateTime,
+  formatRelativeShort,
+  getInitials,
+} from '@/features/crm/utils/labels';
+import LeadStageBadge from '@/features/crm/components/lead-stage/LeadStageBadge';
+import { CONTACT_STATUS_LABELS, formatPhone } from '../utils/format.js';
 
-const STATUS_CONFIG = {
-  ACTIVE: { label: 'Ativo', tone: 'success' },
-  INACTIVE: { label: 'Inativo', tone: 'neutral' },
-  ARCHIVED: { label: 'Arquivado', tone: 'warning' },
-};
+const MAX_VISIBLE_TAGS = 2;
 
-const MAX_VISIBLE_TAGS = 3;
-
-const resolveInitials = (name) => {
-  if (!name) {
-    return 'CT';
-  }
-
-  const parts = name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2);
-
-  if (parts.length === 0) {
-    return 'CT';
-  }
-
-  return parts
-    .map((part) => part[0]?.toUpperCase())
-    .join('');
-};
-
-const resolveTimestamp = (value) => {
-  if (!value) {
-    return {
-      relative: 'Nenhuma interação registrada',
-      absolute: 'Sem registros anteriores',
-    };
-  }
-
-  try {
-    const date = typeof value === 'string' ? parseISO(value) : new Date(value);
-    return {
-      relative: formatDistanceToNow(date, { addSuffix: true, locale: ptBR }),
-      absolute: format(date, 'dd/MM/yyyy HH:mm', { locale: ptBR }),
-    };
-  } catch {
-    return {
-      relative: 'Data indisponível',
-      absolute: 'Não foi possível formatar a data',
-    };
-  }
-};
+const isInteractiveTarget = (target) =>
+  target instanceof Element && Boolean(target.closest('a,button,input,[role="checkbox"],[role="menuitem"],[data-row-interactive]'));
 
 const ContactRowComponent = ({
   contact,
+  lead,
+  leadIndexReady = false,
   selected = false,
   onToggle,
   onOpenDetails,
-  onTriggerWhatsApp,
+  onOpenConversation,
   onCreateTask,
+  onEdit,
 }) => {
-  const tags = useMemo(() => (Array.isArray(contact?.tags) ? contact.tags.filter(Boolean) : []), [contact?.tags]);
-  const extraTags = Math.max(tags.length - MAX_VISIBLE_TAGS, 0);
-  const statusConfig = STATUS_CONFIG[contact?.status] ?? STATUS_CONFIG.ACTIVE;
-  const openTickets = contact?.openTickets ?? 0;
-  const pendingTasks = contact?.pendingTasks ?? 0;
-  const lastInteraction = useMemo(
-    () => resolveTimestamp(contact?.lastInteractionAt),
-    [contact?.lastInteractionAt]
-  );
+  const name = contact?.name?.trim() || 'Contato sem nome';
+  const phone = formatPhone(contact?.phone);
+  const tags = Array.isArray(contact?.tags) ? contact.tags.filter(Boolean) : [];
+  const extraTags = tags.slice(MAX_VISIBLE_TAGS);
+  const statusLabel = contact?.status && contact.status !== 'ACTIVE' ? CONTACT_STATUS_LABELS[contact.status] : null;
+  const lastInteraction = formatRelativeShort(contact?.lastInteractionAt);
+  const lastInteractionAbsolute = formatDateTime(contact?.lastInteractionAt);
+  const leadValue = formatBRL(lead?.potentialValue);
+  const openTickets = Number(contact?.openTickets) || 0;
 
   const handleRowClick = (event) => {
-    if (event.defaultPrevented) {
-      return;
-    }
-    if (event.target.closest('[data-row-interactive="true"]')) {
+    if (isInteractiveTarget(event.target)) {
       return;
     }
     onOpenDetails?.(contact);
   };
 
-  const handleRowKeyDown = (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      onOpenDetails?.(contact);
-    }
-  };
-
-  const stopPropagation = (event) => {
-    event.stopPropagation();
-  };
-
-  const phoneHref = contact?.phone ? `tel:${contact.phone}` : undefined;
-  const emailHref = contact?.email ? `mailto:${contact.email}` : undefined;
-
   return (
-    <div
-      className={cn(
-        'grid grid-cols-1 gap-4 border-b border-border/60 px-4 py-4 transition-colors hover:bg-muted/50 focus-within:bg-muted/50 focus-visible:outline-none md:grid-cols-[auto,minmax(0,1.2fr),minmax(0,220px),180px]',
-        selected && 'bg-primary/5'
-      )}
-      role="row"
-      aria-selected={selected}
-      tabIndex={0}
+    <TableRow
+      data-state={selected ? 'selected' : undefined}
+      className="group cursor-pointer border-border hover:bg-surface-hover data-[state=selected]:bg-primary-soft/60"
       onClick={handleRowClick}
-      onKeyDown={handleRowKeyDown}
     >
-      <div className="flex items-start gap-3" role="gridcell">
+      <TableCell className="w-10 py-2 pr-0 pl-4">
         <Checkbox
           checked={selected}
-          onCheckedChange={onToggle}
-          aria-label={contact?.name ? `Selecionar ${contact.name}` : 'Selecionar contato'}
-          data-row-interactive="true"
-          onClick={stopPropagation}
-          onKeyDown={stopPropagation}
+          onCheckedChange={() => onToggle?.(contact.id)}
+          aria-label={`Selecionar ${name}`}
         />
-        <Avatar className="h-10 w-10">
-          <AvatarFallback>{resolveInitials(contact?.name)}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="text-left text-sm font-semibold text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenDetails?.(contact);
-              }}
-              data-row-interactive="true"
-            >
-              {contact?.name ?? 'Contato sem nome'}
-            </button>
-            <StatusPill size="sm" tone={statusConfig.tone} withDot>
-              {statusConfig.label}
-            </StatusPill>
-            {contact?.isBlocked ? (
-              <Badge variant="destructive" className="uppercase">
-                Bloqueado
+      </TableCell>
+
+      <TableCell className="w-full max-w-0 py-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar className="size-8 shrink-0">
+            <AvatarFallback className="bg-primary-soft text-xs font-medium text-primary-soft-foreground">
+              {getInitials(contact?.name)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <Link
+                to={`/contacts/${contact.id}`}
+                className="truncate font-medium text-foreground hover:underline focus-visible:underline focus-visible:outline-none"
+              >
+                {name}
+              </Link>
+              {openTickets > 0 ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="inline-flex size-2 shrink-0 rounded-full bg-whatsapp"
+                      aria-label="Conversa em aberto"
+                      role="img"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {openTickets === 1 ? '1 conversa em aberto' : `${openTickets} conversas em aberto`}
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+              {contact?.isBlocked ? <Badge variant="destructive">Bloqueado</Badge> : null}
+              {statusLabel ? <Badge variant="secondary">{statusLabel}</Badge> : null}
+            </div>
+            <p className="truncate text-xs text-muted-foreground tabular-nums">{phone ?? 'Sem telefone'}</p>
+          </div>
+        </div>
+      </TableCell>
+
+      <TableCell className="hidden py-2 md:table-cell">
+        {lead ? (
+          <div className="flex items-center gap-2">
+            <LeadStageBadge stage={lead.stage} />
+            {leadValue ? <span className="text-sm text-foreground tabular-nums">{leadValue}</span> : null}
+          </div>
+        ) : (
+          <span className="text-subtle-foreground" aria-label={leadIndexReady ? 'Sem lead no funil' : 'Lead não carregado'}>
+            —
+          </span>
+        )}
+      </TableCell>
+
+      <TableCell className="hidden py-2 lg:table-cell">
+        {lead ? (
+          lead.ownerName ? (
+            <span className="text-sm text-foreground">{lead.ownerName}</span>
+          ) : (
+            <span className="text-sm text-muted-foreground">Sem responsável</span>
+          )
+        ) : (
+          <span className="text-subtle-foreground">—</span>
+        )}
+      </TableCell>
+
+      <TableCell className="hidden py-2 sm:table-cell">
+        {lastInteraction ? (
+          <time
+            dateTime={new Date(contact.lastInteractionAt).toISOString()}
+            title={lastInteractionAbsolute ?? undefined}
+            className="text-sm text-muted-foreground tabular-nums"
+          >
+            {lastInteraction}
+          </time>
+        ) : (
+          <span className="text-sm text-subtle-foreground">Sem interação</span>
+        )}
+      </TableCell>
+
+      <TableCell className="hidden py-2 lg:table-cell">
+        {tags.length === 0 ? (
+          <span className="text-subtle-foreground">—</span>
+        ) : (
+          <div className="flex max-w-[220px] items-center gap-1">
+            {tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
+              <Badge key={tag} variant="secondary" className="max-w-[96px] truncate">
+                {tag}
               </Badge>
+            ))}
+            {extraTags.length > 0 ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" tabIndex={0} data-row-interactive>
+                    +{extraTags.length}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>{extraTags.join(', ')}</TooltipContent>
+              </Tooltip>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <Phone className="h-3.5 w-3.5" />
-              {phoneHref ? (
-                <a
-                  href={phoneHref}
-                  className="hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  onClick={stopPropagation}
-                  data-row-interactive="true"
+        )}
+      </TableCell>
+
+      <TableCell className="w-12 py-2 pr-3 text-right">
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Ações para ${name}`}
+                  className={cn('text-muted-foreground', 'opacity-100 sm:opacity-60 sm:group-hover:opacity-100 sm:focus-visible:opacity-100')}
                 >
-                  {contact.phone}
-                </a>
-              ) : (
-                '—'
-              )}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Mail className="h-3.5 w-3.5" />
-              {emailHref ? (
-                <a
-                  href={emailHref}
-                  className="hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  onClick={stopPropagation}
-                  data-row-interactive="true"
-                >
-                  {contact.email}
-                </a>
-              ) : (
-                '—'
-              )}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground md:hidden">
-            <StatusPill tone={openTickets > 0 ? 'warning' : 'neutral'} size="sm" withDot>
-              <Ticket className="h-3.5 w-3.5" />
-              {openTickets} {openTickets === 1 ? 'ticket' : 'tickets'} em aberto
-            </StatusPill>
-            <StatusPill tone={pendingTasks > 0 ? 'primary' : 'neutral'} size="sm" withDot>
-              <ListTodo className="h-3.5 w-3.5" />
-              {pendingTasks} {pendingTasks === 1 ? 'tarefa' : 'tarefas'} pendente(s)
-            </StatusPill>
-          </div>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2" role="gridcell">
-        {tags.slice(0, MAX_VISIBLE_TAGS).map((tag) => (
-          <Badge key={tag} variant="secondary">
-            {tag}
-          </Badge>
-        ))}
-        {extraTags > 0 ? (
-          <Badge variant="outline" className="text-xs text-muted-foreground">
-            +{extraTags}
-          </Badge>
-        ) : null}
-        {tags.length === 0 ? <Badge variant="outline">Sem tags</Badge> : null}
-      </div>
-      <div className="hidden flex-col gap-2 text-xs text-muted-foreground md:flex" role="gridcell">
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusPill tone={openTickets > 0 ? 'warning' : 'neutral'} size="sm" withDot>
-            <Ticket className="h-3.5 w-3.5" />
-            {openTickets} {openTickets === 1 ? 'ticket' : 'tickets'} em aberto
-          </StatusPill>
-          <StatusPill tone={pendingTasks > 0 ? 'primary' : 'neutral'} size="sm" withDot>
-            <ListTodo className="h-3.5 w-3.5" />
-            {pendingTasks} {pendingTasks === 1 ? 'tarefa' : 'tarefas'} pendente(s)
-          </StatusPill>
-        </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="inline-flex items-center gap-2">
-              <Clock className="h-3.5 w-3.5" />
-              {lastInteraction.relative}
-            </div>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-xs">
-            Última interação registrada em {lastInteraction.absolute}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      <div className="flex flex-col gap-2 self-center md:self-start" role="gridcell">
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={(event) => {
-              event.stopPropagation();
-              onTriggerWhatsApp?.(contact);
-            }}
-            data-row-interactive="true"
-          >
-            <MessageCircle className="h-4 w-4" />
-            <span className="hidden sm:inline">WhatsApp</span>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={(event) => {
-              event.stopPropagation();
-              onCreateTask?.(contact);
-            }}
-            data-row-interactive="true"
-          >
-            <CalendarPlus className="h-4 w-4" />
-            <span className="hidden sm:inline">Nova tarefa</span>
-          </Button>
-        </div>
-        <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground md:hidden">
-          <Clock className="h-3.5 w-3.5" />
-          {lastInteraction.relative}
-        </div>
-      </div>
-    </div>
+                  <MoreHorizontal />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Mais ações</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onSelect={() => onOpenConversation?.(contact)}>
+              <MessageCircle />
+              Abrir conversa
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onCreateTask?.(contact)}>
+              <CalendarPlus />
+              Nova tarefa
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onEdit?.(contact)}>
+              <Pencil />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onOpenDetails?.(contact)}>
+              <UserRound />
+              Ver contato
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </TableCell>
+    </TableRow>
   );
 };
 

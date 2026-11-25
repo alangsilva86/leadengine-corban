@@ -10,9 +10,12 @@ export const ChatCommandCenter = ({
   queueList,
   filterToolbar,
   conversationArea,
+  hasSelection = false,
+  onBackToList,
+  connection = null,
 }) => {
   return (
-    <div className="flex flex-1 min-h-0 w-full">
+    <div className="flex min-h-0 w-full flex-1">
       {manualConversation?.isAvailable ? (
         <ManualConversationDialog
           open={manualConversation.isOpen}
@@ -21,11 +24,15 @@ export const ChatCommandCenter = ({
           onSuccess={manualConversation.onSuccess}
           isSubmitting={manualConversation.isPending}
           error={manualConversation.error}
+          defaultPhone={manualConversation.defaultPhone ?? ''}
         />
       ) : null}
 
       <InboxAppShell
         currentUser={currentUser}
+        hasSelection={hasSelection}
+        onBackToList={onBackToList}
+        connection={connection}
         sidebar={<QueueList {...queueList} />}
         toolbar={<FilterToolbar {...filterToolbar} />}
       >

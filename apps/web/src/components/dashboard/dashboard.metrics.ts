@@ -188,7 +188,7 @@ const calcChange = (current: number | null, previous: number | null): string => 
 export const deriveTrend = (change: string | null | undefined): TrendDirection => {
   if (!change || change === '—') return 'neutral';
   if (change.startsWith('-')) return 'down';
-  if (change === '0%' || change === '+0%' || change === '0,0%' || change === '+0,0%') return 'neutral';
+  if (/^\+?0(,0)?%/.test(change)) return 'neutral';
   return 'up';
 };
 

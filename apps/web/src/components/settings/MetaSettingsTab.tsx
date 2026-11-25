@@ -281,7 +281,7 @@ const MetaSettingsTab = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           {statusMessage && (
-            <p className="text-sm text-emerald-600">{statusMessage}</p>
+            <p role="status" className="text-sm text-success-soft-foreground">{statusMessage}</p>
           )}
           {error && (
             <div className="flex items-center gap-2 text-sm text-destructive">

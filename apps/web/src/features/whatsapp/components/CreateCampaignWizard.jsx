@@ -1,203 +1,82 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  AlertCircle,
-  Check,
-  CheckCircle2,
-  ChevronsUpDown,
-  Loader2,
-  Lock,
-  Phone,
-  Plug,
-  Search,
-  Shapes,
-  Sparkles,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, ShieldAlert } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge.jsx';
 import { Button } from '@/components/ui/button.jsx';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert.jsx';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion.jsx';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command.jsx';
+import { Checkbox } from '@/components/ui/checkbox.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Label } from '@/components/ui/label.jsx';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select.jsx';
-import { Skeleton } from '@/components/ui/skeleton.jsx';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
-import useMediaQuery from '@/hooks/use-media-query.js';
-import {
-  WHATSAPP_CAMPAIGN_PRODUCTS,
-  findCampaignProduct,
-  findCampaignStrategy,
-} from '@/features/whatsapp/utils/campaign-options.js';
+import { WHATSAPP_CAMPAIGN_PRODUCTS, findCampaignProduct, findCampaignStrategy } from '@/features/whatsapp/utils/campaign-options.js';
 import { cn } from '@/lib/utils.js';
-import { toast } from 'sonner';
-import { resolveTenantDisplayName, selectPreferredInstance } from '../lib/instances';
 
-const STATUS_OPTIONS = [
-  { value: 'active', label: 'Ativar imediatamente' },
-  { value: 'paused', label: 'Criar pausada' },
-  { value: 'draft', label: 'Salvar como rascunho' },
-];
+import CampaignSummary from './campaign-wizard/CampaignSummary.jsx';
+import StepperRail from './campaign-wizard/StepperRail.jsx';
+import {
+  LEAD_SOURCE_LABELS,
+  LEAD_SOURCE_OPTIONS,
+  PRODUCT_RULES,
+  STATUS_OPTIONS,
+  STEP_DEPENDENCIES,
+  STEP_SEQUENCE,
+  STRATEGY_CARDS,
+  TOTAL_STEPS,
+  findStrategyCard,
+  slugifyOrigin,
+} from './campaign-wizard/constants.js';
+import { NumberStatusDot } from './numbers/NumberStatusBadge';
+import SafetyTipsPopover from './SafetyTips';
+import { formatWhatsAppNumber } from '../lib/formatting';
+import { resolveInstancePhone, selectPreferredInstance } from '../lib/instances';
+import { getNumberStatus } from '../lib/numberStatus';
 
-const STEP_SEQUENCE = [
-  {
-    key: 'instance',
-    title: 'Instância',
-    description: 'Selecione e conecte o número.',
-  },
-  {
-    key: 'agreement',
-    title: 'Origem',
-    description: 'Convênio e fonte de entrada.',
-  },
-  {
-    key: 'product',
-    title: 'Produto & margem',
-    description: 'Combine produto e margem.',
-  },
-  {
-    key: 'strategy',
-    title: 'Estratégia',
-    description: 'Defina a régua do lead.',
-  },
-  {
-    key: 'review',
-    title: 'Revisão',
-    description: 'Confirme antes de criar.',
-  },
-];
-
-export const TOTAL_STEPS = STEP_SEQUENCE.length;
-
-const STEP_DEPENDENCIES = {
-  agreement: ['instance'],
-  product: ['agreement'],
-  strategy: ['product'],
-  review: ['strategy'],
+const formatNumberLabel = (instance) => {
+  if (!instance) return '';
+  const name = typeof instance.name === 'string' && instance.name.trim() ? instance.name.trim() : null;
+  return name ?? formatWhatsAppNumber(resolveInstancePhone(instance)) ?? 'Número sem nome';
 };
 
-const LEAD_SOURCE_OPTIONS = [
-  { value: 'inbound', label: 'Inbound' },
-  { value: 'internal_list', label: 'Lista interna' },
-  { value: 'partner', label: 'Parceiro' },
-];
-
-const LEAD_SOURCE_LABELS = LEAD_SOURCE_OPTIONS.reduce((acc, option) => {
-  acc[option.value] = option.label;
-  return acc;
-}, {});
-
-const SEGMENT_OPTIONS = [
-  { value: 'active_clients', label: 'Carteira ativa' },
-  { value: 'public_workers', label: 'Servidores públicos' },
-  { value: 'new_leads', label: 'Novos leads' },
-];
-
-const PRODUCT_RULES = {
-  consigned_credit: ['Até 35% da margem consignável', 'Sem seguro obrigatório'],
-  benefit_card: ['Até 100% quando o convênio permitir', 'Sem seguro obrigatório'],
-  salary_portability: ['Sem custo de portabilidade', 'Acompanhamento em D+1'],
+const buildSuggestedName = ({ originLabel, productLabel }) => {
+  const parts = [originLabel, productLabel].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'Nova regra';
 };
 
-const STRATEGY_CARDS = [
-  {
-    value: 'reactive_inbound',
-    title: 'HOT',
-    definition: 'Contato imediato para leads com interesse alto.',
-    cadence: '3 toques/48h',
-    compliance: null,
-  },
-  {
-    value: 'proactive_followup',
-    title: 'WARM',
-    definition: 'Reforços agendados para leads em avaliação.',
-    cadence: '2 toques/72h',
-    compliance: null,
-  },
-  {
-    value: 'hybrid',
-    title: 'COLD',
-    definition: 'Nutrição gradual para leads frios.',
-    cadence: '1 toque/96h',
-    compliance: 'Consentimento antes de dados sensíveis',
-  },
-];
+const readAgreementPrefill = (agreement) => ({
+  agreementId: typeof agreement?.id === 'string' ? agreement.id : '',
+  agreementName: typeof agreement?.name === 'string' ? agreement.name : '',
+});
 
-const formatInstanceLabel = (instance) => {
-  if (!instance) {
-    return '';
-  }
-  if (typeof instance.name === 'string' && instance.name.trim().length > 0) {
-    return instance.name.trim();
-  }
-  if (typeof instance.displayName === 'string' && instance.displayName.trim().length > 0) {
-    return instance.displayName.trim();
-  }
-  if (typeof instance.id === 'string' && instance.id.trim().length > 0) {
-    return instance.id.trim();
-  }
-  return 'Instância WhatsApp';
-};
+const StepHeading = ({ title, description, headingRef }) => (
+  <header ref={headingRef} tabIndex={-1} className="space-y-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+    {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+  </header>
+);
 
-const formatAgreementLabel = (agreement) => {
-  const resolved = resolveTenantDisplayName(agreement);
-  if (resolved) {
-    return resolved;
-  }
-  if (typeof agreement?.id === 'string' && agreement.id.trim().length > 0) {
-    return agreement.id.trim();
-  }
-  return 'Origem';
-};
+const SelectableCard = ({ selected, disabled = false, onSelect, children, className, ...props }) => (
+  <button
+    type="button"
+    onClick={onSelect}
+    aria-pressed={selected}
+    disabled={disabled}
+    className={cn(
+      'flex w-full flex-col items-stretch justify-start rounded-lg border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+      selected ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:border-border-strong hover:bg-surface-hover',
+      disabled && 'cursor-not-allowed opacity-60 hover:border-border hover:bg-surface',
+      className,
+    )}
+    {...props}
+  >
+    {children}
+  </button>
+);
 
-const buildSuggestedName = ({ agreementLabel, instanceLabel, productLabel }) => {
-  const parts = [];
-  if (agreementLabel) {
-    parts.push(agreementLabel);
-  }
-  if (productLabel) {
-    parts.push(productLabel);
-  }
-  if (instanceLabel) {
-    parts.push(instanceLabel);
-  }
-  if (parts.length === 0) {
-    return 'Nova campanha do WhatsApp';
-  }
-  return parts.join(' • ');
-};
-
-const collectAllowedProducts = (agreement) => {
-  if (!agreement) {
-    return null;
-  }
-  const candidates = [
-    agreement.allowedProducts,
-    agreement.products,
-    agreement.availableProducts,
-    agreement?.metadata?.allowedProducts,
-  ].filter((entry) => Array.isArray(entry) && entry.length > 0);
-  if (candidates.length === 0) {
-    return null;
-  }
-  return new Set(candidates[0]);
-};
-
+/**
+ * Assistente de criação de regra (5 etapas).
+ * O payload enviado é exatamente: name, status, instanceId, agreementId, agreementName,
+ * leadSource, product, margin, strategy, segments.
+ */
 const CreateCampaignWizard = ({
   open,
   agreement,
@@ -209,160 +88,134 @@ const CreateCampaignWizard = ({
   onStepChange,
   onSelectionChange,
 }) => {
+  const ids = {
+    sourceName: useId(),
+    sourceId: useId(),
+    margin: useId(),
+    name: useId(),
+    status: useId(),
+    consent: useId(),
+  };
   const [stepIndex, setStepIndex] = useState(0);
-  const [formState, setFormState] = useState({
+  const [formState, setFormState] = useState(() => ({
     instanceId: '',
-    agreementId: '',
-    agreementName: '',
+    ...readAgreementPrefill(agreement),
     product: '',
     margin: '',
     strategy: '',
     status: 'active',
     name: '',
-    leadSource: LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound',
+    leadSource: LEAD_SOURCE_OPTIONS[0].value,
     segments: [],
-  });
+  }));
   const [nameDirty, setNameDirty] = useState(false);
+  const [sourceIdDirty, setSourceIdDirty] = useState(Boolean(agreement?.id));
+  const [consentGiven, setConsentGiven] = useState(false);
   const [stepError, setStepError] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingFocusStep, setPendingFocusStep] = useState(null);
   const stepHeadingRefs = useRef({});
-  const isLg = useMediaQuery('(min-width: 1024px)');
-  const tenantContextLabel = useMemo(
-    () => resolveTenantDisplayName(agreement),
-    [agreement],
-  );
+  const isSessionActiveRef = useRef(false);
 
   useEffect(() => {
     onSubmittingChange?.(isSubmitting);
   }, [isSubmitting, onSubmittingChange]);
 
-  const connectedInstances = instances.filter((instance) => Boolean(instance?.connected));
+  const numberOptions = useMemo(
+    () =>
+      instances
+        .filter((instance) => instance && typeof instance.id === 'string')
+        .map((instance) => ({
+          instance,
+          id: instance.id,
+          label: formatNumberLabel(instance),
+          phone: formatWhatsAppNumber(resolveInstancePhone(instance)),
+          status: getNumberStatus(instance),
+          connected: Boolean(instance.connected),
+        })),
+    [instances],
+  );
+  const hasConnectedNumbers = numberOptions.some((option) => option.connected);
 
-  const hasInstances = instances.length > 0;
-  const hasConnectedInstances = connectedInstances.length > 0;
-
-  const isModalSessionActiveRef = useRef(false);
-
+  // Prepara o formulário a cada abertura (mantém o progresso enquanto o diálogo segue aberto).
   useEffect(() => {
     if (!open) {
-      isModalSessionActiveRef.current = false;
+      isSessionActiveRef.current = false;
       return;
     }
-
     const connectedList = instances.filter((instance) => Boolean(instance?.connected));
-
-    const preferredInstance =
+    const preferred =
       selectPreferredInstance(instances, { preferredInstanceId: defaultInstanceId ?? null }) ??
       connectedList[0] ??
       instances[0] ??
       null;
+    const isFirstOpen = !isSessionActiveRef.current;
+    isSessionActiveRef.current = true;
 
-    const isFirstOpen = !isModalSessionActiveRef.current;
-    isModalSessionActiveRef.current = true;
-
-    setFormState((prev) => {
-      const nextState = {
-        ...prev,
-        instanceId:
-          prev.instanceId && instances.some((item) => item?.id === prev.instanceId)
-            ? prev.instanceId
-            : preferredInstance?.id ?? '',
-        leadSource: prev.leadSource ?? (LEAD_SOURCE_OPTIONS[0]?.value ?? 'inbound'),
-        segments: Array.isArray(prev.segments) ? prev.segments : [],
-      };
-
-      return nextState;
-    });
+    setFormState((prev) => ({
+      ...prev,
+      instanceId:
+        prev.instanceId && instances.some((item) => item?.id === prev.instanceId) ? prev.instanceId : preferred?.id ?? '',
+    }));
 
     if (isFirstOpen) {
       setStepIndex(0);
       setNameDirty(false);
+      setConsentGiven(false);
     }
-
     setStepError(null);
     setSubmitError(null);
     setIsSubmitting(false);
-  }, [
-    open,
-    instances,
-    defaultInstanceId,
-  ]);
+  }, [open, instances, defaultInstanceId]);
 
   const currentStep = STEP_SEQUENCE[stepIndex];
-  const selectedInstance = instances.find((item) => item?.id === formState.instanceId) ?? null;
+  const selectedOption = numberOptions.find((option) => option.id === formState.instanceId) ?? null;
+  const selectedInstance = selectedOption?.instance ?? null;
   const selectedProduct = findCampaignProduct(formState.product);
   const selectedStrategy = findCampaignStrategy(formState.strategy);
-  const selectedStrategyCard = STRATEGY_CARDS.find((card) => card.value === formState.strategy) ?? null;
+  const selectedStrategyCard = findStrategyCard(formState.strategy);
+  const needsConsent = Boolean(selectedStrategyCard?.proactive);
+  const originLabel = formState.agreementName.trim() || null;
 
   useEffect(() => {
     onSelectionChange?.({
       instance: selectedInstance,
-      agreement: null,
+      agreement: originLabel ? { id: formState.agreementId, name: originLabel } : null,
       product: selectedProduct,
       strategy: selectedStrategy,
     });
-  }, [onSelectionChange, selectedInstance, selectedProduct, selectedStrategy]);
+  }, [formState.agreementId, onSelectionChange, originLabel, selectedInstance, selectedProduct, selectedStrategy]);
 
-  const suggestedCampaignName = useMemo(() => {
-    const agreementLabel = formState.agreementName || formState.agreementId;
-    const productLabel = selectedProduct?.label ?? '';
-    const instanceLabel = formatInstanceLabel(selectedInstance);
-
-    return buildSuggestedName({ agreementLabel, productLabel, instanceLabel });
-  }, [selectedProduct, selectedInstance, formState.agreementId, formState.agreementName]);
+  const suggestedCampaignName = useMemo(
+    () => buildSuggestedName({ originLabel, productLabel: selectedProduct?.label ?? null }),
+    [originLabel, selectedProduct],
+  );
 
   useEffect(() => {
-    if (!open || nameDirty || !suggestedCampaignName) {
-      return;
-    }
-
-    setFormState((prev) => {
-      if (prev.name === suggestedCampaignName) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        name: suggestedCampaignName,
-      };
-    });
+    if (!open || nameDirty) return;
+    setFormState((prev) => (prev.name === suggestedCampaignName ? prev : { ...prev, name: suggestedCampaignName }));
   }, [open, nameDirty, suggestedCampaignName]);
 
+  // Cartão benefício costuma vir de quem já chamou: sugere "Resposta imediata".
   useEffect(() => {
-    if (!open) {
-      return;
-    }
+    if (!open) return;
     setFormState((prev) => {
-      if (prev.strategy || !selectedProduct) {
-        return prev;
-      }
-      if (selectedProduct.value === 'benefit_card') {
-        return { ...prev, strategy: 'reactive_inbound' };
-      }
-      return prev;
+      if (prev.strategy || !selectedProduct || selectedProduct.value !== 'benefit_card') return prev;
+      return { ...prev, strategy: 'reactive_inbound' };
     });
   }, [open, selectedProduct]);
 
   const stepValidation = useMemo(
     () => ({
-      instance: Boolean(selectedInstance?.id) && Boolean(selectedInstance?.connected),
-      agreement: Boolean(formState.agreementId),
+      instance: Boolean(selectedOption?.connected),
+      agreement: Boolean(formState.agreementId.trim()) && Boolean(formState.agreementName.trim()),
       product: Boolean(formState.product) && Number(formState.margin) > 0,
-      strategy: Boolean(formState.strategy),
+      strategy: Boolean(formState.strategy) && (!needsConsent || consentGiven),
       review: Boolean(formState.name?.trim()) && Boolean(formState.status),
     }),
-    [selectedInstance, formState.agreementId, formState.product, formState.margin, formState.strategy, formState.name, formState.status],
+    [consentGiven, formState, needsConsent, selectedOption],
   );
-
-  const stepIndexLookup = useMemo(() => {
-    const lookup = {};
-    STEP_SEQUENCE.forEach((step, index) => {
-      lookup[step.key] = index;
-    });
-    return lookup;
-  }, []);
 
   const stepStatuses = useMemo(() => {
     const statuses = {};
@@ -371,17 +224,14 @@ const CreateCampaignWizard = ({
         statuses[step.key] = 'current';
         return;
       }
-      const dependencies = STEP_DEPENDENCIES[step.key] ?? [];
-      const blocked = dependencies.some((depKey) => !stepValidation[depKey]);
+      const blocked = (STEP_DEPENDENCIES[step.key] ?? []).some((dep) => !stepValidation[dep]);
       if (blocked) {
         statuses[step.key] = 'blocked';
-        return;
-      }
-      if (stepValidation[step.key] || index < stepIndex) {
+      } else if (stepValidation[step.key] || index < stepIndex) {
         statuses[step.key] = 'completed';
-        return;
+      } else {
+        statuses[step.key] = 'upcoming';
       }
-      statuses[step.key] = 'upcoming';
     });
     return statuses;
   }, [stepIndex, stepValidation]);
@@ -390,136 +240,55 @@ const CreateCampaignWizard = ({
     onStepChange?.({ index: stepIndex, step: currentStep, statuses: stepStatuses });
   }, [currentStep, onStepChange, stepIndex, stepStatuses]);
 
-  const handleInstanceChange = (value) => {
-    setFormState((prev) => ({ ...prev, instanceId: value }));
-  };
+  useEffect(() => {
+    if (!pendingFocusStep) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const heading = stepHeadingRefs.current[pendingFocusStep];
+      if (heading) {
+        heading.focus({ preventScroll: true });
+        heading.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      }
+      setPendingFocusStep(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pendingFocusStep]);
 
-  const handleAgreementIdChange = (event) => {
-    const value = event.target.value ?? '';
-    setFormState((prev) => ({ ...prev, agreementId: value }));
-  };
-
-  const handleAgreementNameChange = (event) => {
-    const value = event.target.value ?? '';
-    setFormState((prev) => ({ ...prev, agreementName: value }));
-  };
-
-  const handleProductChange = (value) => {
-    const product = findCampaignProduct(value);
-    setFormState((prev) => ({
-      ...prev,
-      product: value,
-      margin: product ? String(product.defaultMargin ?? '') : prev.margin,
-    }));
-  };
-
-  const handleMarginChange = (value) => {
-    const sanitized = value.replace(/[^0-9.,]/g, '').replace(',', '.');
-    setFormState((prev) => ({ ...prev, margin: sanitized }));
-  };
-
-  const handleStrategyChange = (value) => {
-    setFormState((prev) => ({ ...prev, strategy: value }));
-  };
-
-  const handleStatusChange = (value) => {
-    setFormState((prev) => ({ ...prev, status: value }));
-  };
-
-  const handleLeadSourceChange = (value) => {
-    setFormState((prev) => ({ ...prev, leadSource: value }));
-  };
-
-  const toggleSegment = (value) => {
-    setFormState((prev) => ({
-      ...prev,
-      segments: prev.segments.includes(value)
-        ? prev.segments.filter((item) => item !== value)
-        : [...prev.segments, value],
-    }));
-  };
-
-  const handleNameChange = (event) => {
-    setFormState((prev) => ({ ...prev, name: event.target.value }));
-    setNameDirty(true);
-  };
+  const update = (patch) => setFormState((prev) => ({ ...prev, ...patch }));
 
   const goToStep = (targetIndex) => {
-    if (targetIndex < 0 || targetIndex >= STEP_SEQUENCE.length) {
-      return;
-    }
+    if (targetIndex < 0 || targetIndex >= STEP_SEQUENCE.length) return;
     const targetKey = STEP_SEQUENCE[targetIndex].key;
-    if (stepStatuses[targetKey] === 'blocked') {
-      return;
-    }
+    if (stepStatuses[targetKey] === 'blocked') return;
     setStepError(null);
     setSubmitError(null);
     setPendingFocusStep(targetKey);
     setStepIndex(targetIndex);
   };
 
-  useEffect(() => {
-    if (!pendingFocusStep) {
-      return undefined;
-    }
-
-    const frame = requestAnimationFrame(() => {
-      const targetHeading = stepHeadingRefs.current[pendingFocusStep];
-      if (targetHeading) {
-        targetHeading.focus({ preventScroll: true });
-        targetHeading.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-      setPendingFocusStep(null);
-    });
-
-    return () => cancelAnimationFrame(frame);
-  }, [currentStep?.key, pendingFocusStep]);
-
-  const goToPreviousStep = () => {
-    setStepError(null);
-    setSubmitError(null);
-    setStepIndex((prev) => Math.max(0, prev - 1));
-  };
-
   const validateCurrentStep = () => {
     switch (currentStep?.key) {
       case 'instance':
-        if (!formState.instanceId) {
-          return 'Escolha uma instância para continuar.';
-        }
-        if (selectedInstance && !selectedInstance.connected) {
-          return 'Conecte para liberar Origem.';
-        }
+        if (!formState.instanceId) return 'Escolha o número que vai receber os leads.';
+        if (!selectedOption?.connected) return 'Este número não está conectado. Escolha um número conectado.';
         return null;
       case 'agreement':
-        if (!formState.agreementId) {
-          return 'Selecione o convênio responsável pela campanha.';
-        }
+        if (!formState.agreementName.trim()) return 'Informe o nome da origem dos leads (ex.: INSS).';
+        if (!formState.agreementId.trim()) return 'Informe o código da origem.';
         return null;
       case 'product': {
-        if (!formState.product) {
-          return 'Escolha o produto principal da campanha.';
-        }
-        const numericMargin = Number(formState.margin);
-        if (!Number.isFinite(numericMargin) || numericMargin <= 0) {
-          return 'Informe uma margem em números positivos.';
-        }
+        if (!formState.product) return 'Escolha o produto da regra.';
+        const margin = Number(formState.margin);
+        if (!Number.isFinite(margin) || margin <= 0) return 'Informe uma margem maior que zero.';
         return null;
       }
       case 'strategy':
-        if (!formState.strategy) {
-          return 'Selecione a estratégia que será aplicada.';
-        }
+        if (!formState.strategy) return 'Escolha como o time vai atender esses leads.';
+        if (needsConsent && !consentGiven) return 'Confirme que os contatos autorizaram receber mensagens.';
         return null;
-      case 'review': {
-        if (!formState.name || formState.name.trim().length === 0) {
-          return 'Informe um nome para a campanha.';
-        }
-        if (!formState.status) {
-          return 'Selecione o status inicial da campanha.';
-        }
+      case 'review':
+        if (!formState.name.trim()) return 'Dê um nome para a regra.';
+        if (!formState.status) return 'Escolha como a regra começa.';
         return null;
-      }
       default:
         return null;
     }
@@ -532,7 +301,15 @@ const CreateCampaignWizard = ({
       return;
     }
     setStepError(null);
-    setStepIndex((prev) => Math.min(STEP_SEQUENCE.length - 1, prev + 1));
+    const next = Math.min(STEP_SEQUENCE.length - 1, stepIndex + 1);
+    setPendingFocusStep(STEP_SEQUENCE[next].key);
+    setStepIndex(next);
+  };
+
+  const goToPreviousStep = () => {
+    setStepError(null);
+    setSubmitError(null);
+    setStepIndex((prev) => Math.max(0, prev - 1));
   };
 
   const handleSubmit = async () => {
@@ -541,15 +318,11 @@ const CreateCampaignWizard = ({
       setStepError(validation);
       return;
     }
-
-    if (isSubmitting) {
-      return;
-    }
+    if (isSubmitting) return;
 
     setStepError(null);
     setSubmitError(null);
     setIsSubmitting(true);
-
     try {
       const normalizedSegments = Array.from(
         new Set(
@@ -563,8 +336,8 @@ const CreateCampaignWizard = ({
         name: formState.name.trim(),
         status: formState.status,
         instanceId: formState.instanceId,
-        agreementId: formState.agreementId,
-        agreementName: formState.agreementName,
+        agreementId: formState.agreementId.trim(),
+        agreementName: formState.agreementName.trim(),
         leadSource: formState.leadSource,
         product: formState.product,
         margin: Number(formState.margin),
@@ -572,539 +345,295 @@ const CreateCampaignWizard = ({
         segments: normalizedSegments,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Não foi possível criar a campanha.';
-      setSubmitError(message);
+      setSubmitError(error instanceof Error ? error.message : 'Não foi possível criar a regra.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const registerStepHeading = (stepKey) => (node) => {
-    if (node) {
-      stepHeadingRefs.current[stepKey] = node;
-    } else {
-      delete stepHeadingRefs.current[stepKey];
-    }
+  const headingRef = (stepKey) => (node) => {
+    if (node) stepHeadingRefs.current[stepKey] = node;
+    else delete stepHeadingRefs.current[stepKey];
   };
-
-  const renderStepHeading = (title, description, stepKey = currentStep?.key) => (
-    <header
-      ref={registerStepHeading(stepKey)}
-      tabIndex={-1}
-      className="space-y-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-    >
-      <h2 className="text-base font-semibold leading-6 text-foreground md:text-lg">{title}</h2>
-      {description ? <p className="text-sm leading-5 text-muted-foreground">{description}</p> : null}
-    </header>
-  );
-
-  const renderDependencyBadge = (label) => (
-    <Badge variant="status" tone="info" className="text-[0.7rem]">
-      {label}
-    </Badge>
-  );
-
-  const getStepBlockedReason = (stepKey) => {
-    switch (stepKey) {
-      case 'agreement':
-        return 'Conecte uma instância para avançar.';
-      case 'product':
-        return 'Selecione a origem para continuar.';
-      case 'strategy':
-        return 'Escolha produto e margem antes de seguir.';
-      case 'review':
-        return 'Finalize as etapas anteriores.';
-      default:
-        return 'Conclua a etapa anterior para avançar.';
-    }
-  };
-
-  const reviewChecklistItems = useMemo(() => {
-    const marginNumber = Number(formState.margin);
-    const hasMarginValue = formState.margin !== '' && formState.margin !== null && formState.margin !== undefined;
-    const isMarginValid = Number.isFinite(marginNumber) && marginNumber > 0;
-
-    const items = [];
-
-    const instanceMessage = stepValidation.instance
-      ? 'Instância conectada'
-      : !formState.instanceId
-        ? 'Selecione uma instância na Etapa 1'
-        : 'Conecte a instância escolhida na Etapa 1';
-    const instanceTooltip = stepValidation.instance
-      ? 'Instância pronta para receber leads.'
-      : !formState.instanceId
-        ? 'Escolha uma instância para liberar Origem.'
-        : 'Instância precisa estar conectada.';
-
-    items.push({
-      key: 'instance',
-      isValid: stepValidation.instance,
-      message: instanceMessage,
-      helper: selectedInstance ? formatInstanceLabel(selectedInstance) : 'Ir para Instância',
-      tooltip: instanceTooltip,
-      stepIndex: stepIndexLookup.instance ?? 0,
-    });
-
-    const agreementMessage = stepValidation.agreement ? 'Origem válida' : 'Selecione o convênio na Etapa 2';
-    const agreementTooltip = stepValidation.agreement
-      ? 'Convênio selecionado para a campanha.'
-      : 'Defina o convênio para liberar Produto & margem.';
-
-    items.push({
-      key: 'agreement',
-      isValid: stepValidation.agreement,
-      message: agreementMessage,
-      helper: selectedAgreement ? formatAgreementLabel(selectedAgreement) : 'Ir para Origem',
-      tooltip: agreementTooltip,
-      stepIndex: stepIndexLookup.agreement ?? 1,
-    });
-
-    let productMessage = 'Produto compatível';
-    let productTooltip = 'Produto e margem validados.';
-    if (!stepValidation.product) {
-      if (!formState.product) {
-        productMessage = 'Escolha o produto na Etapa 3';
-        productTooltip = 'Selecione um produto compatível para seguir.';
-      } else if (!hasMarginValue) {
-        productMessage = 'Adicione margem na Etapa 3';
-        productTooltip = 'Informe a margem alvo para validar a combinação.';
-      } else if (!isMarginValid) {
-        productMessage = 'Use margem maior que zero na Etapa 3';
-        productTooltip = 'Margem deve ser numérica e positiva.';
-      } else {
-        productMessage = 'Revise produto e margem na Etapa 3';
-        productTooltip = 'Confirme os dados financeiros.';
-      }
-    }
-
-    items.push({
-      key: 'product',
-      isValid: stepValidation.product,
-      message: productMessage,
-      helper: selectedProduct?.label
-        ? `${selectedProduct.label}${formState.margin ? ` • ${formState.margin}%` : ''}`
-        : 'Ir para Produto & margem',
-      tooltip: productTooltip,
-      stepIndex: stepIndexLookup.product ?? 2,
-    });
-
-    const strategyMessage = stepValidation.strategy ? 'Estratégia definida' : 'Selecione a régua na Etapa 4';
-    const strategyTooltip = stepValidation.strategy
-      ? 'Régua configurada para os leads.'
-      : 'Escolha a estratégia antes de criar.';
-
-    items.push({
-      key: 'strategy',
-      isValid: stepValidation.strategy,
-      message: strategyMessage,
-      helper: selectedStrategyCard?.cadence || selectedStrategy?.label || 'Ir para Estratégia',
-      tooltip: strategyTooltip,
-      stepIndex: stepIndexLookup.strategy ?? 3,
-    });
-
-    return items;
-  }, [
-    formState.agreementId,
-    formState.instanceId,
-    formState.margin,
-    formState.product,
-    formState.strategy,
-    selectedAgreement,
-    selectedInstance,
-    selectedProduct,
-    selectedStrategy,
-    selectedStrategyCard,
-    stepIndexLookup,
-    stepValidation.agreement,
-    stepValidation.instance,
-    stepValidation.product,
-    stepValidation.strategy,
-  ]);
 
   const renderStepContent = () => {
     switch (currentStep?.key) {
-      case 'instance': {
-        const isConnected = Boolean(selectedInstance?.connected);
+      case 'instance':
         return (
-          <div className="space-y-6">
-            {renderStepHeading('Escolha a instância', 'Use um número conectado para receber os leads.')}
-            <div className="flex flex-col gap-2 text-xs text-muted-foreground">
-              {tenantContextLabel ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="border-primary/40 bg-primary/10 px-2 py-0.5 text-primary">
-                    Tenant · {tenantContextLabel}
-                  </Badge>
-                  <span>Mostrando apenas instâncias vinculadas a este tenant.</span>
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed border-border/70 bg-muted/10 p-3">
-                  Vincule um convênio com tenant definido para liberar instâncias específicas.
-                </div>
-              )}
-            </div>
+          <div className="space-y-5">
+            <StepHeading
+              headingRef={headingRef('instance')}
+              title="Qual número recebe os leads?"
+              description="Os leads desta regra chegam neste WhatsApp e aparecem na Inbox."
+            />
+            {numberOptions.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                Você ainda não tem números.{' '}
+                <Link to="/channels?connect=1" className="font-medium text-primary hover:underline">
+                  Conectar número
+                </Link>
+              </p>
+            ) : (
+              <div role="radiogroup" aria-label="Número de WhatsApp" className="grid gap-2">
+                {numberOptions.map((option) => {
+                  const selected = option.id === formState.instanceId;
+                  return (
+                    <SelectableCard
+                      key={option.id}
+                      role="radio"
+                      aria-checked={selected}
+                      aria-pressed={undefined}
+                      selected={selected}
+                      disabled={!option.connected}
+                      onSelect={() => update({ instanceId: option.id })}
+                      className="flex-row items-center justify-between gap-3 py-3"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-foreground">{option.label}</span>
+                        {option.phone ? <span className="block text-xs tabular-nums text-muted-foreground">{option.phone}</span> : null}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                        <NumberStatusDot status={option.status} />
+                        {option.status.label}
+                      </span>
+                    </SelectableCard>
+                  );
+                })}
+              </div>
+            )}
+            {numberOptions.length > 0 && !hasConnectedNumbers ? (
+              <p className="rounded-lg bg-warning-soft px-4 py-3 text-sm text-warning-soft-foreground">
+                Nenhum número está conectado agora.{' '}
+                <Link to="/channels" className="font-medium underline underline-offset-2">
+                  Reconectar em WhatsApp
+                </Link>
+              </p>
+            ) : null}
+            {selectedOption && !selectedOption.connected && hasConnectedNumbers ? (
+              <p className="text-sm text-muted-foreground">Escolha um número conectado para continuar.</p>
+            ) : null}
+          </div>
+        );
+      case 'agreement':
+        return (
+          <div className="space-y-5">
+            <StepHeading
+              headingRef={headingRef('agreement')}
+              title="De onde vêm os leads?"
+              description="A origem é o convênio ou parceiro dos leads. Ela identifica a regra no CRM e nos relatórios."
+            />
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 min-w-0">
-                <Label htmlFor="campaign-instance">Instância</Label>
-                <Select value={formState.instanceId} onValueChange={handleInstanceChange}>
-                  <SelectTrigger id="campaign-instance">
-                    <SelectValue placeholder="Selecione a instância" />
+              <div className="space-y-2">
+                <Label htmlFor={ids.sourceName}>Nome da origem</Label>
+                <Input
+                  id={ids.sourceName}
+                  value={formState.agreementName}
+                  onChange={(event) => {
+                    const value = event.target.value ?? '';
+                    update(sourceIdDirty ? { agreementName: value } : { agreementName: value, agreementId: slugifyOrigin(value) });
+                  }}
+                  placeholder="Ex.: INSS, SIAPE, Prefeitura de Goiânia"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={ids.sourceId}>Código da origem</Label>
+                <Input
+                  id={ids.sourceId}
+                  value={formState.agreementId}
+                  onChange={(event) => {
+                    setSourceIdDirty(true);
+                    update({ agreementId: event.target.value ?? '' });
+                  }}
+                  placeholder="Ex.: inss"
+                  autoComplete="off"
+                  aria-describedby={`${ids.sourceId}-hint`}
+                />
+                <p id={`${ids.sourceId}-hint`} className="text-xs text-muted-foreground">
+                  Gerado a partir do nome. Use o código do parceiro se ele já tiver um.
+                </p>
+              </div>
+            </div>
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-foreground">Como os leads chegam</legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {LEAD_SOURCE_OPTIONS.map((option) => (
+                  <SelectableCard
+                    key={option.value}
+                    selected={formState.leadSource === option.value}
+                    onSelect={() => update({ leadSource: option.value })}
+                    className="py-3"
+                  >
+                    <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
+                  </SelectableCard>
+                ))}
+              </div>
+            </fieldset>
+          </div>
+        );
+      case 'product':
+        return (
+          <div className="space-y-5">
+            <StepHeading headingRef={headingRef('product')} title="Qual produto será oferecido?" description="A margem alvo ajuda o time a priorizar propostas." />
+            <div className="grid gap-2 sm:grid-cols-3">
+              {WHATSAPP_CAMPAIGN_PRODUCTS.map((option) => {
+                const isSelected = formState.product === option.value;
+                return (
+                  <SelectableCard
+                    key={option.value}
+                    selected={isSelected}
+                    onSelect={() => update({ product: option.value, margin: String(option.defaultMargin ?? '') })}
+                  >
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-semibold text-foreground">{option.label}</span>
+                      {isSelected ? <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-primary" /> : null}
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">{option.description}</span>
+                    <ul className="mt-3 space-y-1">
+                      {(PRODUCT_RULES[option.value] ?? []).map((rule) => (
+                        <li key={rule} className="text-xs text-muted-foreground">
+                          · {rule}
+                        </li>
+                      ))}
+                    </ul>
+                  </SelectableCard>
+                );
+              })}
+            </div>
+            <div className="max-w-48 space-y-2">
+              <Label htmlFor={ids.margin}>Margem alvo (%)</Label>
+              <Input
+                id={ids.margin}
+                inputMode="decimal"
+                value={formState.margin}
+                onChange={(event) => update({ margin: event.target.value.replace(/[^0-9.,]/g, '').replace(',', '.') })}
+                placeholder="1,5"
+              />
+            </div>
+          </div>
+        );
+      case 'strategy':
+        return (
+          <div className="space-y-5">
+            <StepHeading
+              headingRef={headingRef('strategy')}
+              title="Como o time vai atender?"
+              description="Define o ritmo de contato com cada lead. Você pode mudar depois."
+            />
+            <div className="grid gap-2 md:grid-cols-3">
+              {STRATEGY_CARDS.map((card) => {
+                const isSelected = formState.strategy === card.value;
+                return (
+                  <SelectableCard
+                    key={card.value}
+                    selected={isSelected}
+                    onSelect={() => {
+                      update({ strategy: card.value });
+                      if (!card.proactive) setConsentGiven(false);
+                    }}
+                  >
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-semibold text-foreground">{card.title}</span>
+                      {isSelected ? <CheckCircle2 aria-hidden="true" className="size-4 shrink-0 text-primary" /> : null}
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">{card.definition}</span>
+                    <span className="mt-3 block text-xs font-medium text-foreground">{card.cadence}</span>
+                    {card.proactive ? (
+                      <span className="mt-1 block text-xs text-muted-foreground">O time envia a primeira mensagem.</span>
+                    ) : null}
+                  </SelectableCard>
+                );
+              })}
+            </div>
+            {needsConsent ? (
+              <div className="space-y-3 rounded-lg border border-border bg-surface-sunken p-4">
+                <div className="flex items-start gap-3">
+                  <ShieldAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />
+                  <p className="text-sm text-muted-foreground">
+                    Nesta forma de atendimento o time inicia a conversa. Mensagens para quem não pediu contato geram denúncias e
+                    podem bloquear o número.
+                  </p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id={ids.consent}
+                    checked={consentGiven}
+                    onCheckedChange={(value) => {
+                      setConsentGiven(value === true);
+                      setStepError(null);
+                    }}
+                    className="mt-0.5"
+                  />
+                  <Label htmlFor={ids.consent} className="text-sm font-normal leading-5 text-foreground">
+                    Confirmo que estes contatos autorizaram receber mensagens da minha empresa pelo WhatsApp.
+                  </Label>
+                </div>
+                <SafetyTipsPopover align="start" />
+              </div>
+            ) : null}
+          </div>
+        );
+      case 'review': {
+        const rows = [
+          { key: 'instance', label: 'Número', value: selectedOption ? `${selectedOption.label}${selectedOption.phone ? ` · ${selectedOption.phone}` : ''}` : '—', step: 0 },
+          {
+            key: 'agreement',
+            label: 'Origem',
+            value: originLabel ? `${originLabel} · ${LEAD_SOURCE_LABELS[formState.leadSource] ?? ''}` : '—',
+            step: 1,
+          },
+          {
+            key: 'product',
+            label: 'Produto',
+            value: selectedProduct ? `${selectedProduct.label} · margem ${`${formState.margin}`.replace('.', ',')}%` : '—',
+            step: 2,
+          },
+          { key: 'strategy', label: 'Atendimento', value: selectedStrategyCard ? `${selectedStrategyCard.title} · ${selectedStrategyCard.cadence}` : '—', step: 3 },
+        ];
+        return (
+          <div className="space-y-5">
+            <StepHeading headingRef={headingRef('review')} title="Revise e crie a regra" />
+            <dl className="divide-y divide-border rounded-lg border border-border">
+              {rows.map((row) => (
+                <div key={row.key} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <dt className="text-xs text-muted-foreground">{row.label}</dt>
+                    <dd className="truncate text-sm font-medium text-foreground">{row.value}</dd>
+                  </div>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => goToStep(row.step)} aria-label={`Alterar ${row.label.toLowerCase()}`}>
+                    Alterar
+                  </Button>
+                </div>
+              ))}
+            </dl>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor={ids.name}>Nome da regra</Label>
+                <Input
+                  id={ids.name}
+                  value={formState.name}
+                  onChange={(event) => {
+                    update({ name: event.target.value });
+                    setNameDirty(true);
+                  }}
+                  placeholder="INSS · Cartão benefício"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={ids.status}>Ao criar</Label>
+                <Select value={formState.status} onValueChange={(value) => update({ status: value })}>
+                  <SelectTrigger id={ids.status} className="w-full">
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {instances.map((instance) => (
-                      <SelectItem key={instance.id ?? formatInstanceLabel(instance)} value={instance.id}>
-                        <div className="flex flex-col gap-1">
-                          <span className="text-sm font-medium leading-5">{formatInstanceLabel(instance)}</span>
-                          <span className="text-xs leading-4 text-muted-foreground">
-                            {instance.connected ? 'Conectada e pronta para receber leads.' : 'Desconectada — conecte para liberar Origem.'}
-                          </span>
-                        </div>
+                    {STATUS_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="status" tone={isConnected ? 'success' : 'warning'}>
-                    {isConnected ? 'Conectada' : 'Desconectada'}
-                  </Badge>
-                  {!isConnected && formState.instanceId ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => selectedInstance?.onGenerateQr?.()}
-                    >
-                      Gerar QR
-                    </Button>
-                  ) : null}
-                </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {isConnected ? 'Pronta para receber leads.' : 'Conecte para liberar Origem.'}
-                </p>
-              </div>
-            </div>
-            {!isConnected && selectedInstance ? (
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">Conecte para liberar Origem</p>
-                    <p className="text-sm leading-5 text-muted-foreground">
-                      Gere o QR Code para ativar a instância e liberar a próxima etapa.
-                    </p>
-                    <Button variant="link" asChild size="sm" className="px-0 text-primary hover:text-primary">
-                      <Link to="/ajuda">Precisa de ajuda?</Link>
-                    </Button>
-                  </div>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                    <Button onClick={() => selectedInstance?.onGenerateQr?.()}>Gerar QR agora</Button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            {!hasInstances ? (
-              <div className="rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
-                {tenantContextLabel
-                  ? `Nenhuma instância do tenant ${tenantContextLabel} foi encontrada. Gere ou conecte uma instância para liberar as próximas etapas.`
-                  : 'Nenhuma instância encontrada. Gere um QR para conectar e liberar as próximas etapas.'}
-              </div>
-            ) : null}
-            {hasInstances && !hasConnectedInstances ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm leading-5 text-amber-800">
-                Você possui instâncias cadastradas, mas nenhuma conectada no momento.
-              </div>
-            ) : null}
-          </div>
-        );
-      }
-      case 'agreement': {
-        return (
-          <div className="space-y-6">
-            {renderStepHeading('Defina a origem de leads', 'Informe o identificador usado para buscar leads na fonte.')}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2 min-w-0">
-                <Label htmlFor="campaign-source-id">Origem (sourceId)</Label>
-                <Input
-                  id="campaign-source-id"
-                  value={formState.agreementId}
-                  onChange={handleAgreementIdChange}
-                  placeholder="Ex.: inss, siape, fgts (ou o id interno)"
-                  required
-                />
-              </div>
-              <div className="space-y-2 min-w-0">
-                <Label htmlFor="campaign-source-name">Origem (nome)</Label>
-                <Input
-                  id="campaign-source-name"
-                  value={formState.agreementName}
-                  onChange={handleAgreementNameChange}
-                  placeholder="Ex.: INSS, SIAPE, FGTS"
-                />
-              </div>
-            </div>
-          </div>
-        );
-      }
-      case 'product': {
-        return (
-          <div className="space-y-6">
-            {renderStepHeading('Escolha o produto e a margem', 'Opções válidas para o convênio.')}
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_200px]">
-	              <div className="space-y-6">
-	                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-	                  {WHATSAPP_CAMPAIGN_PRODUCTS.map((option) => {
-	                    const isSelected = formState.product === option.value;
-	                    const rules = PRODUCT_RULES[option.value] ?? [];
-	                    const card = (
-	                      <button
-	                        type="button"
-	                        onClick={() => {
-	                          handleProductChange(option.value);
-	                        }}
-	                        aria-pressed={isSelected}
-	                        className={cn(
-	                          'h-full rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-	                          isSelected
-	                            ? 'border-primary bg-primary/10 shadow-sm'
-	                            : 'border-border hover:border-primary/40',
-	                        )}
-	                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold leading-5">{option.label}</p>
-                            <p className="text-xs leading-4 text-muted-foreground">{option.description}</p>
-                          </div>
-                          {isSelected ? <CheckCircle2 className="h-4 w-4 text-primary" /> : null}
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {rules.map((rule) => (
-                            <Badge
-                              key={rule}
-                              variant="status"
-                              tone="info"
-                              className="text-xs leading-4"
-                            >
-                              {rule}
-                            </Badge>
-                          ))}
-                        </div>
-	                      </button>
-	                    );
-	                    return (
-	                      <div key={option.value} className="h-full">
-	                        {card}
-	                      </div>
-	                    );
-	                  })}
-	                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2 md:col-span-1">
-                    <Label htmlFor="campaign-margin">Margem alvo (%)</Label>
-                    <Input
-                      id="campaign-margin"
-                      inputMode="decimal"
-                      value={formState.margin}
-                      onChange={(event) => handleMarginChange(event.target.value)}
-                      placeholder="1,5"
-                    />
-                  </div>
-                  <div className="hidden md:block" aria-hidden>
-                    <div className="rounded-md border border-dashed border-border/70 bg-muted/10 p-3 text-xs leading-5 text-muted-foreground">
-                      Use porcentagem para alinhar metas financeiras e liberar combinações.
-                    </div>
-                  </div>
-                </div>
-                {renderDependencyBadge('Combinações seguem o convênio escolhido')}
-              </div>
-              <aside className="rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
-                Sua escolha sugere a estratégia na próxima etapa.
-              </aside>
-            </div>
-          </div>
-        );
-      }
-      case 'strategy': {
-        return (
-          <div className="space-y-6">
-            {renderStepHeading('Selecione a estratégia', 'Régua conforme o perfil do lead.')}
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_200px]">
-              <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                  {STRATEGY_CARDS.map((card) => {
-                    const isSelected = formState.strategy === card.value;
-                    const content = (
-                      <button
-                        type="button"
-                        key={card.value}
-                        onClick={() => handleStrategyChange(card.value)}
-                        aria-pressed={isSelected}
-                        className={cn(
-                          'rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                          isSelected
-                            ? 'border-primary bg-primary/10 shadow-sm'
-                            : 'border-border hover:border-primary/40',
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="text-sm font-semibold leading-5">{card.title}</span>
-                          {isSelected ? <CheckCircle2 className="h-4 w-4 text-primary" /> : null}
-                        </div>
-                        <p className="mt-2 text-xs leading-4 text-muted-foreground">{card.definition}</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <Badge variant="status" tone="info" className="text-xs leading-4">
-                            {card.cadence}
-                          </Badge>
-                          {card.compliance ? (
-                            <Badge variant="status" tone="warning" className="text-xs leading-4">
-                              {card.compliance}
-                            </Badge>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                    return content;
-                  })}
-                </div>
-                {renderDependencyBadge('Sugestão automática baseada em Produto & margem')}
-              </div>
-              <aside className="rounded-md border border-dashed border-border bg-muted/20 p-4 text-sm leading-5 text-muted-foreground">
-                Você pode trocar depois na edição da campanha.
-              </aside>
-            </div>
-          </div>
-        );
-      }
-      case 'review': {
-        return (
-          <div className="space-y-6">
-            {renderStepHeading('Revise e crie a campanha', null)}
-            <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm leading-5 text-emerald-100">
-              <p className="font-semibold text-emerald-50">Passo {finalStepNumber} (Inbox) preparado</p>
-              <p className="mt-1 text-xs text-emerald-100/80">
-                Assim que esta campanha for criada, os leads qualificados seguirão para a Inbox com esta mesma configuração.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button asChild size="sm" variant="outline" className="border-emerald-200/60 text-emerald-900">
-                  <Link to="/whatsapp/inbox">Ir para a Inbox</Link>
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="text-emerald-50 hover:bg-emerald-500/20"
-                  onClick={() => goToStep(0)}
-                >
-                  Conferir instância
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div className="grid gap-3">
-                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium leading-5">Instância</span>
-                    <span className="text-sm leading-5 text-muted-foreground">
-                      {selectedInstance ? `${formatInstanceLabel(selectedInstance)} • ${selectedInstance.connected ? 'Conectada' : 'Desconectada'}` : '—'}
-                    </span>
-                  </div>
-                </div>
-	                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-	                  <Plug className="h-4 w-4 text-muted-foreground" />
-	                  <div className="flex flex-col">
-	                    <span className="text-sm font-medium leading-5">Origem</span>
-	                    <span className="text-sm leading-5 text-muted-foreground">
-	                      {formState.agreementName || formState.agreementId || '—'}
-	                      {formState.leadSource ? ` · Fonte: ${LEAD_SOURCE_LABELS[formState.leadSource] ?? '—'}` : ''}
-	                    </span>
-	                  </div>
-	                </div>
-                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-                  <Shapes className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium leading-5">Produto & margem</span>
-                    <span className="text-sm leading-5 text-muted-foreground">
-                      {selectedProduct ? selectedProduct.label : '—'}
-                      {formState.margin ? ` · até ${formState.margin}%` : ''}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 rounded-lg border border-border p-3">
-                  <Sparkles className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium leading-5">Estratégia</span>
-                    <span className="text-sm leading-5 text-muted-foreground">
-                      {selectedStrategyCard ? `${selectedStrategyCard.title} · ${selectedStrategyCard.cadence}` : selectedStrategy?.label ?? '—'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                {reviewChecklistItems.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => goToStep(item.stepIndex)}
-                    className={cn(
-                      'group flex items-start gap-3 rounded-lg border px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                      item.isValid
-                        ? 'border-emerald-300/60 bg-emerald-500/5 hover:border-emerald-300/80'
-                        : 'border-border hover:border-primary/50 hover:bg-primary/5',
-                    )}
-                  >
-                    <Tooltip delayDuration={80}>
-                      <TooltipTrigger asChild>
-                        <span className="mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full border border-border/60 bg-background">
-                          {item.isValid ? (
-                            <CheckCircle2 className="h-4 w-4 text-emerald-500" aria-hidden />
-                          ) : (
-                            <AlertCircle className="h-4 w-4 text-amber-500" aria-hidden />
-                          )}
-                          <span className="sr-only">{item.tooltip}</span>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        {item.tooltip}
-                      </TooltipContent>
-                    </Tooltip>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-sm font-medium leading-5 text-foreground">{item.message}</span>
-                      {item.helper ? (
-                        <span className="text-xs leading-4 text-muted-foreground">{item.helper}</span>
-                      ) : null}
-                    </div>
-                    <span className="ml-auto text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground/80">
-                      Etapa {item.stepIndex + 1}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="campaign-name">Nome da campanha</Label>
-                  <Input
-                    id="campaign-name"
-                    value={formState.name}
-                    onChange={handleNameChange}
-                    placeholder="Cartão benefício • SAEC Goiânia"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="campaign-status-review">Status inicial</Label>
-                  <Select value={formState.status} onValueChange={handleStatusChange}>
-                    <SelectTrigger id="campaign-status-review">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {STATUS_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
             </div>
           </div>
@@ -1115,230 +644,79 @@ const CreateCampaignWizard = ({
     }
   };
 
-  const totalSteps = TOTAL_STEPS;
-  const currentStepNumber = Math.min(stepIndex + 1, totalSteps);
-  const finalStepNumber = totalSteps;
-  const isLastStep = stepIndex === totalSteps - 1;
+  const isLastStep = stepIndex === TOTAL_STEPS - 1;
   const advanceDisabledReason =
-    currentStep?.key === 'instance' && selectedInstance && !selectedInstance.connected
-      ? 'Conecte para liberar Origem.'
+    currentStep?.key === 'instance' && !selectedOption?.connected
+      ? numberOptions.length === 0
+        ? 'Conecte um número primeiro.'
+        : 'Escolha um número conectado.'
       : null;
   const isAdvanceDisabled = Boolean(advanceDisabledReason) || isSubmitting;
-
-  const instancePhoneLabel =
-    selectedInstance?.phoneLabel || selectedInstance?.formattedPhone || selectedInstance?.phone || '—';
-  const instanceStatusLabel = selectedInstance?.connected ? 'Saudável' : 'Conectar';
-  const instanceStatusTone = selectedInstance?.connected
-    ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/40'
-    : 'bg-amber-500/10 text-amber-200 border border-amber-500/40';
-
-  const CampaignSummary = () => {
-    const summaryItems = [
-      {
-        label: 'Instância',
-        value: formatInstanceLabel(selectedInstance) || 'Selecione uma instância',
-        helper: selectedInstance ? (selectedInstance.connected ? 'Conectada' : 'Desconectada') : null,
-      },
-      {
-        label: 'Origem',
-        value: formatAgreementLabel(selectedAgreement) || 'Escolha um convênio',
-        helper: formState.leadSource ? `Fonte: ${LEAD_SOURCE_LABELS[formState.leadSource] ?? '—'}` : null,
-      },
-      {
-        label: 'Produto',
-        value: selectedProduct?.label || 'Defina o produto',
-        helper: formState.margin ? `Margem alvo: ${formState.margin}%` : null,
-      },
-      {
-        label: 'Estratégia',
-        value:
-          selectedStrategy?.label || selectedStrategyCard?.title || 'Selecione a régua',
-        helper: selectedStrategyCard?.cadence ?? null,
-      },
-      {
-        label: 'Status inicial',
-        value: STATUS_OPTIONS.find((option) => option.value === formState.status)?.label ?? 'Ativar imediatamente',
-        helper: null,
-      },
-    ];
-
-    return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 shadow-inner">
-          <p className="text-[0.65rem] font-semibold uppercase tracking-wide text-muted-foreground">
-            Passo {currentStepNumber} de {totalSteps}
-          </p>
-          <p className="text-sm font-semibold text-foreground">Campanhas & roteamento</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Depois de criar, você pode acompanhar os leads na Inbox (Passo {finalStepNumber}) sem perder o contexto.
-          </p>
-          <Button asChild variant="outline" size="sm" className="mt-3 w-full">
-            <Link to="/whatsapp/inbox">Ir para a Inbox</Link>
-          </Button>
-        </div>
-        <div className="rounded-2xl border border-border/80 bg-background/60 p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resumo vivo</p>
-          <dl className="mt-3 space-y-3 text-sm leading-5 text-muted-foreground">
-            {summaryItems.map((item) => (
-              <div key={item.label}>
-                <dt className="text-[0.7rem] uppercase tracking-wide text-muted-foreground/80">{item.label}</dt>
-                <dd className="text-foreground">{item.value}</dd>
-                {item.helper ? <p className="text-[0.7rem] text-muted-foreground">{item.helper}</p> : null}
-              </div>
-            ))}
-          </dl>
-        </div>
-        {selectedStrategyCard ? (
-          <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 text-xs leading-5 text-primary">
-            <p className="text-sm font-semibold text-primary-foreground">Estratégia atual</p>
-            <p className="mt-1 text-primary-foreground/80">
-              {selectedStrategyCard.definition} • {selectedStrategyCard.cadence}
-            </p>
-            {selectedStrategyCard.compliance ? (
-              <p className="mt-2 text-[0.7rem] text-amber-200">{selectedStrategyCard.compliance}</p>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    );
-  };
-
-  const StepperRail = () => (
-    <div className="border-b border-border/70 bg-background/80 px-4 py-3 shadow-sm backdrop-blur">
-      <ol className="grid w-full gap-3 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        {STEP_SEQUENCE.map((step, index) => {
-          const status = stepStatuses[step.key];
-          const isActive = status === 'current';
-          const isCompleted = status === 'completed';
-          const isBlocked = status === 'blocked';
-          return (
-            <li
-              key={step.key}
-              className="flex flex-col items-stretch gap-2 xl:flex-row xl:items-center xl:gap-3"
-            >
-              <Tooltip delayDuration={120}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => goToStep(index)}
-                    className={cn(
-                      'flex w-full min-w-[180px] items-start gap-3 rounded-xl border px-3 py-2 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
-                      isActive
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border/70 hover:border-primary/40',
-                      isBlocked && 'cursor-not-allowed opacity-60 hover:border-border/70',
-                    )}
-                    aria-current={isActive ? 'step' : undefined}
-                    aria-disabled={isBlocked}
-                  >
-                    <span
-                      className={cn(
-                        'flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold',
-                        isCompleted
-                          ? 'bg-emerald-500/15 text-emerald-600'
-                          : isActive
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-border text-muted-foreground',
-                      )}
-                    >
-                      {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
-                    </span>
-                    <div>
-                      <p className="text-xs font-semibold leading-4 text-foreground">{step.title}</p>
-                      <p className="text-[0.7rem] leading-4 text-muted-foreground">{step.description}</p>
-                    </div>
-                    {isBlocked ? <Lock className="ml-auto h-4 w-4 text-muted-foreground" /> : null}
-                  </button>
-                </TooltipTrigger>
-                {isBlocked ? (
-                  <TooltipContent side="bottom" className="max-w-[220px] text-xs">
-                    {getStepBlockedReason(step.key)}
-                  </TooltipContent>
-                ) : null}
-              </Tooltip>
-              {index < STEP_SEQUENCE.length - 1 ? (
-                <>
-                  <span className="mx-auto block h-6 w-px bg-border/50 sm:hidden" aria-hidden />
-                  <span className="hidden h-px w-10 bg-border/60 xl:block" aria-hidden />
-                </>
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
-    </div>
-  );
+  const errorMessage = stepError ?? submitError;
 
   return (
-    <div className="flex min-h-0 flex-col lg:max-h-[78vh]">
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="sticky top-0 z-20 bg-background/95 backdrop-blur">
-          <StepperRail />
-        </div>
-        <div className="flex flex-col gap-6 px-5 pb-24 pt-5 sm:px-8 lg:flex-row lg:items-start lg:gap-8 lg:pb-28">
-          <section className="flex-1 min-w-0">
-            <div className="mx-auto w-full max-w-3xl space-y-6">
-              {renderStepContent()}
-              {stepError ? (
-                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>{stepError}</span>
-                </div>
-              ) : null}
-              {submitError ? (
-                <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm leading-5 text-destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <span>{submitError}</span>
-                </div>
-              ) : null}
-            </div>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <StepperRail stepStatuses={stepStatuses} onSelectStep={goToStep} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:flex-row lg:items-start lg:gap-8">
+          <section className="min-w-0 flex-1 space-y-5" aria-live="off">
+            {renderStepContent()}
+            {errorMessage ? (
+              <p role="alert" className="flex items-start gap-2 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger-soft-foreground">
+                <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                {errorMessage}
+              </p>
+            ) : null}
           </section>
-          <aside className="mt-4 shrink-0 lg:mt-0 lg:w-80">
-            <CampaignSummary />
+          <aside className="hidden w-64 shrink-0 lg:block">
+            <CampaignSummary
+              numberLabel={selectedOption?.label ?? null}
+              originLabel={originLabel}
+              leadSource={formState.leadSource}
+              productLabel={selectedProduct?.label ?? null}
+              margin={formState.margin}
+              strategyCard={selectedStrategyCard}
+              status={formState.status}
+            />
           </aside>
         </div>
-        <footer className="sticky bottom-0 z-20 border-t border-border/70 bg-background/95 px-5 py-4 backdrop-blur sm:px-8">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>
-              Cancelar
-            </Button>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={goToPreviousStep}
-                disabled={stepIndex === 0 || isSubmitting}
-              >
-                Voltar
-              </Button>
-              {isLastStep ? (
-                <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
-                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {isSubmitting ? 'Criando…' : 'Criar campanha'}
-                </Button>
-              ) : (
-                <Tooltip delayDuration={120}>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button type="button" onClick={goToNextStep} disabled={isAdvanceDisabled}>
-                        Avançar
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  {advanceDisabledReason ? (
-                    <TooltipContent side="top" className="max-w-[200px] text-xs">
-                      {advanceDisabledReason}
-                    </TooltipContent>
-                  ) : null}
-                </Tooltip>
-              )}
-            </div>
-          </div>
-        </footer>
       </div>
+      <footer className="flex items-center justify-between gap-3 border-t border-border bg-surface px-4 py-3 sm:px-6">
+        <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>
+          Cancelar
+        </Button>
+        <div className="flex items-center gap-2">
+          {stepIndex > 0 ? (
+            <Button type="button" variant="outline" onClick={goToPreviousStep} disabled={isSubmitting}>
+              Voltar
+            </Button>
+          ) : null}
+          {isLastStep ? (
+            <Button type="button" onClick={handleSubmit} disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+              {isSubmitting ? 'Criando…' : 'Criar regra'}
+            </Button>
+          ) : advanceDisabledReason ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={0} className="rounded-md">
+                  <Button type="button" disabled>
+                    Avançar
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">{advanceDisabledReason}</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button type="button" onClick={goToNextStep} disabled={isAdvanceDisabled}>
+              Avançar
+            </Button>
+          )}
+        </div>
+      </footer>
     </div>
   );
 };
 
 export default CreateCampaignWizard;
-export { STEP_SEQUENCE };
+export { STEP_SEQUENCE, TOTAL_STEPS };

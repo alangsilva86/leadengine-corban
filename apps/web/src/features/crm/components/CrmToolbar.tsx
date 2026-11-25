@@ -1,25 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Filter, Loader2, RefreshCw, Search, Trash2, X, Plus, Users } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { ListFilter, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
 import { Badge } from '@/components/ui/badge.jsx';
+import { Label } from '@/components/ui/label.jsx';
+import { Switch } from '@/components/ui/switch.jsx';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.jsx';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu.jsx';
 import { cn } from '@/lib/utils.js';
 import CrmSavedViewsMenu from './CrmSavedViewsMenu';
 import type { CrmFilterState, CrmSavedView } from '../state/types';
 import { normalizeCrmFilters } from '../utils/filter-serialization';
+import { getSourceLabel } from '../utils/labels';
+import { LEAD_STAGE_DEFINITIONS, LEAD_STAGE_TONE_CLASSES, getLeadStageLabel, parseLeadStage } from '../utils/lead-stage';
+
+type FilterOption = { id: string; label: string };
 
 type CrmToolbarFilterOptions = {
-  stages: Array<{ id: string; label: string }>;
-  owners: Array<{ id: string; label: string }>;
-  origins: Array<{ id: string; label: string }>;
-  channels: Array<{ id: string; label: string }>;
+  stages: FilterOption[];
+  owners?: FilterOption[];
+  origins: FilterOption[];
+  channels?: FilterOption[];
 };
 
 type CrmToolbarSavedViews = {
@@ -33,27 +34,18 @@ type CrmToolbarSavedViews = {
   selectSavedView: (viewId: string | null) => Promise<unknown>;
 };
 
-type BulkAction = {
-  id: string;
-  label: string;
-};
-
 type CrmToolbarProps = {
   filters: CrmFilterState;
   onFiltersChange: (next: CrmFilterState) => void;
   onClearFilters?: () => void;
   filterOptions: CrmToolbarFilterOptions;
-  totalCount?: number;
-  selectedCount?: number;
-  onClearSelection?: () => void;
-  onBulkAction?: (actionId: string) => void;
-  bulkActions?: BulkAction[];
-  isBulkProcessing?: boolean;
-  onRefresh?: () => void;
-  isRefreshing?: boolean;
-  onCreateLead?: () => void;
   savedViews: CrmToolbarSavedViews;
+  /** Slot à direita (seletor de visão). */
+  trailing?: ReactNode;
+  searchDebounceMs?: number;
 };
+
+const OWNER_ME = 'owner:me';
 
 const DEFAULT_FILTERS: CrmFilterState = {
   stages: [],
@@ -65,14 +57,14 @@ const DEFAULT_FILTERS: CrmFilterState = {
   inactivityDays: null,
 };
 
-const getClearedFilters = (): CrmFilterState => normalizeCrmFilters(DEFAULT_FILTERS);
+const getClearedFilters = (search?: string): CrmFilterState => normalizeCrmFilters({ ...DEFAULT_FILTERS, search });
 
-const sumFilters = (filters: CrmFilterState) => {
+export const countActiveFilters = (filters: CrmFilterState) => {
   let total = 0;
-  total += Array.isArray(filters.stages) ? filters.stages.length : 0;
-  total += Array.isArray(filters.owners) ? filters.owners.length : 0;
-  total += Array.isArray(filters.origins) ? filters.origins.length : 0;
-  total += Array.isArray(filters.channels) ? filters.channels.length : 0;
+  total += filters.stages?.length ?? 0;
+  total += filters.owners?.length ?? 0;
+  total += filters.origins?.length ?? 0;
+  total += filters.channels?.length ?? 0;
   if (filters.score?.min != null || filters.score?.max != null) total += 1;
   if (filters.dateRange?.from || filters.dateRange?.to) total += 1;
   if (typeof filters.inactivityDays === 'number' && filters.inactivityDays >= 0) total += 1;
@@ -84,80 +76,145 @@ const toggleItem = (collection: string[] | undefined, value: string) => {
   return safeList.includes(value) ? safeList.filter((item) => item !== value) : [...safeList, value];
 };
 
-const buildBadges = (
-  filters: CrmFilterState,
-  filterOptions: CrmToolbarFilterOptions
-): Array<{ id: string; label: string }> => {
-  const badges: Array<{ id: string; label: string }> = [];
-  const mapLabel = (id: string, options: Array<{ id: string; label: string }>) =>
-    options.find((option) => option.id === id)?.label ?? id;
+const formatDay = (value?: string | null) => {
+  if (!value) return null;
+  const [year, month, day] = value.split('-');
+  return year && month && day ? `${day}/${month}/${year}` : value;
+};
 
-  (filters.stages ?? []).forEach((stageId) => {
-    badges.push({ id: `stage:${stageId}`, label: `Etapa: ${mapLabel(stageId, filterOptions.stages)}` });
-  });
+type Chip = { id: string; label: string; remove: (filters: CrmFilterState) => CrmFilterState };
 
-  (filters.owners ?? []).forEach((ownerId) => {
-    badges.push({ id: `owner:${ownerId}`, label: `Dono: ${mapLabel(ownerId, filterOptions.owners)}` });
-  });
+const buildChips = (filters: CrmFilterState, options: CrmToolbarFilterOptions): Chip[] => {
+  const chips: Chip[] = [];
+  const labelFrom = (list: FilterOption[] | undefined, id: string) => list?.find((option) => option.id === id)?.label;
 
-  (filters.origins ?? []).forEach((originId) => {
-    badges.push({ id: `origin:${originId}`, label: `Origem: ${mapLabel(originId, filterOptions.origins)}` });
-  });
-
-  (filters.channels ?? []).forEach((channelId) => {
-    badges.push({ id: `channel:${channelId}`, label: `Canal: ${mapLabel(channelId, filterOptions.channels)}` });
-  });
-
+  (filters.stages ?? []).forEach((id) =>
+    chips.push({
+      id: `stage:${id}`,
+      label: labelFrom(options.stages, id) ?? getLeadStageLabel(id),
+      remove: (current) => ({ ...current, stages: (current.stages ?? []).filter((entry) => entry !== id) }),
+    })
+  );
+  (filters.owners ?? []).forEach((id) =>
+    chips.push({
+      id: `owner:${id}`,
+      label: id === OWNER_ME ? 'Meus leads' : labelFrom(options.owners, id) ?? 'Responsável',
+      remove: (current) => ({ ...current, owners: (current.owners ?? []).filter((entry) => entry !== id) }),
+    })
+  );
+  (filters.origins ?? []).forEach((id) =>
+    chips.push({
+      id: `origin:${id}`,
+      label: `Origem: ${labelFrom(options.origins, id) ?? getSourceLabel(id) ?? 'outra'}`,
+      remove: (current) => ({ ...current, origins: (current.origins ?? []).filter((entry) => entry !== id) }),
+    })
+  );
+  (filters.channels ?? []).forEach((id) =>
+    chips.push({
+      id: `channel:${id}`,
+      label: `Canal: ${getSourceLabel(id) ?? 'outro'}`,
+      remove: (current) => ({ ...current, channels: (current.channels ?? []).filter((entry) => entry !== id) }),
+    })
+  );
   if (filters.score?.min != null || filters.score?.max != null) {
-    badges.push({
+    chips.push({
       id: 'score',
-      label: `Score: ${filters.score?.min ?? 0} – ${filters.score?.max ?? '∞'}`,
+      label: `Pontuação ${filters.score?.min ?? 0}–${filters.score?.max ?? '∞'}`,
+      remove: (current) => ({ ...current, score: null }),
     });
   }
-
   if (filters.dateRange?.from || filters.dateRange?.to) {
-    badges.push({
+    const from = formatDay(filters.dateRange?.from);
+    const to = formatDay(filters.dateRange?.to);
+    chips.push({
       id: 'dateRange',
-      label: `Datas: ${(filters.dateRange?.from ?? 'início')} → ${(filters.dateRange?.to ?? 'agora')}`,
+      label: from && to ? `Criados de ${from} a ${to}` : from ? `Criados desde ${from}` : `Criados até ${to}`,
+      remove: (current) => ({ ...current, dateRange: null }),
     });
   }
-
   if (typeof filters.inactivityDays === 'number' && filters.inactivityDays >= 0) {
-    badges.push({
+    chips.push({
       id: 'inactivityDays',
-      label: `Sem atividade há ${filters.inactivityDays} dia(s)`,
+      label: `Parados há ${filters.inactivityDays}+ dias`,
+      remove: (current) => ({ ...current, inactivityDays: null }),
     });
   }
-
-  return badges;
+  return chips;
 };
 
-const formatTotalLabel = (totalCount?: number) => {
-  if (typeof totalCount !== 'number') {
-    return null;
-  }
-  const formatted = new Intl.NumberFormat('pt-BR').format(totalCount);
-  return `${formatted} ${totalCount === 1 ? 'lead' : 'leads'}`;
+const ChipToggle = ({
+  label,
+  pressed,
+  onToggle,
+  dotClassName,
+}: {
+  label: string;
+  pressed: boolean;
+  onToggle: () => void;
+  dotClassName?: string | undefined;
+}) => (
+  <Button
+    type="button"
+    size="xs"
+    variant={pressed ? 'soft' : 'outline'}
+    aria-pressed={pressed}
+    onClick={onToggle}
+    className={cn('rounded-full px-2.5', pressed && 'ring-1 ring-primary/40')}
+  >
+    {dotClassName ? <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', dotClassName)} /> : null}
+    {label}
+  </Button>
+);
+
+/** Ponto do tom da etapa (mesmo do Kanban e dos chips). */
+const stageDotClass = (id: string) => {
+  const stage = parseLeadStage(id);
+  return stage ? LEAD_STAGE_TONE_CLASSES[LEAD_STAGE_DEFINITIONS[stage].tone].dot : undefined;
 };
+
+const Section = ({ title, children }: { title: string; children: ReactNode }) => (
+  <fieldset className="space-y-2">
+    <legend className="text-xs font-medium text-muted-foreground">{title}</legend>
+    {children}
+  </fieldset>
+);
 
 const CrmToolbar = ({
   filters,
   onFiltersChange,
   onClearFilters,
   filterOptions,
-  totalCount,
-  selectedCount = 0,
-  onClearSelection,
-  onBulkAction,
-  bulkActions = [],
-  isBulkProcessing = false,
-  onRefresh,
-  isRefreshing = false,
-  onCreateLead,
   savedViews,
+  trailing,
+  searchDebounceMs = 300,
 }: CrmToolbarProps) => {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftFilters, setDraftFilters] = useState<CrmFilterState>(() => normalizeCrmFilters(filters));
+  const [searchInput, setSearchInput] = useState(filters.search ?? '');
+  const lastPushedSearch = useRef(filters.search ?? '');
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+
+  // Mantém o campo sincronizado quando a busca muda por fora (limpar filtros, visão salva).
+  useEffect(() => {
+    const external = filters.search ?? '';
+    if (external !== lastPushedSearch.current.trim()) {
+      lastPushedSearch.current = external;
+      setSearchInput(external);
+    }
+  }, [filters.search]);
+
+  // Busca com debounce: evita recarregar leads e métricas a cada tecla.
+  useEffect(() => {
+    if (searchInput === lastPushedSearch.current) {
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      lastPushedSearch.current = searchInput;
+      onFiltersChange({ ...filtersRef.current, search: searchInput });
+    }, searchDebounceMs);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   useEffect(() => {
     if (!filtersOpen) {
@@ -165,379 +222,208 @@ const CrmToolbar = ({
     }
   }, [filters, filtersOpen]);
 
-  const totalLabel = useMemo(() => formatTotalLabel(totalCount), [totalCount]);
-  const activeBadges = useMemo(() => buildBadges(filters, filterOptions), [filters, filterOptions]);
-  const activeFiltersCount = useMemo(() => sumFilters(filters), [filters]);
+  const chips = useMemo(() => buildChips(filters, filterOptions), [filters, filterOptions]);
+  const activeFiltersCount = countActiveFilters(filters);
 
   const handleApplyFilters = () => {
     setFiltersOpen(false);
-    onFiltersChange(normalizeCrmFilters(draftFilters));
+    onFiltersChange(normalizeCrmFilters({ ...draftFilters, search: filters.search }));
   };
 
   const handleResetFilters = () => {
-    const cleared = getClearedFilters();
+    const cleared = getClearedFilters(filters.search);
     setDraftFilters(cleared);
     onFiltersChange(cleared);
     onClearFilters?.();
     setFiltersOpen(false);
   };
 
-  const handleBadgeRemove = (badgeId: string) => {
-    const [type, value] = badgeId.split(':');
-    if (!type) return;
-
-    const next: CrmFilterState = { ...filters };
-    if (type === 'stage') {
-      next.stages = (next.stages ?? []).filter((stageId) => stageId !== value);
-    } else if (type === 'owner') {
-      next.owners = (next.owners ?? []).filter((ownerId) => ownerId !== value);
-    } else if (type === 'origin') {
-      next.origins = (next.origins ?? []).filter((originId) => originId !== value);
-    } else if (type === 'channel') {
-      next.channels = (next.channels ?? []).filter((channelId) => channelId !== value);
-    } else if (badgeId === 'score') {
-      next.score = null;
-    } else if (badgeId === 'dateRange') {
-      next.dateRange = null;
-    } else if (badgeId === 'inactivityDays') {
-      next.inactivityDays = null;
-    }
-    onFiltersChange(normalizeCrmFilters(next));
-  };
-
-  const handleNumberChange = (key: 'min' | 'max', value: string) => {
-    setDraftFilters((current) => ({
-      ...current,
-      score: {
-        min: key === 'min' ? (value ? Number(value) : null) : current.score?.min ?? null,
-        max: key === 'max' ? (value ? Number(value) : null) : current.score?.max ?? null,
-      },
-    }));
-  };
-
   const handleDateChange = (key: 'from' | 'to', value: string) => {
     setDraftFilters((current) => ({
       ...current,
       dateRange: {
-        from: key === 'from' ? (value || null) : current.dateRange?.from ?? null,
-        to: key === 'to' ? (value || null) : current.dateRange?.to ?? null,
+        from: key === 'from' ? value || null : current.dateRange?.from ?? null,
+        to: key === 'to' ? value || null : current.dateRange?.to ?? null,
       },
     }));
   };
 
-  const handleInactivityChange = (value: string) => {
-    setDraftFilters((current) => ({
-      ...current,
-      inactivityDays: value ? Number(value) : null,
-    }));
-  };
-
-  const renderSelectionBanner = () => {
-    if (selectedCount <= 0) {
-      return null;
-    }
-
-    return (
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm">
-        <span>
-          {selectedCount} {selectedCount === 1 ? 'lead selecionado' : 'leads selecionados'}
-        </span>
-        {onClearSelection ? (
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={onClearSelection}>
-            Limpar seleção
-          </Button>
-        ) : null}
-        {bulkActions.length > 0 && onBulkAction ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" className="h-7 px-3 text-xs">
-                <Users className="mr-2 h-3.5 w-3.5" />
-                Ações em massa
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {bulkActions.map((action) => (
-                <DropdownMenuItem key={action.id} onSelect={() => onBulkAction(action.id)}>
-                  {action.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : null}
-        {isBulkProcessing ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
-      </div>
-    );
-  };
+  const onlyMine = (draftFilters.owners ?? []).includes(OWNER_ME);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={filters.search ?? ''}
-              onChange={(event) =>
-                onFiltersChange({
-                  ...filters,
-                  search: event.target.value,
-                })
-              }
-              placeholder="Buscar por nome, empresa ou telefone"
-              className="h-10 w-full rounded-lg border border-border bg-background pl-9 text-sm shadow-none"
-            />
-            {filters.search ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground"
-                onClick={() =>
-                  onFiltersChange({
-                    ...filters,
-                    search: '',
-                  })
-                }
-                aria-label="Limpar busca"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            ) : null}
-          </div>
-
-          <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
-            <PopoverTrigger asChild>
-              <Button type="button" variant="outline" size="sm" className="h-10 rounded-lg border-border/60">
-                <Filter className="mr-2 h-4 w-4" />
-                Filtros
-                {activeFiltersCount > 0 ? (
-                  <Badge variant="secondary" className="ml-2 h-5 rounded-full px-2 text-xs">
-                    {activeFiltersCount}
-                  </Badge>
-                ) : null}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[420px] max-w-[90vw] rounded-xl border border-border bg-background p-4 shadow-xl">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <span className="text-xs font-semibold uppercase text-muted-foreground">Etapa</span>
-                  <div className="flex flex-wrap gap-2">
-                    {filterOptions.stages.map((stage) => {
-                      const isSelected = draftFilters.stages?.includes(stage.id);
-                      return (
-                        <Button
-                          key={stage.id}
-                          type="button"
-                          variant={isSelected ? 'default' : 'outline'}
-                          size="sm"
-                          className={cn(
-                            'h-8 rounded-full border-border/60',
-                            isSelected ? 'bg-primary text-primary-foreground' : 'bg-background'
-                          )}
-                          onClick={() =>
-                            setDraftFilters((current) => ({
-                              ...current,
-                              stages: toggleItem(current.stages, stage.id),
-                            }))
-                          }
-                        >
-                          {stage.label}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <FilterList
-                    title="Dono"
-                    options={filterOptions.owners}
-                    selected={draftFilters.owners ?? []}
-                    onToggle={(value) =>
-                      setDraftFilters((current) => ({
-                        ...current,
-                        owners: toggleItem(current.owners, value),
-                      }))
-                    }
-                  />
-                  <FilterList
-                    title="Origem"
-                    options={filterOptions.origins}
-                    selected={draftFilters.origins ?? []}
-                    onToggle={(value) =>
-                      setDraftFilters((current) => ({
-                        ...current,
-                        origins: toggleItem(current.origins, value),
-                      }))
-                    }
-                  />
-                  <FilterList
-                    title="Canal"
-                    options={filterOptions.channels}
-                    selected={draftFilters.channels ?? []}
-                    onToggle={(value) =>
-                      setDraftFilters((current) => ({
-                        ...current,
-                        channels: toggleItem(current.channels, value),
-                      }))
-                    }
-                  />
-                  <div className="space-y-2">
-                    <span className="text-xs font-semibold uppercase text-muted-foreground">Score</span>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        placeholder="mín."
-                        value={draftFilters.score?.min ?? ''}
-                        onChange={(event) => handleNumberChange('min', event.target.value)}
-                      />
-                      <span className="text-muted-foreground">–</span>
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        placeholder="máx."
-                        value={draftFilters.score?.max ?? ''}
-                        onChange={(event) => handleNumberChange('max', event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <span className="text-xs font-semibold uppercase text-muted-foreground">Datas</span>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="date"
-                        value={draftFilters.dateRange?.from ?? ''}
-                        onChange={(event) => handleDateChange('from', event.target.value)}
-                      />
-                      <span className="text-muted-foreground">→</span>
-                      <Input
-                        type="date"
-                        value={draftFilters.dateRange?.to ?? ''}
-                        onChange={(event) => handleDateChange('to', event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <span className="text-xs font-semibold uppercase text-muted-foreground">Sem atividade</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      placeholder="Dias"
-                      value={draftFilters.inactivityDays ?? ''}
-                      onChange={(event) => handleInactivityChange(event.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <Button type="button" variant="ghost" onClick={handleResetFilters} className="h-9">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Limpar filtros
-                  </Button>
-                  <div className="flex items-center gap-2">
-                    <Button type="button" variant="outline" onClick={() => setFiltersOpen(false)}>
-                      Cancelar
-                    </Button>
-                    <Button type="button" onClick={handleApplyFilters}>
-                      Aplicar filtros
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          <CrmSavedViewsMenu
-            views={savedViews.views}
-            activeViewId={savedViews.activeViewId}
-            filters={filters}
-            onSelect={savedViews.selectSavedView}
-            onSave={(payload) => savedViews.createSavedView(payload)}
-            onUpdate={({ view, filters: updatedFilters }) => savedViews.updateSavedView(view, updatedFilters)}
-            onDelete={(view) => savedViews.deleteSavedView(view)}
-            isSaving={savedViews.isSaving}
-            isDeleting={savedViews.isDeleting}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
           />
-
-          {onRefresh ? (
-            <Button type="button" variant="outline" size="sm" onClick={onRefresh} disabled={isRefreshing} className="h-10 rounded-lg">
-              <RefreshCw className={cn('mr-2 h-4 w-4', isRefreshing ? 'animate-spin' : '')} />
-              Atualizar
-            </Button>
-          ) : null}
-
-          {onCreateLead ? (
-            <Button type="button" size="sm" className="h-10 rounded-lg" onClick={onCreateLead}>
-              <Plus className="mr-2 h-4 w-4" />
-              Novo lead
+          <Input
+            type="search"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Buscar lead pelo nome"
+            aria-label="Buscar leads"
+            className="h-9 bg-surface pl-9 pr-9"
+          />
+          {searchInput ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+              onClick={() => setSearchInput('')}
+              aria-label="Limpar busca"
+            >
+              <X />
             </Button>
           ) : null}
         </div>
 
-        {totalLabel ? <span className="text-xs text-muted-foreground">Exibindo {totalLabel}</span> : null}
+        <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="outline" className="gap-2">
+              <ListFilter aria-hidden="true" />
+              Filtros
+              {activeFiltersCount > 0 ? (
+                <Badge variant="primary" className="h-5 min-w-5 px-1.5 tabular-nums">
+                  {activeFiltersCount}
+                </Badge>
+              ) : null}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[400px] max-w-[calc(100vw-2rem)] p-0">
+            <div className="max-h-[70vh] space-y-5 overflow-y-auto p-4">
+              <Section title="Etapa">
+                <div className="flex flex-wrap gap-1.5">
+                  {filterOptions.stages.map((stage) => (
+                    <ChipToggle
+                      key={stage.id}
+                      label={stage.label}
+                      dotClassName={stageDotClass(stage.id)}
+                      pressed={(draftFilters.stages ?? []).includes(stage.id)}
+                      onToggle={() => setDraftFilters((current) => ({ ...current, stages: toggleItem(current.stages, stage.id) }))}
+                    />
+                  ))}
+                </div>
+              </Section>
+
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="crm-filter-mine" className="font-normal">
+                  Somente leads atribuídos a mim
+                </Label>
+                <Switch
+                  id="crm-filter-mine"
+                  checked={onlyMine}
+                  onCheckedChange={(checked: boolean) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      owners: checked
+                        ? Array.from(new Set([...(current.owners ?? []), OWNER_ME]))
+                        : (current.owners ?? []).filter((entry) => entry !== OWNER_ME),
+                    }))
+                  }
+                />
+              </div>
+
+              <Section title="Origem">
+                <div className="flex flex-wrap gap-1.5">
+                  {filterOptions.origins.map((origin) => (
+                    <ChipToggle
+                      key={origin.id}
+                      label={origin.label}
+                      pressed={(draftFilters.origins ?? []).includes(origin.id)}
+                      onToggle={() => setDraftFilters((current) => ({ ...current, origins: toggleItem(current.origins, origin.id) }))}
+                    />
+                  ))}
+                </div>
+              </Section>
+
+              <Section title="Criados entre">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    aria-label="Criados a partir de"
+                    value={draftFilters.dateRange?.from ?? ''}
+                    onChange={(event) => handleDateChange('from', event.target.value)}
+                  />
+                  <span className="text-muted-foreground" aria-hidden="true">
+                    –
+                  </span>
+                  <Input
+                    type="date"
+                    aria-label="Criados até"
+                    value={draftFilters.dateRange?.to ?? ''}
+                    onChange={(event) => handleDateChange('to', event.target.value)}
+                  />
+                </div>
+              </Section>
+
+              <Section title="Parados há pelo menos">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[2, 3, 7, 15].map((days) => (
+                    <ChipToggle
+                      key={days}
+                      label={`${days} dias`}
+                      pressed={draftFilters.inactivityDays === days}
+                      onToggle={() =>
+                        setDraftFilters((current) => ({
+                          ...current,
+                          inactivityDays: current.inactivityDays === days ? null : days,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              </Section>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border p-3">
+              <Button type="button" variant="ghost" size="sm" onClick={handleResetFilters}>
+                Limpar filtros
+              </Button>
+              <Button type="button" size="sm" onClick={handleApplyFilters}>
+                Aplicar
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        <CrmSavedViewsMenu
+          views={savedViews.views}
+          activeViewId={savedViews.activeViewId}
+          filters={filters}
+          onSelect={savedViews.selectSavedView}
+          onSave={(payload) => savedViews.createSavedView(payload)}
+          onUpdate={({ view, filters: updatedFilters }) => savedViews.updateSavedView(view, updatedFilters)}
+          onDelete={(view) => savedViews.deleteSavedView(view)}
+          isSaving={savedViews.isSaving}
+          isDeleting={savedViews.isDeleting}
+        />
+
+        {trailing ? <div className="ml-auto flex items-center">{trailing}</div> : null}
       </div>
 
-      {renderSelectionBanner()}
-
-      {activeBadges.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {activeBadges.map((badge) => (
-            <Badge
-              key={badge.id}
-              variant="secondary"
-              className="flex items-center gap-2 rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-xs"
-            >
-              <span>{badge.label}</span>
+      {chips.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="Filtros ativos">
+          {chips.map((chip) => (
+            <Badge key={chip.id} variant="secondary" className="gap-1 py-1 pl-2.5 pr-1 text-foreground">
+              {chip.label}
               <button
                 type="button"
-                className="text-muted-foreground transition hover:text-foreground"
-                onClick={() => handleBadgeRemove(badge.id)}
+                className="rounded-full p-0.5 text-muted-foreground hover:bg-surface-hover hover:text-foreground"
+                onClick={() => onFiltersChange(normalizeCrmFilters(chip.remove(filters)))}
+                aria-label={`Remover filtro ${chip.label}`}
               >
-                <X className="h-3 w-3" />
-                <span className="sr-only">Remover filtro</span>
+                <X className="size-3" />
               </button>
             </Badge>
           ))}
+          <Button type="button" variant="link" size="xs" className="text-muted-foreground" onClick={handleResetFilters}>
+            Limpar tudo
+          </Button>
         </div>
       ) : null}
-    </div>
-  );
-};
-
-type FilterListProps = {
-  title: string;
-  options: Array<{ id: string; label: string }>;
-  selected: string[];
-  onToggle: (value: string) => void;
-};
-
-const FilterList = ({ title, options, selected, onToggle }: FilterListProps) => {
-  return (
-    <div className="space-y-2">
-      <span className="text-xs font-semibold uppercase text-muted-foreground">{title}</span>
-      <div className="flex flex-wrap gap-2">
-        {options.map((option) => {
-          const isSelected = selected.includes(option.id);
-          return (
-            <Button
-              key={option.id}
-              type="button"
-              variant={isSelected ? 'default' : 'outline'}
-              size="sm"
-              className={cn(
-                'h-8 rounded-full border-border/60',
-                isSelected ? 'bg-primary text-primary-foreground' : 'bg-background'
-              )}
-              onClick={() => onToggle(option.id)}
-            >
-              {option.label}
-            </Button>
-          );
-        })}
-      </div>
     </div>
   );
 };

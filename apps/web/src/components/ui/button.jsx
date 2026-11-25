@@ -5,29 +5,38 @@ import { cva } from "class-variance-authority";
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius)] text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-60 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_srgb,var(--ring)_75%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:color-mix(in_srgb,var(--bg)_92%,transparent)]",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-[color,background-color,border-color,box-shadow] outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
   {
     variants: {
       variant: {
+        // Ação principal: no máximo uma por área.
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-[color-mix(in_oklab,_var(--primary)_85%,_black)]",
+          "bg-primary text-primary-foreground shadow-xs hover:bg-primary-hover disabled:bg-surface-sunken disabled:text-subtle-foreground disabled:shadow-none",
         destructive:
-          "bg-destructive text-white shadow-sm hover:bg-[color-mix(in_oklab,_var(--destructive)_85%,_black)]",
+          "bg-danger text-danger-foreground shadow-xs hover:bg-[color-mix(in_oklab,var(--color-danger)_88%,black)] disabled:bg-surface-sunken disabled:text-subtle-foreground disabled:shadow-none",
+        // Ação secundária: superfície + borda.
         outline:
-          "border border-[var(--border)] bg-[color-mix(in_srgb,var(--surface)_65%,transparent)] text-[color:color-mix(in_srgb,var(--text)_92%,transparent)] shadow-[0_0_0_1px_color-mix(in_srgb,var(--border)_55%,transparent)] hover:bg-[color-mix(in_srgb,var(--surface)_85%,transparent)]",
+          "border border-border-strong bg-surface text-foreground shadow-xs hover:bg-surface-hover disabled:text-subtle-foreground disabled:shadow-none",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-sm hover:bg-[color-mix(in_oklab,_var(--primary)_12%,_transparent)]",
+          "bg-surface-sunken text-foreground hover:bg-surface-hover disabled:text-subtle-foreground",
+        // Ação de apoio tingida pela marca (ex.: "Sugerir resposta").
+        soft:
+          "bg-primary-soft text-primary-soft-foreground hover:bg-[color-mix(in_oklab,var(--color-primary)_16%,var(--color-surface))] disabled:bg-surface-sunken disabled:text-subtle-foreground",
         ghost:
-          "hover:bg-[color-mix(in_oklab,_var(--surface)_18%,_transparent)] hover:text-foreground",
+          "text-foreground hover:bg-surface-hover disabled:text-subtle-foreground",
+        // Mantido por compatibilidade; equivale a ghost com texto secundário.
         toolbar:
-          "rounded-lg border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted shadow-none hover:bg-surface-overlay-strong focus-visible:ring-surface-overlay-glass-border focus-visible:ring-offset-0",
-        link: "text-primary underline-offset-4 hover:underline",
+          "text-muted-foreground hover:bg-surface-hover hover:text-foreground disabled:opacity-50",
+        link: "h-auto px-0 text-primary underline-offset-4 hover:underline disabled:text-subtle-foreground",
       },
       size: {
-        default: "min-h-[42px] px-4 py-2 has-[>svg]:px-3",
-        sm: "min-h-[38px] gap-1.5 px-3 has-[>svg]:px-2.5",
-        lg: "min-h-[46px] px-6 has-[>svg]:px-4",
-        icon: "size-10",
+        xs: "h-7 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5",
+        sm: "h-8 gap-1.5 px-3 has-[>svg]:px-2.5",
+        default: "h-9 px-4 has-[>svg]:px-3",
+        lg: "h-10 px-5 has-[>svg]:px-4",
+        icon: "size-9",
+        "icon-sm": "size-8",
+        "icon-xs": "size-7",
         toolbar: "size-9",
       },
     },

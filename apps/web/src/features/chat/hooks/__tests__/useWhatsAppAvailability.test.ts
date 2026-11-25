@@ -32,12 +32,12 @@ describe('useWhatsAppAvailability', () => {
     });
 
     expect(toastMock.error).toHaveBeenCalledWith('WhatsApp não configurado', {
-      description: 'Conecte uma instância do WhatsApp para habilitar novos envios.',
+      description: 'Conecte um número de WhatsApp para enviar mensagens.',
     });
     expect(result.current.unavailableReason).toMatchObject({
       code: 'BROKER_NOT_CONFIGURED',
       title: 'WhatsApp não configurado',
-      description: 'Conecte uma instância do WhatsApp para habilitar novos envios.',
+      description: 'Conecte um número de WhatsApp para enviar mensagens.',
     });
     expect(result.current.composerDisabled).toBe(true);
   });

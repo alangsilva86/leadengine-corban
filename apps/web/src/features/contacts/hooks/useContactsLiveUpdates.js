@@ -67,7 +67,7 @@ export const useContactsLiveUpdates = ({ contactId, enabled = true } = {}) => {
           if (!contactId) {
             return;
           }
-          queryClient.invalidateQueries({ queryKey: ['contacts', 'timeline', contactId] });
+          queryClient.invalidateQueries({ queryKey: ['contacts', 'interactions', contactId] });
         };
 
         const invalidateTasks = () => {

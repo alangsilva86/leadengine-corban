@@ -1,6 +1,12 @@
 import { getAuthToken } from '@/lib/auth.js';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE_URL } from '@/lib/api.js';
+
+/**
+ * Diagnóstico do canal em tempo real — só em desenvolvimento (em produção, um log por evento é ruído).
+ * Cada chamada fica atrás de `import.meta.env.DEV`, que o build troca por `false` e remove.
+ */
+const debugRealtime = (message, details) => console.info(`[realtime] ${message}`, details);
 
 const resolveSocketUrl = () => {
   if (API_BASE_URL) {
@@ -54,6 +60,8 @@ export const useRealtimeTickets = ({
   const messageUpdateCacheRef = useRef(new Map());
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
+  // 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'offline'
+  const [status, setStatus] = useState('idle');
 
   useEffect(() => {
     if (!enabled || !tenantId) {
@@ -61,6 +69,7 @@ export const useRealtimeTickets = ({
     }
 
     let isMounted = true;
+    setStatus('connecting');
 
     const connect = async () => {
       try {
@@ -71,7 +80,7 @@ export const useRealtimeTickets = ({
 
         const transports = ['websocket', 'polling'];
 
-        console.info('🎯 LeadEngine • Chat :: 🚪 Abrindo canal tempo real', {
+        if (import.meta.env.DEV) debugRealtime('Abrindo canal', {
           tenantId,
           userId,
           ticketId,
@@ -93,7 +102,8 @@ export const useRealtimeTickets = ({
           if (!isMounted) return;
           setConnected(true);
           setConnectionError(null);
-          console.info('🎯 LeadEngine • Chat :: 🤝 Conectado ao tempo real', {
+          setStatus('connected');
+          if (import.meta.env.DEV) debugRealtime('Conectado', {
             tenantId,
             userId,
             ticketId: ticketRoomRef.current,
@@ -109,10 +119,11 @@ export const useRealtimeTickets = ({
           }
         });
 
-        socket.on('disconnect', () => {
+        socket.on('disconnect', (reason) => {
           if (!isMounted) return;
           setConnected(false);
-          console.info('🎯 LeadEngine • Chat :: 👋 Desconectado do tempo real', {
+          setStatus(reason === 'io client disconnect' ? 'offline' : 'reconnecting');
+          if (import.meta.env.DEV) debugRealtime('Desconectado', {
             tenantId,
             userId,
             ticketId: ticketRoomRef.current,
@@ -122,7 +133,8 @@ export const useRealtimeTickets = ({
         socket.on('connect_error', (error) => {
           if (!isMounted) return;
           setConnectionError(error instanceof Error ? error.message : 'Falha ao conectar no tempo real');
-          console.warn('🎯 LeadEngine • Chat :: ⚠️ Erro na conexão tempo real', {
+          setStatus((current) => (current === 'offline' ? current : 'reconnecting'));
+          if (import.meta.env.DEV) debugRealtime('Erro na conexão', {
             tenantId,
             userId,
             ticketId: ticketRoomRef.current,
@@ -130,19 +142,27 @@ export const useRealtimeTickets = ({
           });
         });
 
-        socket.on('reconnect_failed', () => {
+        const handleReconnectFailed = () => {
           if (!isMounted) return;
           setConnectionError('Não foi possível estabelecer conexão em tempo real. Continuaremos no modo offline.');
-          console.warn('🎯 LeadEngine • Chat :: 💤 Reconnect falhou — seguindo em modo offline', {
+          setStatus('offline');
+          console.warn('[realtime] Reconexão falhou; o Inbox segue atualizando sem tempo real.', {
             tenantId,
             userId,
             ticketId: ticketRoomRef.current,
           });
-        });
+        };
+
+        // No socket.io v4 o evento `reconnect_failed` é emitido pelo Manager (`socket.io`),
+        // não pelo socket — antes ele nunca disparava e a falha passava em silêncio.
+        socket.on('reconnect_failed', handleReconnectFailed);
+        if (socket.io && typeof socket.io.on === 'function') {
+          socket.io.on('reconnect_failed', handleReconnectFailed);
+        }
 
         // Eventos do ticket bus
         const handleTicketEvent = (payload) => {
-          console.info('🎯 LeadEngine • Chat :: 📨 Evento recebido', {
+          if (import.meta.env.DEV) debugRealtime('Evento recebido', {
             tenantId,
             userId,
             ticketId: ticketRoomRef.current,
@@ -162,7 +182,7 @@ export const useRealtimeTickets = ({
 
         registerHandler(socket, 'tickets.updated', handleTicketUpdated);
         const handleMessageCreated = (payload) => {
-          console.info('🎯 LeadEngine • Chat :: 💬 Mensagem recebida', {
+          if (import.meta.env.DEV) debugRealtime('Mensagem recebida', {
             tenantId,
             ticketId: ticketRoomRef.current,
             direction: payload?.message?.direction ?? payload?.message?.Direction ?? null,
@@ -189,7 +209,7 @@ export const useRealtimeTickets = ({
 
           messageUpdateCacheRef.current.set(cacheKeyBase, cacheKey);
 
-          console.info('🎯 LeadEngine • Chat :: 🔄 Mensagem atualizada', {
+          if (import.meta.env.DEV) debugRealtime('Mensagem atualizada', {
             tenantId,
             ticketId: ticketRoomRef.current,
             messageId: payload?.message?.id ?? payload?.id ?? null,
@@ -202,7 +222,7 @@ export const useRealtimeTickets = ({
 
         registerHandler(socket, messageUpdatedEvents, handleMessageUpdated);
         registerHandler(socket, 'message.status.changed', (payload) => {
-          console.info('🎯 LeadEngine • Chat :: 📬 Status de mensagem atualizado', {
+          if (import.meta.env.DEV) debugRealtime('Status de mensagem atualizado', {
             tenantId,
             ticketId: ticketRoomRef.current,
             status: payload?.status ?? null,
@@ -213,7 +233,7 @@ export const useRealtimeTickets = ({
           }
         });
         registerHandler(socket, 'ticket:typing', (payload) => {
-          console.info('🎯 LeadEngine • Chat :: ⌨️ Indicador de digitação recebido', {
+          if (import.meta.env.DEV) debugRealtime('Indicador de digitação recebido', {
             tenantId,
             ticketId: ticketRoomRef.current,
             from: payload?.userId ?? null,
@@ -224,7 +244,7 @@ export const useRealtimeTickets = ({
           }
         });
         registerHandler(socket, 'whatsapp.queue.missing', (payload) => {
-          console.warn('🎯 LeadEngine • Chat :: 🚨 Fila padrão ausente', {
+          console.warn('[realtime] Fila padrão ausente', {
             tenantId,
             payload,
           });
@@ -237,6 +257,7 @@ export const useRealtimeTickets = ({
           return;
         }
         setConnectionError(error instanceof Error ? error.message : 'Falha ao carregar socket.io-client');
+        setStatus('offline');
       }
     };
 
@@ -272,9 +293,28 @@ export const useRealtimeTickets = ({
     }
   }, [ticketId]);
 
+  const reconnect = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || socket.connected || typeof socket.connect !== 'function') {
+      return;
+    }
+    setStatus('connecting');
+    socket.connect();
+  }, []);
+
+  // Ao voltar a internet, tenta reconectar sem esperar o usuário.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleOnline = () => reconnect();
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [reconnect]);
+
   return {
     connected,
     connectionError,
+    status,
+    reconnect,
     socket: socketRef.current,
   };
 };

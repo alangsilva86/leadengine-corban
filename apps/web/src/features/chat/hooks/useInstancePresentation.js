@@ -5,10 +5,11 @@ import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances
 // externa (ex.: arquivo de config ou endpoint) e combine aqui antes do fallback.
 
 const FALLBACK = {
-  label: 'Instância desconhecida',
-  color: '#94A3B8',
+  label: 'Número não identificado',
+  color: null,
   phone: null,
   number: null,
+  known: false,
 };
 
 const normalizeInstance = (instance) => {
@@ -76,6 +77,7 @@ export default function useInstancePresentation(instanceId) {
         color: byId.color ?? FALLBACK.color,
         phone: byId.phone ?? null,
         number: byId.number ?? byId.phone ?? null,
+        known: true,
       };
     }
 
@@ -87,6 +89,7 @@ export default function useInstancePresentation(instanceId) {
         color: byNormalized.color ?? FALLBACK.color,
         phone: byNormalized.phone ?? null,
         number: byNormalized.number ?? byNormalized.phone ?? null,
+        known: true,
       };
     }
 
@@ -95,6 +98,7 @@ export default function useInstancePresentation(instanceId) {
       color: FALLBACK.color,
       phone: null,
       number: null,
+      known: false,
     };
   }, [instanceId, instances]);
 

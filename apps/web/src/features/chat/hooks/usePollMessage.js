@@ -328,20 +328,6 @@ export const usePollMessage = ({ message, messageType, rawTextContent }) =>
         ? pollFallbackText
         : rawText;
 
-    if (typeof window !== 'undefined') {
-      const silenceLogs = Boolean(window.__LE_SILENCE_POLL_LOGS);
-      if (!silenceLogs && (metadataPoll || pollChoiceMetadata)) {
-        const pollLogSelections = pollSelectedOptions.map((selection) => selection.title);
-        // eslint-disable-next-line no-console
-        console.info('🪄 Etapa6-Render: bolha decifrada', {
-          messageId: message?.id,
-          hasPlaceholder: POLL_PLACEHOLDER_MESSAGES.has(trimmedRawText),
-          usedFallback: textContent === pollFallbackText && pollFallbackText !== null,
-          selectedOptions: pollLogSelections,
-          finalText: textContent,
-        });
-      }
-    }
 
     const pollSelectedIdSet = new Set(
       pollSelectedOptions

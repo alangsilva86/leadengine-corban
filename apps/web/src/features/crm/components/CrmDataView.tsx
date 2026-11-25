@@ -18,8 +18,11 @@ const viewComponents = {
 } as const;
 
 const ViewFallback = () => (
-  <div className="flex h-[420px] items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/10 text-sm text-muted-foreground">
-    Carregando visão...
+  <div
+    className="flex h-[420px] animate-pulse items-center justify-center rounded-lg bg-surface-sunken text-sm text-muted-foreground"
+    role="status"
+  >
+    Carregando…
   </div>
 );
 

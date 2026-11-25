@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import useTicketsQuery from '../api/useTicketsQuery.js';
@@ -10,6 +10,7 @@ import useTicketAssignMutation from '../api/useTicketAssignMutation.js';
 import useRealtimeTickets from './useRealtimeTickets.js';
 import useConversationState from './useConversationState.js';
 import useTypingIndicator from './useTypingIndicator.js';
+import useDebouncedValue from './useDebouncedValue.js';
 import mergeTicketIntoList from '../utils/updateTicketsList.js';
 import { resolveProviderMessageId } from '../utils/messageIdentity.js';
 
@@ -23,9 +24,20 @@ const DEFAULT_FILTERS = {
   campaignId: null,
   productType: null,
   strategy: null,
+  // Etapa do lead (id do contrato `LeadStage`).
+  stage: null,
 };
 
 const DEFAULT_MESSAGES_PAGE_SIZE = 40;
+const TICKETS_PAGE_SIZE = 40;
+const POLLING_INTERVAL_MS = 15000;
+const SEARCH_DEBOUNCE_MS = 300;
+
+/** Filtros rápidos aplicados sobre as conversas já carregadas (a API ainda não os oferece). */
+const QUICK_FILTERS = {
+  unread: (ticket) => (ticket?.timeline?.unreadInboundCount ?? 0) > 0,
+  awaiting: (ticket) => ticket?.timeline?.lastDirection === 'INBOUND',
+};
 
 const scopeSupportsUser = (scope) => scope === 'mine';
 
@@ -69,6 +81,10 @@ const buildApiFilters = ({ filters, currentUser }) => {
     queryFilters.strategy = filters.strategy;
   }
 
+  if (filters?.stage) {
+    queryFilters.stage = filters.stage;
+  }
+
   return queryFilters;
 };
 
@@ -79,76 +95,37 @@ const findTicketById = (items, ticketId) => {
   return items.find((ticket) => ticket.id === ticketId) ?? null;
 };
 
-export const useChatController = ({ tenantId, currentUser } = {}) => {
+const EMPTY_TICKETS = [];
+
+export const useChatController = ({ tenantId, currentUser, autoSelect = true } = {}) => {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [quickFilter, setQuickFilter] = useState(null);
+  const [pageCount, setPageCount] = useState(1);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [selectedTicketIds, setSelectedTicketIds] = useState([]);
   const [queueAlerts, setQueueAlerts] = useState([]);
+  const autoSelectRef = useRef(autoSelect);
+  autoSelectRef.current = autoSelect;
 
   const queryClient = useQueryClient();
 
+  // A busca digitada aparece na hora no campo, mas só consulta a API após 300 ms sem digitar.
+  const debouncedSearch = useDebouncedValue(filters.search ?? '', SEARCH_DEBOUNCE_MS);
+  const queryFilterSource = useMemo(
+    () => ({ ...filters, search: debouncedSearch }),
+    [debouncedSearch, filters]
+  );
+
   const apiFilters = useMemo(
-    () => buildApiFilters({ filters, currentUser }),
-    [filters, currentUser]
+    () => buildApiFilters({ filters: queryFilterSource, currentUser }),
+    [queryFilterSource, currentUser]
   );
 
-  const ticketsQuery = useTicketsQuery({
-    filters: apiFilters,
-    includeMetrics: true,
-    enabled: Boolean(tenantId),
-  });
-
-  const tickets = ticketsQuery.data?.items ?? [];
-  const metrics = ticketsQuery.data?.metrics ?? null;
-
+  // Ao trocar filtros/busca, volta para a primeira página.
+  const apiFiltersKey = JSON.stringify(apiFilters);
   useEffect(() => {
-    if (tickets.length === 0) {
-      setSelectedTicketId((previous) => (previous && findTicketById(tickets, previous) ? previous : null));
-      setSelectedTicketIds((current) => (current.length > 0 ? [] : current));
-      return;
-    }
-
-    setSelectedTicketId((previous) => {
-      if (previous && findTicketById(tickets, previous)) {
-        return previous;
-      }
-      return tickets[0]?.id ?? null;
-    });
-    setSelectedTicketIds((previous) => {
-      const next = previous.filter((id) => findTicketById(tickets, id));
-      if (next.length !== previous.length) {
-        return next;
-      }
-      for (let index = 0; index < next.length; index += 1) {
-        if (next[index] !== previous[index]) {
-          return next;
-        }
-      }
-      return previous;
-    });
-  }, [tickets]);
-
-  const selectedTicket = useMemo(
-    () => findTicketById(tickets, selectedTicketId),
-    [selectedTicketId, tickets]
-  );
-
-  const messagesQuery = useMessagesQuery({
-    ticketId: selectedTicketId,
-    enabled: Boolean(selectedTicketId),
-    pageSize: DEFAULT_MESSAGES_PAGE_SIZE,
-  });
-
-  const conversation = useConversationState({
-    ticket: selectedTicket,
-    messagesPages: messagesQuery.data?.pages,
-    notes: selectedTicket?.notes ?? [],
-  });
-
-  const sendMessageMutation = useSendMessage({ fallbackTicketId: selectedTicketId });
-  const notesMutation = useNotesMutation({ fallbackTicketId: selectedTicketId });
-  const statusMutation = useTicketStatusMutation({ fallbackTicketId: selectedTicketId });
-  const assignMutation = useTicketAssignMutation({ fallbackTicketId: selectedTicketId });
+    setPageCount(1);
+  }, [apiFiltersKey]);
 
   const handleTicketUpdated = useCallback(
     (payload) => {
@@ -338,7 +315,89 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     onQueueMissing: handleQueueMissing,
   });
 
-  const typingIndicator = useTypingIndicator({ socket: realtime.socket });
+  // Sem tempo real, a lista e a conversa aberta são atualizadas a cada 15 s.
+  const realtimeConnected = realtime?.connected === true;
+  const pollingInterval = realtimeConnected ? false : POLLING_INTERVAL_MS;
+
+  const ticketsQuery = useTicketsQuery({
+    filters: apiFilters,
+    includeMetrics: true,
+    enabled: Boolean(tenantId),
+    limit: TICKETS_PAGE_SIZE * pageCount,
+    refetchInterval: pollingInterval,
+  });
+
+  const allTickets = ticketsQuery.data?.items ?? EMPTY_TICKETS;
+  const metrics = ticketsQuery.data?.metrics ?? null;
+  const totalTickets =
+    typeof ticketsQuery.data?.total === 'number' ? ticketsQuery.data.total : allTickets.length;
+  const hasMoreTickets = Boolean(ticketsQuery.data?.hasNext);
+  const isLoadingMoreTickets = ticketsQuery.isFetching && ticketsQuery.isPlaceholderData === true && pageCount > 1;
+
+  const tickets = useMemo(() => {
+    const predicate = quickFilter ? QUICK_FILTERS[quickFilter] : null;
+    return predicate ? allTickets.filter(predicate) : allTickets;
+  }, [allTickets, quickFilter]);
+
+  // Guarda a última versão conhecida da conversa aberta: se ela sair da lista
+  // (busca, filtro, atualização), continua aberta — nunca trocamos de cliente
+  // por baixo do atendente.
+  const selectedSnapshotRef = useRef(null);
+  const listedSelectedTicket = useMemo(
+    () => findTicketById(allTickets, selectedTicketId),
+    [allTickets, selectedTicketId]
+  );
+  if (listedSelectedTicket) {
+    selectedSnapshotRef.current = listedSelectedTicket;
+  } else if (!selectedTicketId || selectedSnapshotRef.current?.id !== selectedTicketId) {
+    selectedSnapshotRef.current = null;
+  }
+  const selectedTicket = listedSelectedTicket ?? selectedSnapshotRef.current ?? null;
+
+  const hasLoadedTickets = ticketsQuery.isSuccess === true || Array.isArray(ticketsQuery.data?.items);
+
+  useEffect(() => {
+    if (!hasLoadedTickets || ticketsQuery.isPlaceholderData) {
+      return;
+    }
+    // Seleção automática só quando nada está aberto (e apenas em telas largas).
+    setSelectedTicketId((previous) => {
+      if (previous) {
+        return previous;
+      }
+      if (!autoSelectRef.current) {
+        return previous;
+      }
+      return tickets[0]?.id ?? null;
+    });
+    setSelectedTicketIds((previous) => {
+      const next = previous.filter((id) => findTicketById(allTickets, id));
+      if (next.length !== previous.length) {
+        return next;
+      }
+      return previous;
+    });
+  }, [allTickets, hasLoadedTickets, tickets, ticketsQuery.isPlaceholderData]);
+
+  const messagesQuery = useMessagesQuery({
+    ticketId: selectedTicketId,
+    enabled: Boolean(selectedTicketId),
+    pageSize: DEFAULT_MESSAGES_PAGE_SIZE,
+    refetchInterval: pollingInterval,
+  });
+
+  const conversation = useConversationState({
+    ticket: selectedTicket,
+    messagesPages: messagesQuery.data?.pages,
+    notes: selectedTicket?.notes ?? EMPTY_TICKETS,
+  });
+
+  const sendMessageMutation = useSendMessage({ fallbackTicketId: selectedTicketId });
+  const notesMutation = useNotesMutation({ fallbackTicketId: selectedTicketId });
+  const statusMutation = useTicketStatusMutation({ fallbackTicketId: selectedTicketId });
+  const assignMutation = useTicketAssignMutation({ fallbackTicketId: selectedTicketId });
+
+  const typingIndicator = useTypingIndicator({ socket: realtime?.socket });
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -352,8 +411,13 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     return () => window.clearInterval(interval);
   }, []);
 
-  const selectTicket = useCallback((ticketId) => {
-    setSelectedTicketId(ticketId);
+  // `ticketHint`: conversa vinda de fora da lista (ex.: link do CRM) — fica aberta mesmo
+  // que não esteja entre as conversas carregadas.
+  const selectTicket = useCallback((ticketId, ticketHint = null) => {
+    if (ticketHint && ticketId && ticketHint.id === ticketId) {
+      selectedSnapshotRef.current = ticketHint;
+    }
+    setSelectedTicketId(ticketId ?? null);
   }, []);
 
   const toggleTicketSelection = useCallback((ticketId) => {
@@ -386,6 +450,14 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     setFilters((current) => ({ ...current, search: value }));
   }, []);
 
+  const loadMoreTickets = useCallback(() => {
+    setPageCount((current) => current + 1);
+  }, []);
+
+  const toggleQuickFilter = useCallback((value) => {
+    setQuickFilter((current) => (current === value || !value ? null : value));
+  }, []);
+
   const canUseScopeMine = currentUser?.id ? true : false;
   const effectiveScope = scopeSupportsUser(filters.scope) && !canUseScopeMine ? 'team' : filters.scope;
 
@@ -400,6 +472,13 @@ export const useChatController = ({ tenantId, currentUser } = {}) => {
     setSearch: updateSearch,
     ticketsQuery,
     tickets,
+    allTickets,
+    totalTickets,
+    hasMoreTickets,
+    isLoadingMoreTickets,
+    loadMoreTickets,
+    quickFilter,
+    setQuickFilter: toggleQuickFilter,
     metrics,
     selectedTicketId,
     selectedTicket,

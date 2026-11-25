@@ -1,8 +1,8 @@
 const NORMALIZED_WHATSAPP_ERRORS = {
   INSTANCE_NOT_CONNECTED: {
     code: 'INSTANCE_NOT_CONNECTED',
-    title: 'Instância desconectada',
-    description: 'Conecte novamente a instância do WhatsApp para retomar os envios.',
+    title: 'Número desconectado',
+    description: 'Reconecte o número de WhatsApp para voltar a enviar mensagens.',
   },
   INVALID_TO: {
     code: 'INVALID_TO',
@@ -12,17 +12,17 @@ const NORMALIZED_WHATSAPP_ERRORS = {
   RATE_LIMITED: {
     code: 'RATE_LIMITED',
     title: 'Limite de envio atingido',
-    description: 'Aguarde alguns instantes para reenviar. O broker sinalizou limite de envios.',
+    description: 'O WhatsApp limitou os envios deste número. Aguarde alguns minutos antes de tentar de novo.',
   },
   BROKER_TIMEOUT: {
     code: 'BROKER_TIMEOUT',
     title: 'Tempo limite excedido',
-    description: 'O broker não respondeu a tempo. Tente novamente em alguns segundos.',
+    description: 'O WhatsApp demorou a responder. Tente de novo em alguns segundos.',
   },
   BROKER_NOT_CONFIGURED: {
     code: 'BROKER_NOT_CONFIGURED',
     title: 'WhatsApp não configurado',
-    description: 'Conecte uma instância do WhatsApp para habilitar novos envios.',
+    description: 'Conecte um número de WhatsApp para enviar mensagens.',
   },
 };
 

@@ -1,4 +1,6 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+/** @vitest-environment jsdom */
+import { act, renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import useInboxLayoutState from '../useInboxLayoutState.js';
 import { CONTEXT_PREFERENCE_KEY } from '../../preferences.ts';
 
@@ -10,7 +12,7 @@ vi.mock('@/hooks/use-media-query.js', () => ({
 
 const setBreakpoint = ({ desktop = false, tablet = false } = {}) => {
   mockUseMediaQuery.mockImplementation((query) => {
-    if (query.includes('1280')) {
+    if (query.includes('1440') || query.includes('1280')) {
       return desktop;
     }
     if (query.includes('1024')) {
@@ -26,97 +28,71 @@ describe('useInboxLayoutState', () => {
     window.localStorage.clear();
   });
 
-  it('restores persisted context preference and emits telemetry for persistent users', async () => {
+  it('restaura o painel fixo lembrado (≥1440px) e grava a preferência ao alternar', () => {
     setBreakpoint({ desktop: true });
     window.localStorage.setItem(CONTEXT_PREFERENCE_KEY, 'true');
     const telemetry = vi.fn();
 
     const { result } = renderHook(() =>
-      useInboxLayoutState({
-        defaultContextOpen: false,
-        contextAvailable: true,
-        currentUser: { id: 'user-1' },
-        telemetry,
-      }),
+      useInboxLayoutState({ currentUser: { id: 'user-1' }, telemetry }),
     );
 
     expect(result.current.contextDrawerOpen).toBe(true);
     expect(telemetry).toHaveBeenCalledWith('chat.context.toggle', { open: true });
 
-    await act(async () => {
+    act(() => {
       result.current.handleToggleContext();
-      await waitFor(() => {
-        expect(result.current.contextDrawerOpen).toBe(false);
-      });
     });
 
-    await waitFor(() => {
-      expect(window.localStorage.getItem(CONTEXT_PREFERENCE_KEY)).toBe('false');
-    });
+    expect(result.current.contextDrawerOpen).toBe(false);
+    expect(window.localStorage.getItem(CONTEXT_PREFERENCE_KEY)).toBe('false');
     expect(telemetry).toHaveBeenLastCalledWith('chat.context.toggle', { open: false });
   });
 
-  it('keeps preferences in memory for guests and toggles mobile sheet with keyboard shortcut', async () => {
-    setBreakpoint();
-    const telemetry = vi.fn();
-    const setItemSpy = vi.spyOn(window.localStorage.__proto__, 'setItem');
+  it('abre a folha sobreposta abaixo de 1440px sem herdar a preferência do painel fixo', () => {
+    setBreakpoint({ tablet: true });
+    window.localStorage.setItem(CONTEXT_PREFERENCE_KEY, 'true');
 
-    const { result } = renderHook(() =>
-      useInboxLayoutState({
-        defaultContextOpen: true,
-        contextAvailable: true,
-        currentUser: null,
-        telemetry,
-      }),
-    );
+    const { result } = renderHook(() => useInboxLayoutState({ currentUser: { id: 'user-1' } }));
 
-    expect(result.current.contextDrawerOpen).toBe(true);
-    expect(setItemSpy).not.toHaveBeenCalled();
+    expect(result.current.contextDrawerOpen).toBe(false);
 
-    await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', altKey: true }));
-      await waitFor(() => {
-        expect(result.current.mobileListOpen).toBe(true);
-      });
+    act(() => {
+      result.current.handleToggleContext();
     });
 
-    expect(telemetry).toHaveBeenCalledWith('chat.context.toggle', { open: true });
-    setItemSpy.mockRestore();
+    expect(result.current.contextDrawerOpen).toBe(true);
+    expect(window.localStorage.getItem(CONTEXT_PREFERENCE_KEY)).toBe('true');
   });
 
-  it('closes context when the desktop list is restored', async () => {
+  it('mantém a lista visível ao abrir o painel no desktop e alterna a lista com ⌥L', () => {
     setBreakpoint({ desktop: true });
-    const telemetry = vi.fn();
 
-    const { result } = renderHook(() =>
-      useInboxLayoutState({
-        defaultContextOpen: false,
-        contextAvailable: true,
-        currentUser: { id: 'user-2' },
-        telemetry,
-      }),
-    );
+    const { result } = renderHook(() => useInboxLayoutState({ currentUser: { id: 'user-2' } }));
 
+    act(() => {
+      result.current.handleToggleContext();
+    });
+    expect(result.current.contextDrawerOpen).toBe(true);
     expect(result.current.desktopListVisible).toBe(true);
 
-    await act(async () => {
-      result.current.handleToggleContext();
-      await waitFor(() => {
-        expect(result.current.contextDrawerOpen).toBe(true);
-      });
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', altKey: true }));
+    });
+    expect(result.current.desktopListVisible).toBe(false);
+  });
+
+  it('ignora ⌥L enquanto o atendente digita', () => {
+    setBreakpoint({ desktop: true });
+    const { result } = renderHook(() => useInboxLayoutState({ currentUser: null }));
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', altKey: true, bubbles: true }));
     });
 
-    await act(async () => {
-      result.current.handleToggleListVisibility();
-      await waitFor(() => {
-        expect(result.current.desktopListVisible).toBe(true);
-        expect(result.current.contextDrawerOpen).toBe(false);
-      });
-    });
-
-    await waitFor(() => {
-      expect(window.localStorage.getItem(CONTEXT_PREFERENCE_KEY)).toBe('false');
-    });
-    expect(telemetry).toHaveBeenLastCalledWith('chat.context.toggle', { open: false });
+    expect(result.current.desktopListVisible).toBe(true);
+    textarea.remove();
   });
 });

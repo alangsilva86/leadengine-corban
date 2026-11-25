@@ -1,10 +1,13 @@
+import type { LeadStage } from '@ticketz/contracts';
+
 export type LeadStatus = 'new' | 'in_progress' | 'engaged' | 'won' | 'lost';
 
 export interface LeadSummary {
   id: string;
   name: string;
   contactId?: string;
-  stage: string;
+  /** Etapa do funil único (normalizada ao carregar). */
+  stage: LeadStage;
   ownerId: string | null;
   ownerName: string | null;
   lastActivityAt: string | null;

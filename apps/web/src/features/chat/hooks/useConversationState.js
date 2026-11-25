@@ -1,35 +1,38 @@
 import { useMemo } from 'react';
-import { format, isToday, isYesterday } from 'date-fns';
+import { format, isThisYear, isToday, isYesterday } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { resolveMessageKey } from '../utils/messageIdentity.js';
-import {
-  formatStageLabel,
-  getLegacyStageValue,
-  getStageValue,
-  normalizeStage as normalizeSalesStage,
-} from '../components/ConversationArea/utils/stage.js';
+import { LEAD_STAGE_DEFINITIONS, parseLeadStage } from '@/features/crm/utils/lead-stage';
 
 const asDate = (value) => {
   if (!value) return null;
-  if (value instanceof Date) return value;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const DAY_FORMAT = "dd 'de' MMM";
-
-const getDayLabel = (date) => {
-  if (!date) return 'Hoje';
+/** "Hoje", "Ontem", "24 de novembro", "24 de novembro de 2025". */
+export const getDayLabel = (date) => {
+  if (!date) return 'Sem data';
   if (isToday(date)) return 'Hoje';
   if (isYesterday(date)) return 'Ontem';
-  return format(date, DAY_FORMAT);
+  if (isThisYear(date)) return format(date, "d 'de' MMMM", { locale: ptBR });
+  return format(date, "d 'de' MMMM 'de' yyyy", { locale: ptBR });
 };
 
-const normaliseMessages = (pages) => {
+export const normaliseMessages = (pages) => {
   if (!pages) return [];
   const records = [];
+  const seen = new Set();
   for (const page of pages) {
     if (!page || !Array.isArray(page.items)) continue;
     for (const message of page.items) {
+      if (!message) continue;
+      const key = resolveMessageKey(message);
+      if (key) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
       records.push(message);
     }
   }
@@ -40,186 +43,123 @@ const normaliseMessages = (pages) => {
   });
 };
 
-const buildTimeline = ({ messages, ticket, notes }) => {
-  const grouped = [];
-  let currentDay = null;
+const SALES_LABELS = {
+  simulation: 'Simulação registrada',
+  proposal: 'Proposta registrada',
+  deal: 'Venda registrada',
+};
 
-  const pushDivider = (date) => {
-    grouped.push({
-      type: 'divider',
-      id: `divider-${date?.toISOString?.() ?? 'unknown'}`,
-      label: getDayLabel(date),
-      date,
+const buildSalesEntries = (ticket) => {
+  if (!Array.isArray(ticket?.salesTimeline)) return [];
+  const entries = [];
+  ticket.salesTimeline.forEach((event, index) => {
+    if (!event) return;
+    const createdAt = asDate(event.createdAt ?? event.date ?? event.timestamp ?? null);
+    const rawType = typeof event.type === 'string' ? event.type : 'event';
+    const [kind] = rawType.split('.');
+    const basePayload =
+      event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload) ? { ...event.payload } : {};
+    // Etapa do lead no momento do evento (valores antigos são normalizados para o funil único).
+    const leadStage = parseLeadStage(event.stage ?? basePayload.stage ?? null);
+
+    entries.push({
+      id: event.id ? `sales-${event.id}` : `sales-${index}`,
+      date: createdAt,
+      type: kind || 'event',
+      payload: {
+        ...basePayload,
+        label: basePayload.label ?? SALES_LABELS[kind] ?? 'Atualização de vendas',
+        description: basePayload.description ?? basePayload.body ?? null,
+        calculationSnapshot: basePayload.calculationSnapshot ?? null,
+        stage: leadStage,
+        stageLabel: leadStage ? LEAD_STAGE_DEFINITIONS[leadStage].label : null,
+        eventType: rawType,
+        actorId: event.actorId ?? null,
+        metadata: event.metadata ?? basePayload.metadata ?? null,
+      },
     });
-  };
+  });
+  return entries;
+};
 
-  const ensureDivider = (date) => {
-    if (!date) {
-      if (currentDay === null) {
-        pushDivider(null);
-        currentDay = null;
-      }
-      return;
-    }
-    const dayKey = format(date, 'yyyy-MM-dd');
-    if (currentDay !== dayKey) {
-      pushDivider(date);
-      currentDay = dayKey;
-    }
-  };
-
-  const timeline = [];
+/**
+ * Único construtor da linha do tempo da conversa: mensagens, notas internas e eventos
+ * de vendas em ordem cronológica, com divisores de dia ("Hoje", "Ontem", "24 de novembro").
+ */
+export const buildConversationTimeline = ({ messages = [], ticket = null, notes = [] } = {}) => {
+  const entries = [];
 
   messages.forEach((message, index) => {
-    const createdAt = asDate(message.createdAt);
-    ensureDivider(createdAt);
     const canonicalKey =
-      resolveMessageKey(message) ??
-      (typeof message.externalId === 'string' && message.externalId.trim().length > 0
-        ? message.externalId.trim()
-        : null) ??
-      (message.id ? String(message.id) : null) ??
-      `message-${index}`;
-    timeline.push({
+      resolveMessageKey(message) ?? (message?.id ? String(message.id) : null) ?? `message-${index}`;
+    entries.push({
       type: 'message',
       id: canonicalKey,
-      date: createdAt,
+      date: asDate(message?.createdAt),
       payload: message,
     });
   });
 
-  const events = [];
-  const leadEvents = [];
-  const salesEvents = [];
-
-  if (ticket?.timeline) {
-    const { firstInboundAt, firstOutboundAt } = ticket.timeline;
-    if (firstInboundAt) {
-      events.push({
-        id: 'event-first-inbound',
-        date: asDate(firstInboundAt),
-        label: 'Primeira mensagem do cliente',
-      });
-    }
-    if (firstOutboundAt) {
-      events.push({
-        id: 'event-first-outbound',
-        date: asDate(firstOutboundAt),
-        label: 'Primeira resposta enviada',
-      });
-    }
-  }
-
-  if (Array.isArray(notes) && notes.length > 0) {
-    for (const note of notes) {
-      leadEvents.push({
-        id: `note-${note.id}`,
-        date: asDate(note.createdAt ?? note.updatedAt ?? Date.now()),
+  if (Array.isArray(notes)) {
+    notes.forEach((note, index) => {
+      if (!note) return;
+      entries.push({
         type: 'note',
+        id: `note-${note.id ?? index}`,
+        date: asDate(note.createdAt ?? note.updatedAt ?? null),
         payload: note,
       });
-    }
+    });
   }
 
-  if (Array.isArray(ticket?.salesTimeline)) {
-    ticket.salesTimeline.forEach((event, index) => {
-      if (!event) {
-        return;
-      }
+  entries.push(...buildSalesEntries(ticket));
 
-      const createdAt = asDate(event.createdAt ?? event.date ?? event.timestamp ?? null);
-      const rawType = typeof event.type === 'string' ? event.type : 'event';
-      const [kind] = rawType.split('.');
-      const normalizedStage = normalizeSalesStage(event.stage ?? event.payload?.stage ?? null);
-      const stageLabel = normalizedStage !== 'DESCONHECIDO' ? formatStageLabel(normalizedStage) : null;
-      const stageValue =
-        normalizedStage !== 'DESCONHECIDO'
-          ? getStageValue(normalizedStage)
-          : null;
-      const legacyStageValue =
-        normalizedStage !== 'DESCONHECIDO'
-          ? getLegacyStageValue(normalizedStage)
-          : null;
-      const basePayload =
-        event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
-          ? { ...event.payload }
-          : {};
+  // Ordenação estável: empate mantém a ordem de inserção.
+  const sorted = entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const left = a.entry.date ? a.entry.date.getTime() : 0;
+      const right = b.entry.date ? b.entry.date.getTime() : 0;
+      return left - right || a.index - b.index;
+    })
+    .map(({ entry }) => entry);
 
-      const labelMap = {
-        simulation: 'Simulação registrada',
-        proposal: 'Proposta registrada',
-        deal: 'Negócio registrado',
-      };
-
-      const entryLabel = labelMap[kind] ?? 'Atualização de vendas';
-
-      salesEvents.push({
-        id: event.id ? `sales-${event.id}` : `sales-${index}`,
-        date: createdAt,
-        type: kind,
-        payload: {
-          ...basePayload,
-          label: basePayload.label ?? entryLabel,
-          description: basePayload.description ?? basePayload.body ?? null,
-          calculationSnapshot: basePayload.calculationSnapshot ?? null,
-          stageKey: normalizedStage !== 'DESCONHECIDO' ? normalizedStage : null,
-          stageLabel,
-          stageValue,
-          legacyStageValue,
-          eventType: rawType,
-          actorId: event.actorId ?? null,
-          metadata: event.metadata ?? null,
-        },
+  const timeline = [];
+  let currentDay;
+  sorted.forEach((entry) => {
+    const dayKey = entry.date ? format(entry.date, 'yyyy-MM-dd') : 'sem-data';
+    if (dayKey !== currentDay) {
+      currentDay = dayKey;
+      timeline.push({
+        type: 'divider',
+        id: `divider-${dayKey}`,
+        label: getDayLabel(entry.date),
+        date: entry.date,
       });
-    });
-  }
-
-  const combinedEvents = [...events, ...leadEvents, ...salesEvents].sort((a, b) => {
-    const left = asDate(a.date)?.getTime() ?? 0;
-    const right = asDate(b.date)?.getTime() ?? 0;
-    return left - right;
+    }
+    timeline.push(entry);
   });
 
-  combinedEvents.forEach((entry) => {
-    const date = asDate(entry.date);
-    ensureDivider(date);
-    timeline.push({
-      type:
-        entry.type === 'note'
-          ? 'note'
-          : entry.type === 'simulation' || entry.type === 'proposal' || entry.type === 'deal'
-            ? entry.type
-            : 'event',
-      id: entry.id,
-      date,
-      payload: entry.payload ?? entry,
-    });
-  });
-
-  return timeline.sort((a, b) => {
-    const left = a.date ? a.date.getTime() : 0;
-    const right = b.date ? b.date.getTime() : 0;
-    return left - right;
-  });
+  return timeline;
 };
+
+const EMPTY = [];
 
 export const useConversationState = ({ ticket, messagesPages, notes }) => {
   const messages = useMemo(() => normaliseMessages(messagesPages), [messagesPages]);
+  const resolvedNotes = Array.isArray(notes) ? notes : EMPTY;
 
   const timeline = useMemo(
-    () => buildTimeline({ messages, ticket, notes }),
-    [messages, ticket, notes]
+    () => buildConversationTimeline({ messages, ticket, notes: resolvedNotes }),
+    [messages, ticket, resolvedNotes],
   );
 
   const statistics = useMemo(() => {
-    const totalMessages = messages.length;
     const lastInbound = ticket?.timeline?.lastInboundAt ? asDate(ticket.timeline.lastInboundAt) : null;
-    const window = ticket?.window ?? null;
-
     return {
-      totalMessages,
+      totalMessages: messages.length,
       lastInbound,
-      window,
+      window: ticket?.window ?? null,
     };
   }, [messages.length, ticket?.timeline, ticket?.window]);
 

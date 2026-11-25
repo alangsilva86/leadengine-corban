@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,7 +21,7 @@ describe('FilterToolbar', () => {
     onRefresh: () => {},
   };
 
-  it('exibe o botão circular com ícone de WhatsApp para iniciar conversa manual', async () => {
+  it('exibe o botão de nova conversa no WhatsApp', async () => {
     const onStartManualConversation = vi.fn();
     render(
       <FilterToolbar
@@ -32,11 +32,13 @@ describe('FilterToolbar', () => {
     );
 
     const button = screen.getByRole('button', {
-      name: /iniciar nova conversa manual no whatsapp/i,
+      name: /nova conversa no whatsapp/i,
     });
     expect(button).toBeInTheDocument();
 
-    await userEvent.click(button);
+    // fireEvent em vez de user-event: o tooltip do Radix abre no hover simulado e, no jsdom,
+    // às vezes engole o clique (teste instável). O clique real é coberto pelo e2e do piloto.
+    fireEvent.click(button);
 
     expect(onStartManualConversation).toHaveBeenCalledTimes(1);
   });
@@ -53,5 +55,36 @@ describe('FilterToolbar', () => {
     expect(
       screen.getByText(reason, { exact: false })
     ).toBeInTheDocument();
+  });
+
+  it('mostra "Conversas (n)", abas Minhas/Todas e filtros rápidos', async () => {
+    const onFiltersChange = vi.fn();
+    const onQuickFilterChange = vi.fn();
+    render(
+      <FilterToolbar
+        {...defaultProps}
+        total={12}
+        filters={{ scope: 'team' }}
+        onFiltersChange={onFiltersChange}
+        onQuickFilterChange={onQuickFilterChange}
+      />
+    );
+
+    expect(screen.getByRole('heading', { name: /Conversas/ })).toHaveTextContent('Conversas(12)');
+    expect(screen.getByRole('tab', { name: 'Todas' })).toHaveAttribute('aria-selected', 'true');
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Minhas' }));
+    expect(onFiltersChange).toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Não lidas' }));
+    expect(onQuickFilterChange).toHaveBeenCalledWith('unread');
+  });
+
+  it('usa a busca por nome ou telefone', async () => {
+    const onSearchChange = vi.fn();
+    render(<FilterToolbar {...defaultProps} onSearchChange={onSearchChange} />);
+
+    await userEvent.type(screen.getByRole('searchbox', { name: /Buscar conversas/ }), 'a');
+    expect(onSearchChange).toHaveBeenCalledWith('a');
   });
 });

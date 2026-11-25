@@ -1,6 +1,6 @@
-import type { NormalizedQrPayload } from '@ticketz/wa-contracts';
+import type { NormalizedQrPayload } from '@ticketz/wa-contracts/v1/qr';
 
-export type { NormalizedQrPayload } from '@ticketz/wa-contracts';
+export type { NormalizedQrPayload } from '@ticketz/wa-contracts/v1/qr';
 
 export interface QrImageMeta {
   code: string | null;

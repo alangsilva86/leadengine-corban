@@ -1,6 +1,7 @@
 import { getAuthToken, getTenantId, onAuthTokenChange, onTenantIdChange } from './auth.js';
 import { computeBackoffDelay, parseRetryAfterMs } from './rate-limit.js';
 import { getEnvVar } from './runtime-env.js';
+import { getStatusMessage } from './errors.js';
 
 const shouldUseSameOriginBase = (rawValue) => {
   // Only opt into same-origin when explicitly requested via the env value.
@@ -176,8 +177,9 @@ const dispatchUnauthorizedEvent = () => {
 const handleResponse = async (response, path) => {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload?.success === false) {
-    const errorMessage = payload?.error?.message || response.statusText;
-    const error = new Error(errorMessage || 'Erro ao comunicar com a API');
+    // Nunca usar statusText ("Not Found") como mensagem: ele vaza para toasts em inglês.
+    const errorMessage = payload?.error?.message || getStatusMessage(response.status);
+    const error = new Error(errorMessage || 'Erro ao comunicar com o servidor.');
     error.status = response.status;
     error.statusText = response.statusText;
     error.payload = payload;
@@ -362,6 +364,18 @@ export const apiPatch = async (path, body, options = {}) => {
   return safeFetch(path, {
     ...prepared,
     method: 'PATCH',
+    headers,
+    body: JSON.stringify(body),
+    credentials: prepared.credentials ?? 'include',
+  });
+};
+
+export const apiPut = async (path, body, options = {}) => {
+  const prepared = prepareOptions(options);
+  const headers = { ...prepared.headers, 'Content-Type': 'application/json' };
+  return safeFetch(path, {
+    ...prepared,
+    method: 'PUT',
     headers,
     body: JSON.stringify(body),
     credentials: prepared.credentials ?? 'include',

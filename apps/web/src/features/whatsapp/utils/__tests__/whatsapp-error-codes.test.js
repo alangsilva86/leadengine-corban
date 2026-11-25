@@ -41,7 +41,7 @@ describe('WhatsApp error copy helpers', () => {
     expect(copy).toMatchObject({
       code: 'BROKER_NOT_CONFIGURED',
       title: expect.stringContaining('não configurado'),
-      description: expect.stringContaining('Conecte uma instância'),
+      description: expect.stringContaining('Conecte um número'),
     });
   });
 

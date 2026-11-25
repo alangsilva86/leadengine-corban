@@ -78,13 +78,16 @@ export const useDashboardData = (): DashboardDataHookResult => {
 
   const stats = useMemo<DashboardStat[]>(() => {
     const messageChange = overview && overview.messagesYesterday > 0
-      ? `${(((overview.messagesToday - overview.messagesYesterday) / overview.messagesYesterday) * 100).toFixed(0)}%`
+      ? (() => {
+          const pct = Math.round(((overview.messagesToday - overview.messagesYesterday) / overview.messagesYesterday) * 100);
+          return `${pct > 0 ? '+' : ''}${pct}% vs. ontem`;
+        })()
       : '—';
 
     return [
       {
         id: 'activeTickets',
-        title: 'Tickets Ativos',
+        title: 'Conversas abertas',
         value: formatNumberValue(overview?.activeTickets),
         change: '—',
         trend: 'neutral',
@@ -102,7 +105,7 @@ export const useDashboardData = (): DashboardDataHookResult => {
       },
       {
         id: 'messagesToday',
-        title: 'Mensagens Hoje',
+        title: 'Mensagens hoje',
         value: formatNumberValue(overview?.messagesToday),
         change: messageChange,
         trend: deriveTrend(messageChange),
@@ -111,7 +114,7 @@ export const useDashboardData = (): DashboardDataHookResult => {
       },
       {
         id: 'conversionRate',
-        title: 'Taxa de Conversão',
+        title: 'Taxa de conversão',
         value: formatPercentValue(overview?.conversionRate),
         change: '—',
         trend: 'neutral',

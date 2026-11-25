@@ -1,226 +1,83 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Archive, CheckCircle2, CircleDashed, Clock3, HelpCircle, UserCheck } from 'lucide-react';
+import { ClipboardList, FileText, PanelRight, UserCheck } from 'lucide-react';
+import { Button } from '@/components/ui/button.jsx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
+import { cn } from '@/lib/utils.js';
 import emitInboxTelemetry from '../../utils/telemetry.js';
 import { usePhoneActions } from '../../hooks/usePhoneActions.js';
+import { ACTIONS_BY_ID } from '../../actions/inventory';
+import { getTicketIdentity } from '../../utils/ticketIdentity.js';
 import CallResultDialog from './CallResultDialog.jsx';
 import OutcomeDialog from './OutcomeDialog.jsx';
-import useTicketJro from '../../hooks/useTicketJro.js';
-import PrimaryActionBanner, { PrimaryActionButton } from './PrimaryActionBanner.jsx';
-import useTicketStageInfo from './hooks/useTicketStageInfo.js';
-import { DEFAULT_AI_MODE, AI_MODE_OPTIONS, isValidAiMode } from './aiModes.js';
-import { getTicketIdentity } from '../../utils/ticketIdentity.js';
-import useInstancePresentation from '../../hooks/useInstancePresentation.js';
+import AssignTicketPopover from './AssignTicketPopover.jsx';
+import HeaderIdentity from './header/HeaderIdentity.jsx';
+import HeaderStatus from './header/HeaderStatus.jsx';
+import TicketTimeChip from './header/TicketTimeChip.jsx';
+import HeaderPrimaryAction, { PrimaryActionButton } from './header/HeaderPrimaryAction.jsx';
+import HeaderOverflow from './header/HeaderOverflow.jsx';
+import useTicketLeadStage from './hooks/useTicketLeadStage.js';
+import { DEFAULT_AI_MODE } from './aiModes.js';
 import { LOSS_REASONS, LOSS_REASON_HELPERS } from './lossReasons.js';
+import { getOutcomeModeForStage, isResultStage } from '../../utils/leadStage.js';
+import {
+  isTicketClosed,
+  isWhatsAppTicket,
+  resolveTicketAssignee,
+  resolveTicketInstanceId,
+  resolveWaitingState,
+  resolveWindowState,
+} from './utils/presentation.js';
 
 export const GENERATE_PROPOSAL_ANCHOR_ID = 'command-generate-proposal';
 
-const STATUS_PRESENTATION = {
-  OPEN: { label: 'Aberto', tone: 'info', icon: CircleDashed },
-  PENDING: { label: 'Pendente', tone: 'warning', icon: Clock3 },
-  ASSIGNED: { label: 'Em atendimento', tone: 'info', icon: UserCheck },
-  RESOLVED: { label: 'Resolvido', tone: 'success', icon: CheckCircle2 },
-  CLOSED: { label: 'Fechado', tone: 'neutral', icon: Archive },
-};
-
-const INDICATOR_TONES = {
-  info: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
-  warning: 'border-warning-soft-border bg-warning-soft text-warning-strong',
-  danger: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
-  neutral: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
-  success: 'border-success-soft-border bg-success-soft text-success-strong',
-};
-
-const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
-
-const AI_CONFIDENCE_TONES = {
-  high: 'border-success-soft-border bg-success-soft text-success-strong',
-  medium: 'border-warning-soft-border bg-warning-soft text-warning-strong',
-  low: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
-  unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
-};
-
-const PRIMARY_ACTION_PRESETS = {
-  initialContact: {
-    whatsapp: { id: 'send-initial-wa', label: 'Enviar 1ª mensagem (WhatsApp)' },
-    validateContact: { id: 'validate-contact', label: 'Validar contato' },
-    fallback: { id: 'call-now', label: 'Ligar agora' },
-  },
-  keepEngagement: {
-    whatsapp: { id: 'send-wa', label: 'Enviar mensagem (WhatsApp)' },
-    validateContact: { id: 'validate-contact', label: 'Validar contato' },
-    fallback: { id: 'call-now', label: 'Ligar agora' },
-  },
-  qualify: {
-    default: { id: 'qualify', label: 'Registrar próximo passo' },
-  },
-  proposal: {
-    default: { id: 'qualify', label: 'Registrar próximo passo' },
-  },
-  documentation: {
-    default: { id: 'send-steps', label: 'Enviar passo a passo' },
-  },
-  followUp: {
-    whatsapp: { id: 'send-followup', label: 'Enviar follow-up' },
-    fallback: { id: 'call-followup', label: 'Ligar (follow-up)' },
-  },
-  closeDeal: {
-    default: { id: 'close-register', label: 'Registrar resultado' },
-  },
-};
-
-const PRIMARY_ACTION_MAP = {
-  NOVO: PRIMARY_ACTION_PRESETS.initialContact,
-  CONECTADO: PRIMARY_ACTION_PRESETS.keepEngagement,
-  QUALIFICACAO: PRIMARY_ACTION_PRESETS.qualify,
-  PROPOSTA: PRIMARY_ACTION_PRESETS.proposal,
-  DOCUMENTACAO: PRIMARY_ACTION_PRESETS.documentation,
-  DOCUMENTOS_AVERBACAO: PRIMARY_ACTION_PRESETS.documentation,
-  AGUARDANDO: PRIMARY_ACTION_PRESETS.followUp,
-  AGUARDANDO_CLIENTE: PRIMARY_ACTION_PRESETS.followUp,
-  LIQUIDACAO: PRIMARY_ACTION_PRESETS.closeDeal,
-  APROVADO_LIQUIDACAO: PRIMARY_ACTION_PRESETS.closeDeal,
-  RECICLAR: PRIMARY_ACTION_PRESETS.followUp,
-};
-
-const JRO_TONE_CLASSES = {
-  neutral: {
-    text: 'text-[color:var(--accent-inbox-primary)]',
-    bar: 'bg-[color:var(--accent-inbox-primary)]',
-    chip: 'bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_14%,transparent)]/80',
-  },
-  yellow: {
-    text: 'text-amber-300',
-    bar: 'bg-amber-400',
-    chip: 'bg-amber-300/10',
-  },
-  orange: {
-    text: 'text-orange-300',
-    bar: 'bg-orange-400',
-    chip: 'bg-orange-300/10',
-  },
-  overdue: {
-    text: 'text-red-400',
-    bar: 'bg-red-500',
-    chip: 'bg-red-400/10',
-    pulse: 'animate-pulse',
-  },
-};
-
-const PRIMARY_BUTTON_TONE = {
-  neutral: 'bg-[color:var(--accent-inbox-primary)] text-white hover:bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_88%,transparent)]',
-  yellow: 'bg-amber-500 text-white hover:bg-amber-500/90',
-  orange: 'bg-orange-500 text-white hover:bg-orange-500/90',
-  overdue: 'bg-red-500 text-white hover:bg-red-500/90 animate-pulse',
-};
-
-const DEAL_STAGE_KEYS = new Set(['LIQUIDACAO', 'APROVADO_LIQUIDACAO']);
-const CHANNEL_PRESENTATION = {
-  WHATSAPP: {
-    id: 'whatsapp',
-    label: 'WhatsApp',
-    className:
-      'border-[color:var(--color-status-whatsapp-border)] bg-[color:var(--color-status-whatsapp-surface)] text-[color:var(--color-status-whatsapp-foreground)]',
-  },
-  VOICE: {
-    id: 'voice',
-    label: 'Telefone',
-    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
-  },
-  EMAIL: {
-    id: 'email',
-    label: 'E-mail',
-    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
-  },
-  DEFAULT: {
-    id: 'unknown',
-    label: 'Canal não identificado',
-    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
-  },
-};
-
-const normalizeChannel = (value) => {
-  if (!value) return null;
-
-  const normalized = String(value)
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .trim()
-    .toUpperCase();
-
-  if (!normalized) {
-    return null;
+/**
+ * Uma única ação principal, pelo estado da conversa:
+ * sem responsável → "Assumir conversa"; IA no comando → "Assumir da IA";
+ * janela de 24 h encerrada → "Enviar modelo"; lead em Liquidação, Ganho ou Perdido com a conversa
+ * aberta → "Registrar resultado" (encerra a conversa com o resultado).
+ */
+export const resolveHeaderPrimaryAction = ({
+  ticket,
+  assignee,
+  aiMode,
+  windowState,
+  stage,
+  canAssign,
+  canTakeOver,
+  canOpenTemplates,
+}) => {
+  if (!ticket || isTicketClosed(ticket)) return null;
+  if (!assignee && canAssign) {
+    return { id: 'assign-self', label: 'Assumir conversa', shortLabel: 'Assumir', icon: UserCheck };
   }
-
-  if (normalized === 'PHONE' || normalized === 'TELEFONE' || normalized === 'CALL') {
-    return 'VOICE';
+  if (aiMode === 'auto' && canTakeOver) {
+    return { id: 'take-over-ai', label: 'Assumir da IA', shortLabel: 'Assumir', icon: UserCheck };
   }
-
-  if (normalized === 'E-MAIL' || normalized === 'MAIL') {
-    return 'EMAIL';
+  if (windowState?.state === 'closed' && canOpenTemplates) {
+    return { id: 'send-template', label: 'Enviar modelo', shortLabel: 'Modelo', icon: FileText };
   }
-
-  if (normalized === 'WA') {
-    return 'WHATSAPP';
+  if (isResultStage(stage)) {
+    return { id: 'register-result', label: 'Registrar resultado', shortLabel: 'Resultado', icon: ClipboardList };
   }
-
-  return normalized;
-};
-
-const resolveChannelInfo = (channel) => {
-  const normalized = normalizeChannel(channel);
-  return CHANNEL_PRESENTATION[normalized] ?? CHANNEL_PRESENTATION.DEFAULT;
-};
-
-const getOriginLabel = (ticket) => {
-  const origin =
-    ticket?.metadata?.origin ??
-    ticket?.metadata?.source ??
-    ticket?.origin ??
-    ticket?.source ??
-    null;
-  if (!origin) {
-    return null;
-  }
-  return origin;
-};
-
-const getStatusInfo = (status) => {
-  const normalized = status ? String(status).toUpperCase() : 'OPEN';
-  const presentation = STATUS_PRESENTATION[normalized] ?? {
-    label: normalized,
-    tone: 'neutral',
-    icon: HelpCircle,
-  };
-
-  return {
-    label: presentation.label ?? normalized,
-    tone: presentation.tone ?? 'neutral',
-    icon: presentation.icon ?? HelpCircle,
-  };
+  return null;
 };
 
 const ConversationHeader = ({
   ticket,
+  currentUser = null,
   onRegisterResult,
   onRegisterCallResult,
   onAssign,
-  onSendTemplate,
-  onCreateNextStep,
   onGenerateProposal,
   onScheduleFollowUp,
   onSendSMS,
   onAttachFile,
   onEditContact,
+  onOpenTemplates,
   typingAgents = [],
   isRegisteringResult = false,
-  renderSummary,
-  onContactFieldSave,
-  onDealFieldSave,
-  nextStepValue,
-  onNextStepSave,
   onFocusComposer,
-  composerHeight,
   aiMode = DEFAULT_AI_MODE,
   aiConfidence = null,
   aiModeChangeDisabled = false,
@@ -230,107 +87,67 @@ const ConversationHeader = ({
   onCreateNote,
   timeline = [],
   aiAssistant,
-  components,
   detailsOpen = false,
   onRequestDetails,
-  nextStepEditorRef: externalNextStepEditorRef,
-  primaryActionOverride = null,
+  onToggleDetails,
+  onBack,
+  onStageChange,
+  pendingStage = null,
+  className,
 }) => {
   const [activeDialog, setActiveDialog] = useState(null);
   const [outcomeMode, setOutcomeMode] = useState('success');
-  const internalNextStepEditorRef = useRef(null);
-  const nextStepEditorRef = externalNextStepEditorRef ?? internalNextStepEditorRef;
-
-  const focusNextStepEditor = useCallback(() => {
-    const target = nextStepEditorRef.current;
-    if (!target || typeof target.focus !== 'function') {
-      return false;
-    }
-    return Boolean(target.focus());
-  }, []);
-
-  const revealNextStepEditor = useCallback(() => {
-    onRequestDetails?.({ focus: 'nextStep' });
-    const timeoutId =
-      typeof window !== 'undefined'
-        ? window.setTimeout(() => {
-            const focused = focusNextStepEditor();
-            if (!focused) {
-              onFocusComposer?.();
-            }
-          }, 220)
-        : null;
-
-    return () => {
-      if (timeoutId && typeof window !== 'undefined') {
-        window.clearTimeout(timeoutId);
-      }
-    };
-  }, [focusNextStepEditor, onFocusComposer, onRequestDetails]);
-
   const dialogReturnFocusRef = useRef(null);
-  const jro = useTicketJro(ticket);
-  const {
-    stageKey,
-    stageInfo,
-    primaryAction: derivedPrimaryAction,
-  } = useTicketStageInfo(ticket);
-  const primaryAction = primaryActionOverride ?? derivedPrimaryAction;
+  const focusMap = useRef(new Map());
+  const { stage } = useTicketLeadStage(ticket);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    emitInboxTelemetry('chat.header.viewed', {
-      ticketId: ticket?.id ?? null,
-    });
+    const interval = setInterval(() => setNow(Date.now()), 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    emitInboxTelemetry('chat.header.viewed', { ticketId: ticket?.id ?? null });
   }, [ticket?.id]);
 
   const identity = useMemo(() => getTicketIdentity(ticket), [ticket]);
   const name = identity.displayName ?? ticket?.subject ?? 'Contato sem nome';
-  const company = ticket?.metadata?.company ?? ticket?.contact?.company ?? null;
-  const title = company ? `${name} | ${company}` : name;
-  const leadIdentifier = ticket?.lead?.id ?? ticket?.id ?? null;
-  const shortId = useMemo(() => {
-    if (!leadIdentifier) return null;
-    const normalized = String(leadIdentifier);
-    if (normalized.length <= 8) return normalized.toUpperCase();
-    if (normalized.includes('-')) {
-      const segments = normalized.split('-');
-      return segments[segments.length - 1].slice(0, 8).toUpperCase();
-    }
-    return normalized.slice(-8).toUpperCase();
-  }, [leadIdentifier]);
-
   const rawPhone = identity.rawPhone ?? ticket?.contact?.phone ?? ticket?.metadata?.contactPhone ?? null;
+  const instanceId = resolveTicketInstanceId(ticket);
+  const whatsapp = isWhatsAppTicket(ticket);
+  const contactId = ticket?.contact?.id ?? ticket?.contactId ?? null;
+  const shortId = useMemo(() => {
+    const identifier = ticket?.id ?? null;
+    if (!identifier) return null;
+    const normalized = String(identifier);
+    return normalized.length <= 8 ? normalized.toUpperCase() : normalized.slice(-8).toUpperCase();
+  }, [ticket?.id]);
 
-  const statusInfo = useMemo(() => getStatusInfo(ticket?.status), [ticket?.status]);
-  const origin = useMemo(() => getOriginLabel(ticket), [ticket]);
-  const originInfo = useMemo(() => (origin ? resolveChannelInfo(origin) : null), [origin]);
-  const instanceId =
-    ticket?.metadata?.sourceInstance ??
-    ticket?.instanceId ??
-    ticket?.metadata?.instanceId ??
-    null;
-  const instancePresentation = useInstancePresentation(instanceId);
+  const assignee = useMemo(() => resolveTicketAssignee(ticket, currentUser), [currentUser, ticket]);
+  const windowState = useMemo(() => resolveWindowState(ticket, now), [now, ticket]);
+  const waiting = useMemo(() => resolveWaitingState(ticket, now), [now, ticket]);
 
   const phoneAction = usePhoneActions(rawPhone, {
-    missingPhoneMessage: 'Nenhum telefone disponível para este lead.',
+    missingPhoneMessage: 'Este contato não tem telefone cadastrado.',
   });
-
-  const handleCall = useCallback(() => {
-    phoneAction('call');
-  }, [phoneAction]);
-
+  const handleCall = useCallback(() => phoneAction('call'), [phoneAction]);
   const handleSendSms = useCallback(() => {
     phoneAction('sms');
     onSendSMS?.(rawPhone);
   }, [onSendSMS, phoneAction, rawPhone]);
 
-  const openDialog = useCallback((dialog, { returnFocus } = {}) => {
-    dialogReturnFocusRef.current = returnFocus ?? null;
-    if (dialog === 'register-result') {
-      setOutcomeMode('success');
-    }
-    setActiveDialog(dialog);
-  }, []);
+  const openDialog = useCallback(
+    (dialog, { returnFocus } = {}) => {
+      dialogReturnFocusRef.current = returnFocus ?? null;
+      if (dialog === 'register-result') {
+        // Lead já marcado como Perdido: o diálogo abre direto no registro da perda.
+        setOutcomeMode(getOutcomeModeForStage(stage));
+      }
+      setActiveDialog(dialog);
+    },
+    [stage],
+  );
 
   const closeDialog = useCallback(() => {
     setActiveDialog(null);
@@ -376,13 +193,7 @@ const ConversationHeader = ({
       try {
         await onRegisterResult({
           outcome: 'won',
-          metadata: {
-            installment,
-            netAmount,
-            term,
-            product,
-            bank,
-          },
+          metadata: { installment, netAmount, term, product, bank },
           reason: notes,
         });
         closeDialog();
@@ -419,9 +230,7 @@ const ConversationHeader = ({
         canEditContact: Boolean(ticket?.contact?.id),
       },
       phoneNumber: rawPhone ?? null,
-      loadingStates: {
-        registerResult: isRegisteringResult,
-      },
+      loadingStates: { registerResult: isRegisteringResult },
       openDialog,
       analytics: ({ id }) => emitInboxTelemetry('chat.command.execute', { ticketId: ticket?.id ?? null, actionId: id }),
       timeline,
@@ -430,12 +239,12 @@ const ConversationHeader = ({
     }),
     [
       aiAssistant,
-      identity,
       handleCall,
       handleSendSms,
+      identity,
       isRegisteringResult,
-      onAttachFile,
       onAssign,
+      onAttachFile,
       onCreateNote,
       onEditContact,
       onGenerateProposal,
@@ -444,100 +253,136 @@ const ConversationHeader = ({
       onScheduleFollowUp,
       openDialog,
       rawPhone,
-      timeline,
       ticket,
+      timeline,
     ],
   );
 
-  const handlePrimaryAction = useCallback(() => {
-    if (!primaryAction) {
-      return;
-    }
-
-    switch (primaryAction.id) {
-      case 'send-initial-wa':
-      case 'send-wa':
-        onFocusComposer?.();
-        break;
-      case 'call-now':
-      case 'call-followup':
-        handleCall();
-        break;
-      case 'validate-contact':
-        onEditContact?.(ticket?.contact?.id ?? null);
-        break;
-      case 'qualify':
-        revealNextStepEditor();
-        break;
-      case 'generate-proposal':
-        onGenerateProposal?.(ticket);
-        break;
-      case 'send-steps':
-        onSendTemplate?.({ id: 'steps' });
-        break;
-      case 'send-followup':
-        onScheduleFollowUp?.(ticket);
-        break;
-      case 'close-register':
-        openDialog('register-result');
-        break;
-      default:
-        break;
-    }
-  }, [
-    handleCall,
-    onFocusComposer,
-    onGenerateProposal,
-    onScheduleFollowUp,
-    onSendTemplate,
-    openDialog,
-    primaryAction,
-    revealNextStepEditor,
+  const primaryAction = resolveHeaderPrimaryAction({
     ticket,
-    onEditContact,
-  ]);
+    assignee,
+    aiMode,
+    windowState,
+    stage,
+    canAssign: typeof onAssign === 'function',
+    canTakeOver: typeof onTakeOver === 'function',
+    canOpenTemplates: typeof onOpenTemplates === 'function',
+  });
 
-  const {
-    PrimaryActionBanner: PrimaryActionBannerComponent = PrimaryActionBanner,
-  } = components ?? {};
-
-  const summaryContent = (
-    <PrimaryActionBannerComponent
-      name={name}
-      title={title}
-      shortId={shortId}
-      ticket={ticket}
-      statusInfo={statusInfo}
-      stageKey={stageKey}
-      stageInfo={stageInfo}
-      originInfo={originInfo}
-      typingAgents={typingAgents}
-      primaryAction={primaryAction}
-      onPrimaryAction={handlePrimaryAction}
-      jro={jro}
-      commandContext={commandContext}
-      detailsOpen={detailsOpen}
-      onRequestDetails={onRequestDetails}
-      nextStepValue={nextStepValue}
-      aiMode={aiMode}
-      aiConfidence={aiConfidence}
-      aiModeChangeDisabled={aiModeChangeDisabled}
-      onAiModeChange={onAiModeChange}
-      onTakeOver={onTakeOver}
-      onGiveBackToAi={onGiveBackToAi}
-      contactPhone={identity.displayPhone ?? identity.remoteJid ?? null}
-      instanceId={instanceId}
-      instancePresentation={instancePresentation}
-    />
+  const handlePrimaryAction = useCallback(
+    (event) => {
+      if (!primaryAction) return;
+      emitInboxTelemetry('chat.header.primary_action', { ticketId: ticket?.id ?? null, actionId: primaryAction.id });
+      switch (primaryAction.id) {
+        case 'assign-self':
+          onAssign?.(ticket, currentUser?.id ?? null);
+          break;
+        case 'take-over-ai':
+          onTakeOver?.();
+          onFocusComposer?.();
+          break;
+        case 'send-template':
+          onOpenTemplates?.();
+          break;
+        case 'register-result':
+          openDialog('register-result', { returnFocus: event?.currentTarget ?? null });
+          break;
+        default:
+          break;
+      }
+    },
+    [currentUser?.id, onAssign, onFocusComposer, onOpenTemplates, onTakeOver, openDialog, primaryAction, ticket],
   );
 
-  const renderedSummary = renderSummary
-    ? renderSummary(summaryContent)
-    : summaryContent;
+  const assignEntry = useMemo(() => {
+    const definition = ACTIONS_BY_ID['assign-owner'];
+    return {
+      definition,
+      canExecute: definition?.canExecute?.(commandContext) ?? true,
+      state: definition?.getState?.(commandContext) ?? {},
+    };
+  }, [commandContext]);
+
+  const typingLabel = typingAgents.length > 0 ? `${typingAgents[0]?.userName ?? 'Alguém da equipe'} digitando…` : null;
+
+  const handleToggleDetails = () => {
+    if (onToggleDetails) {
+      onToggleDetails();
+    } else {
+      onRequestDetails?.({});
+    }
+  };
 
   return (
-    <section className="relative z-10 flex flex-col gap-3 px-0 py-1.5">
-      {renderedSummary}
+    <header
+      data-testid="conversation-header-summary"
+      className={cn('@container shrink-0 border-b border-border bg-background', className)}
+    >
+      <div className="flex min-h-14 items-center gap-2 px-3 py-2 @xl:gap-3 @xl:px-4">
+      <HeaderIdentity
+        name={name}
+        phone={identity.displayPhone ?? null}
+        instanceId={instanceId}
+        isWhatsApp={whatsapp}
+        typingLabel={typingLabel}
+        onBack={onBack}
+      />
+      <HeaderStatus
+        stage={stage}
+        onStageChange={onStageChange}
+        pendingStage={pendingStage}
+        time={<TicketTimeChip ticket={ticket} windowState={windowState} waiting={waiting} />}
+        className="hidden @2xl:flex"
+      />
+      <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+        {typeof onAssign === 'function' && assignEntry.definition ? (
+          <AssignTicketPopover
+            entry={assignEntry}
+            context={commandContext}
+            focusMap={focusMap}
+            currentUser={currentUser}
+            buttonClassName="hidden @md:inline-flex"
+          />
+        ) : null}
+        <HeaderPrimaryAction
+          action={primaryAction}
+          onExecute={handlePrimaryAction}
+          loading={primaryAction?.id === 'register-result' && isRegisteringResult}
+        />
+        <HeaderOverflow
+          context={commandContext}
+          focusMap={focusMap}
+          ticket={ticket}
+          contactId={contactId}
+          shortId={shortId}
+          primaryActionId={primaryAction?.id ?? null}
+          aiMode={aiMode}
+          aiConfidence={aiConfidence}
+          aiModeChangeDisabled={aiModeChangeDisabled}
+          onAiModeChange={onAiModeChange}
+          onTakeOver={onTakeOver}
+          onGiveBackToAi={onGiveBackToAi}
+          onOpenDetails={ticket?.id ? handleToggleDetails : undefined}
+        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Mostrar detalhes do contato"
+              aria-pressed={detailsOpen}
+              aria-expanded={detailsOpen}
+              className={cn('hidden @md:inline-flex', detailsOpen && 'bg-surface-sunken text-foreground')}
+              disabled={!ticket?.id}
+              onClick={handleToggleDetails}
+            >
+              <PanelRight aria-hidden />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{detailsOpen ? 'Fechar painel do contato' : 'Painel do contato'}</TooltipContent>
+        </Tooltip>
+      </div>
       <OutcomeDialog
         open={activeDialog === 'register-result'}
         mode={outcomeMode}
@@ -565,7 +410,8 @@ const ConversationHeader = ({
         }}
         onSubmit={handleCallResultSubmit}
       />
-    </section>
+      </div>
+    </header>
   );
 };
 

@@ -20,7 +20,8 @@ const buildError = (error) => {
   return new Error(typeof error === 'string' ? error : 'Falha ao gerar QR Code');
 };
 
-const QR_OPTIONS = { type: 'image/png', errorCorrectionLevel: 'M', margin: 1 };
+// Margem de 2 módulos (zona de silêncio branca) e 528px para ficar nítido em telas 2x quando exibido a 264px.
+const QR_OPTIONS = { type: 'image/png', errorCorrectionLevel: 'M', margin: 2, width: 528 };
 
 export default function useQrImageSource(qrPayload) {
   const qrMeta = useMemo(() => getQrImageSrc(qrPayload), [qrPayload]);

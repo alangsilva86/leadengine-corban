@@ -84,7 +84,7 @@ const LossReasonDialog = ({
               </SelectContent>
             </Select>
             {submitted && !reason ? (
-              <p className="text-xs text-rose-300">Selecione um motivo para continuar.</p>
+              <p className="text-xs text-danger-soft-foreground">Selecione um motivo para continuar.</p>
             ) : null}
           </div>
           <div className="space-y-2">

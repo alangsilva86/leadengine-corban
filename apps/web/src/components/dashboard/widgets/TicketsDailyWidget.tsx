@@ -2,8 +2,9 @@ import { memo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
-import { CartesianGrid, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { CartesianGrid, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { TicketSeriesEntry } from '../useDashboardData';
+import { chartAxis, chartGrid, chartLegend, chartTooltip } from './chart-theme';
 
 export interface TicketsDailyWidgetProps {
   data: TicketSeriesEntry[];
@@ -12,30 +13,31 @@ export interface TicketsDailyWidgetProps {
 }
 
 const TicketsDailyWidgetComponent = ({ data, loading = false, className }: TicketsDailyWidgetProps) => (
-  <Card className={cn('transition-shadow duration-200 hover:shadow-lg', className)}>
+  <Card className={cn('gap-4', className)}>
     <CardHeader>
-      <CardTitle>Tickets por Dia</CardTitle>
-      <CardDescription>Acompanhe o volume de tickets abertos, fechados e pendentes</CardDescription>
+      <CardTitle>Conversas por dia</CardTitle>
+      <CardDescription>Abertas, pendentes e encerradas nos últimos 7 dias.</CardDescription>
     </CardHeader>
     <CardContent>
       {loading ? (
-        <Skeleton className="h-[300px] w-full rounded-lg" data-testid="tickets-daily-skeleton" />
+        <Skeleton className="h-[280px] w-full rounded-lg" data-testid="tickets-daily-skeleton" />
       ) : (
         <>
-          <ResponsiveContainer width="100%" height={300} data-testid="tickets-daily-chart">
-            <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="abertos" fill="var(--color-error)" name="Abertos" />
-              <Bar dataKey="fechados" fill="var(--color-success)" name="Fechados" />
-              <Bar dataKey="pendentes" fill="var(--color-warning)" name="Pendentes" />
+          <ResponsiveContainer width="100%" height={280} data-testid="tickets-daily-chart">
+            <BarChart data={data} barGap={2}>
+              <CartesianGrid {...chartGrid} />
+              <XAxis dataKey="name" {...chartAxis} />
+              <YAxis allowDecimals={false} width={32} {...chartAxis} />
+              <Tooltip {...chartTooltip} />
+              <Legend {...chartLegend} />
+              <Bar dataKey="abertos" stackId="conversas" fill="var(--color-chart-1)" name="Abertas" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="pendentes" stackId="conversas" fill="var(--color-chart-5)" name="Pendentes" />
+              <Bar dataKey="fechados" stackId="conversas" fill="var(--color-chart-4)" name="Encerradas" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
           {data.length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground" data-testid="tickets-daily-empty">
-              Nenhum ticket registrado nos últimos dias.
+              Nenhuma conversa nos últimos dias.
             </p>
           ) : null}
         </>

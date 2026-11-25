@@ -37,6 +37,7 @@ const ManualConversationDialog = ({
   onSuccess,
   isSubmitting = false,
   error,
+  defaultPhone = '',
 }) => {
   const phoneInputRef = useRef(null);
   const [validationError, setValidationError] = useState(null);
@@ -61,11 +62,11 @@ const ManualConversationDialog = ({
   );
   const defaultValues = useMemo(
     () => ({
-      phone: '',
+      phone: defaultPhone ?? '',
       message: '',
       instanceId: '',
     }),
-    []
+    [defaultPhone]
   );
   const form = useForm({
     defaultValues,
@@ -138,12 +139,12 @@ const ManualConversationDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]">
+      <DialogContent className="border border-border bg-surface text-foreground shadow-[var(--shadow-lg)]">
         <DialogHeader className="space-y-1 text-left">
-          <DialogTitle className="text-lg font-semibold text-[color:var(--color-inbox-foreground)]">
+          <DialogTitle className="text-lg font-semibold text-foreground">
             Iniciar conversa manual
           </DialogTitle>
-          <DialogDescription className="text-xs uppercase tracking-[0.24em] text-[color:var(--color-inbox-foreground-muted)]">
+          <DialogDescription className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
             Cadastre o contato e envie a mensagem inicial diretamente pelo LeadEngine.
           </DialogDescription>
         </DialogHeader>
@@ -155,7 +156,7 @@ const ManualConversationDialog = ({
               name="phone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]">
+                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Telefone
                   </FormLabel>
                   <FormControl>
@@ -181,7 +182,7 @@ const ManualConversationDialog = ({
               name="message"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]">
+                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Mensagem inicial
                   </FormLabel>
                   <FormControl>
@@ -202,8 +203,8 @@ const ManualConversationDialog = ({
               name="instanceId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--color-inbox-foreground-muted)]">
-                    Instância do WhatsApp
+                  <FormLabel className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    Número de WhatsApp
                   </FormLabel>
                   <Select
                     disabled={isProcessing || availableInstances.length === 0}
@@ -211,11 +212,11 @@ const ManualConversationDialog = ({
                     value={field.value}
                   >
                     <FormControl>
-                      <SelectTrigger className="h-9 w-full rounded-lg border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-sm text-[color:var(--color-inbox-foreground)]">
-                        <SelectValue placeholder="Selecione a instância conectada" />
+                      <SelectTrigger className="h-9 w-full rounded-lg border-border bg-surface text-sm text-foreground">
+                        <SelectValue placeholder="Selecione um número conectado" />
                       </SelectTrigger>
                     </FormControl>
-                    <SelectContent className="border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] text-[color:var(--color-inbox-foreground)]">
+                    <SelectContent className="border-border bg-surface-sunken text-foreground">
                       {availableInstances.map((instance) => {
                         const identifier = instance.id.trim();
                         const label =
@@ -243,7 +244,7 @@ const ManualConversationDialog = ({
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-xl border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)]"
+                className="rounded-xl border-border bg-surface text-foreground hover:bg-surface-hover"
                 disabled={isProcessing}
                 onClick={() => onOpenChange?.(false)}
               >

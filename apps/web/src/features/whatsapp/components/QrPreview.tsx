@@ -1,116 +1,93 @@
-import { useMemo } from 'react';
-import { Clock, Loader2, QrCode, RefreshCcw } from 'lucide-react';
+import { AlertTriangle, Loader2, PauseCircle, QrCode, RefreshCw } from 'lucide-react';
+
 import { Button } from '@/components/ui/button.jsx';
 import { cn } from '@/lib/utils.js';
-import type { ReactNode } from 'react';
 
-const SIZE_PRESETS = {
-  44: {
-    container: 'h-44 w-44',
-    image: 'h-36 w-36',
-    spinner: 'h-12 w-12',
-    icon: 'h-24 w-24',
-  },
-  64: {
-    container: 'h-64 w-64',
-    image: 'h-56 w-56',
-    spinner: 'h-16 w-16',
-    icon: 'h-32 w-32',
-  },
-};
+export type QrPreviewPhase = 'idle' | 'loading' | 'ready' | 'paused' | 'error';
 
-type SizePresetKey = keyof typeof SIZE_PRESETS;
-
-type QrPreviewProps = {
-  src?: string | null | undefined;
-  isGenerating?: boolean;
-  statusMessage?: ReactNode | null | undefined;
-  onGenerate?: (() => void | Promise<void>) | null | undefined;
-  onOpen?: (() => void | Promise<void>) | null | undefined;
-  generateDisabled?: boolean;
-  openDisabled?: boolean;
+interface QrPreviewProps {
+  phase: QrPreviewPhase;
+  src?: string | null;
+  /** Segundos até a próxima renovação automática. */
+  secondsLeft?: number | null;
+  errorMessage?: string | null;
+  onRegenerate?: () => void;
+  /** Lado do quadrado em px (mínimo recomendado para leitura pela câmera: 264). */
+  size?: number;
   className?: string;
-  illustrationClassName?: string;
-  size?: SizePresetKey | number | string | null | undefined;
-};
+}
 
-const resolvePreset = (size?: QrPreviewProps['size']) => {
-  if (!size) return SIZE_PRESETS[44];
-
-  if (typeof size === 'number' && SIZE_PRESETS[size as SizePresetKey]) {
-    return SIZE_PRESETS[size as SizePresetKey];
-  }
-
-  if (typeof size === 'string') {
-    const parsed = Number.parseInt(size, 10);
-    if (Number.isFinite(parsed) && SIZE_PRESETS[parsed as SizePresetKey]) {
-      return SIZE_PRESETS[parsed as SizePresetKey];
-    }
-  }
-
-  return SIZE_PRESETS[44];
-};
-
+/**
+ * Quadro do QR Code com estados de carregamento, pausa e erro.
+ * O QR fica sempre sobre fundo branco (requisito de leitura), inclusive no tema escuro.
+ */
 const QrPreview = ({
-  src,
-  isGenerating = false,
-  statusMessage = null,
-  onGenerate = null,
-  onOpen = null,
-  generateDisabled = false,
-  openDisabled = false,
+  phase,
+  src = null,
+  secondsLeft = null,
+  errorMessage = null,
+  onRegenerate,
+  size = 264,
   className,
-  illustrationClassName,
-  size = 44,
 }: QrPreviewProps) => {
-  const preset = useMemo(() => resolvePreset(size), [size]);
-  const hasQr = Boolean(src);
-  const showStatus = Boolean(statusMessage);
-  const showActions = Boolean(onGenerate) || Boolean(onOpen);
+  const showImage = phase === 'ready' && Boolean(src);
 
   return (
-    <div className={cn('flex flex-col items-center gap-4', className)}>
+    <div className={cn('flex flex-col items-center gap-3', className)}>
       <div
-        className={cn(
-          'flex items-center justify-center rounded-2xl',
-          preset.container,
-          illustrationClassName
-        )}
+        className="relative flex items-center justify-center overflow-hidden rounded-xl border border-border bg-surface shadow-xs"
+        style={{ width: size + 24, height: size + 24 }}
       >
-        {hasQr ? (
-          <img src={src ?? undefined} alt="QR Code do WhatsApp" className={cn('rounded-lg shadow-inner', preset.image)} />
-        ) : isGenerating ? (
-          <Loader2 className={cn('animate-spin', preset.spinner)} />
+        {showImage ? (
+          // O QR precisa de fundo claro para ser lido: usamos o branco do próprio PNG.
+          <img
+            src={src ?? undefined}
+            alt="QR Code para conectar o WhatsApp"
+            width={size}
+            height={size}
+            className="rounded-md [image-rendering:pixelated]"
+          />
         ) : (
-          <QrCode className={preset.icon} />
+          <div className="flex flex-col items-center gap-3 px-6 text-center">
+            {phase === 'paused' ? (
+              <>
+                <PauseCircle aria-hidden="true" className="size-8 text-muted-foreground" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">QR pausado</p>
+                  <p className="text-xs text-muted-foreground">Paramos de renovar para economizar. Gere um novo quando estiver com o celular em mãos.</p>
+                </div>
+              </>
+            ) : phase === 'error' ? (
+              <>
+                <AlertTriangle aria-hidden="true" className="size-8 text-danger" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">Não foi possível gerar o QR Code</p>
+                  {errorMessage ? <p className="text-xs text-muted-foreground">{errorMessage}</p> : null}
+                </div>
+              </>
+            ) : phase === 'loading' ? (
+              <>
+                <Loader2 aria-hidden="true" className="size-8 animate-spin text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Gerando QR Code…</p>
+              </>
+            ) : (
+              <QrCode aria-hidden="true" className="size-16 text-subtle-foreground" />
+            )}
+          </div>
         )}
       </div>
 
-      {showStatus ? (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status" aria-live="polite">
-          <Clock className="h-3.5 w-3.5" />
-          {statusMessage}
-        </div>
+      {phase === 'ready' && typeof secondsLeft === 'number' ? (
+        <p className="text-xs tabular-nums text-muted-foreground">
+          {secondsLeft > 0 ? `Atualiza em ${secondsLeft}s` : 'Atualizando…'}
+        </p>
       ) : null}
 
-      {showActions ? (
-        <div className="flex flex-wrap justify-center gap-2">
-          {onGenerate ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => void onGenerate?.()}
-              disabled={generateDisabled}
-            >
-              <RefreshCcw className="mr-2 h-4 w-4" /> Gerar novo QR
-            </Button>
-          ) : null}
-          {onOpen ? (
-            <Button size="sm" variant="outline" onClick={onOpen} disabled={openDisabled}>
-              Abrir em tela cheia
-            </Button>
-          ) : null}
-        </div>
+      {(phase === 'paused' || phase === 'error') && onRegenerate ? (
+        <Button type="button" variant="outline" size="sm" onClick={onRegenerate}>
+          <RefreshCw aria-hidden="true" />
+          Gerar novo QR
+        </Button>
       ) : null}
     </div>
   );

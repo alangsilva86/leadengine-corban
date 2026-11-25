@@ -4,11 +4,9 @@ import type { CrmFilterState, CrmSavedView } from '../state/types';
 
 const sampleFilters: CrmFilterState = {
   search: 'Empresa XPTO',
-  stages: ['qualification'],
+  stages: ['qualificacao'],
   owners: ['owner:me'],
-  origins: ['web'],
-  channels: ['whatsapp'],
-  score: { min: 50, max: 90 },
+  origins: ['whatsapp'],
   inactivityDays: 3,
 };
 
@@ -40,28 +38,19 @@ const meta: Meta<typeof CrmToolbar> = {
     filters: sampleFilters,
     filterOptions: {
       stages: [
-        { id: 'qualification', label: 'Qualificação' },
-        { id: 'proposal', label: 'Proposta' },
+        { id: 'qualificacao', label: 'Qualificação' },
+        { id: 'proposta', label: 'Proposta' },
       ],
-      owners: [
-        { id: 'owner:me', label: 'Meus leads' },
-        { id: 'owner:team', label: 'Equipe' },
-      ],
+      owners: [{ id: 'owner:me', label: 'Meus leads' }],
       origins: [
-        { id: 'web', label: 'Formulário Web' },
-        { id: 'ads', label: 'Campanhas Ads' },
-      ],
-      channels: [
         { id: 'whatsapp', label: 'WhatsApp' },
-        { id: 'email', label: 'E-mail' },
+        { id: 'website', label: 'Site' },
+        { id: 'referral', label: 'Indicação' },
       ],
     },
     onFiltersChange: () => {},
     onClearFilters: () => {},
-    selectedCount: 2,
-    totalCount: 128,
     savedViews: savedViewsHandlers,
-    onRefresh: () => {},
   },
 };
 
@@ -80,8 +69,8 @@ export const LoadingSavedViews: Story = {
   },
 };
 
-export const BulkDisabled: Story = {
+export const NoFilters: Story = {
   args: {
-    selectedCount: 0,
+    filters: { stages: [], owners: [], origins: [], channels: [], score: null, dateRange: null, inactivityDays: null },
   },
 };

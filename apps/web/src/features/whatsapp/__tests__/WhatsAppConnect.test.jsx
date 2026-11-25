@@ -1,160 +1,209 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { Suspense } from 'react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import WhatsAppConnect from '../connect/index';
+import WhatsAppConnect, { suggestNumberName } from '../connect/index';
+import { getNumberStatus } from '../lib/numberStatus';
 
-const onContinueMock = vi.fn();
-const onBackMock = vi.fn();
-const handleRefreshInstancesMock = vi.fn();
-const handleViewQrMock = vi.fn();
+const useWhatsAppNumbersMock = vi.hoisted(() => vi.fn());
+const diagnosticsEnabledMock = vi.hoisted(() => vi.fn(() => false));
 
-vi.mock('../connect/useWhatsAppConnect', () => ({
+vi.mock('@/lib/features.js', () => ({ isDiagnosticsEnabled: diagnosticsEnabledMock }));
+
+vi.mock('../hooks/useWhatsAppNumbers', () => ({
   __esModule: true,
-  default: vi.fn(() => ({
-    surfaceStyles: {
-      instancesPanel: 'instances-panel',
-      qrInstructionsPanel: 'qr-panel',
-      glassTile: 'glass',
-      glassTileDashed: 'glass-dashed',
-      glassTileActive: 'glass-active',
-      glassTileIdle: 'glass-idle',
-      destructiveBanner: 'destructive',
-      qrIllustration: 'qr-illustration',
-      progressTrack: 'progress-track',
-      progressIndicator: 'progress-indicator',
-    },
-    statusCopy: { badge: 'Conectado', description: 'Status' },
-    statusTone: 'success',
-    countdownMessage: null,
-    confirmLabel: 'Continuar',
-    confirmDisabled: false,
-    qrImageSrc: null,
-    isGeneratingQrImage: false,
-    qrStatusMessage: 'Pronto',
-    hasAgreement: true,
-    agreementDisplayName: 'Convênio XPTO',
-    selectedAgreement: { id: 'agreement-1' },
-    selectedInstance: { id: 'instance-1', name: 'Instância Alpha' },
-    selectedInstancePhone: '+5511999999999',
-    selectedInstanceStatusInfo: { label: 'Desconectado', variant: 'warning' },
-    instancesReady: true,
-    hasHiddenInstances: false,
-    hasRenderableInstances: true,
-    instanceViewModels: [
-      {
-        key: 'instance-1',
-        id: 'instance-1',
-        displayName: 'Instância Alpha',
-        phoneLabel: '+5511999999999',
-        formattedPhone: '(11) 99999-9999',
-        addressLabel: 'alpha@wa',
-        statusInfo: { label: 'Desconectado', variant: 'warning' },
-        metrics: { sent: 0, queued: 5, failed: 1, status: { 1: 3, 2: 2 } },
-        statusValues: { 1: 3, 2: 2 },
-        rateUsage: { used: 10, remaining: 90, limit: 100, percentage: 10 },
-        ratePercentage: 10,
-        lastUpdatedLabel: 'agora',
-        user: null,
-        instance: { id: 'instance-1' },
-        isCurrent: false,
-      },
-    ],
-    showFilterNotice: false,
-    instancesCountLabel: '0 instâncias',
-    loadingInstances: false,
-    isAuthenticated: true,
-    copy: { description: 'Gerencie a conexão do WhatsApp.' },
-    localStatus: 'connected',
-    onBack: onBackMock,
-    onContinue: onContinueMock,
-    handleRefreshInstances: handleRefreshInstancesMock,
-    handleCreateInstance: vi.fn(),
-    submitCreateInstance: vi.fn(),
-    campaign: null,
-    setShowAllInstances: vi.fn(),
-    setQrPanelOpen: vi.fn(),
-    setQrDialogOpen: vi.fn(),
-    pairingPhoneInput: '',
-    pairingPhoneError: null,
-    requestingPairingCode: false,
-    handlePairingPhoneChange: vi.fn(),
-    handleRequestPairingCode: vi.fn(),
-    timelineItems: [],
-    realtimeConnected: false,
-    handleInstanceSelect: vi.fn(),
-    handleViewQr: handleViewQrMock,
-    handleGenerateQr: vi.fn(),
-    handleMarkConnected: vi.fn(),
-    handleDeleteInstance: vi.fn(),
-    deletionDialog: { open: false },
-    setInstancePendingDelete: vi.fn(),
-    isBusy: false,
-    canContinue: true,
-    qrPanelOpen: false,
-    isQrDialogOpen: false,
-    hasCampaign: false,
-    statusCodeMeta: [],
-    defaultInstanceName: 'Nova instância',
-    deletingInstanceId: null,
-    errorState: null,
-    loadInstances: vi.fn(),
-    showAllInstances: false,
-    handleRetry: vi.fn(),
-    setCreateInstanceOpen: vi.fn(),
-    isCreateInstanceOpen: false,
-    nextStage: 'Campanhas',
-    stepLabel: 'Passo 2 de 5',
-    onboardingDescription: 'Conecte seu canal oficial.',
-    renderInstances: [],
-  })),
+  default: useWhatsAppNumbersMock,
 }));
 
-vi.mock('../components/CreateInstanceDialog.jsx', () => ({
+// O assistente de conexão tem testes próprios do ciclo de QR; aqui só verificamos quem ele recebe.
+vi.mock('../components/numbers/ConnectNumberSheet', () => ({
   __esModule: true,
-  default: ({ open }) => (open ? <div data-testid="create-instance-dialog">Criar instância</div> : null),
+  default: ({ open, target, suggestedName }) =>
+    open ? <div data-testid="connect-sheet">{target ? `Conectar ${target.name}` : `Novo: ${suggestedName}`}</div> : null,
 }));
 
-vi.mock('../components/QrPreview', () => ({
-  __esModule: true,
-  default: () => <div data-testid="qr-preview">QR Preview</div>,
+vi.mock('../connect/services/campaignService', () => ({
+  fetchCampaigns: vi.fn(() => Promise.resolve([{ id: 'c1' }, { id: 'c2' }])),
 }));
 
-vi.mock('../components/AdvancedOperationsPanel.jsx', () => ({
-  __esModule: true,
-  default: () => <div data-testid="advanced-ops">Advanced Ops</div>,
-}));
+beforeAll(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
+
+const buildNumber = (overrides = {}) => ({
+  id: 'n1',
+  name: 'Comercial 1',
+  phone: '+55 11 91234-5678',
+  status: getNumberStatus({ status: 'connected', connected: true }),
+  sentCount: 1284,
+  lastActivityAt: new Date().toISOString(),
+  lastActivityLabel: 'há 5 minutos',
+  isSessionOnly: false,
+  raw: { id: 'n1' },
+  ...overrides,
+});
+
+const baseHook = (overrides = {}) => {
+  const numbers = overrides.numbers ?? [];
+  const counts = {
+    total: numbers.length,
+    connected: numbers.filter((n) => n.status.isConnected).length,
+    needsAttention: numbers.filter((n) => n.status.needsAttention).length,
+    connecting: 0,
+  };
+  return {
+    numbers,
+    instances: [],
+    ready: true,
+    loading: false,
+    error: null,
+    counts,
+    hasConnectedNumber: counts.connected > 0,
+    canCreate: true,
+    busyNumberId: null,
+    refresh: vi.fn(),
+    createNumber: vi.fn(),
+    removeNumber: vi.fn(() => Promise.resolve()),
+    disconnectNumber: vi.fn(() => Promise.resolve()),
+    checkStatus: vi.fn(),
+    wa: {},
+    ...overrides,
+  };
+};
+
+const renderPage = (initialEntry = '/channels') =>
+  render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <WhatsAppConnect />
+    </MemoryRouter>,
+  );
 
 describe('WhatsAppConnect', () => {
   beforeEach(() => {
-    onContinueMock.mockClear();
-    onBackMock.mockClear();
-    handleRefreshInstancesMock.mockClear();
+    useWhatsAppNumbersMock.mockReset();
   });
 
-  it('renders the instances overview and triggers actions', async () => {
-    render(
-      <Suspense fallback={<span>loading</span>}>
-        <WhatsAppConnect />
-      </Suspense>
+  it('sem números mostra só o estado vazio focado, com uma única ação principal', async () => {
+    useWhatsAppNumbersMock.mockReturnValue(baseHook());
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByRole('heading', { level: 1, name: 'WhatsApp' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Conecte seu primeiro número' })).toBeInTheDocument();
+    expect(screen.getByText('Celular com WhatsApp ativo')).toBeInTheDocument();
+    expect(screen.getByText('Número dedicado ao comercial')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Boas práticas para evitar bloqueio/ })).toBeInTheDocument();
+
+    const connectButtons = screen.getAllByRole('button', { name: /Conectar número/ });
+    expect(connectButtons).toHaveLength(1);
+    await user.click(connectButtons[0]);
+    expect(screen.getByTestId('connect-sheet')).toHaveTextContent('Novo: Comercial 1');
+
+    // Nada de passos, ids ou jargão técnico.
+    expect(screen.queryByText(/Passo \d/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Instância|tenant|broker/i)).not.toBeInTheDocument();
+  });
+
+  it('libera a criação sem acordo selecionado (empresa vem da sessão)', () => {
+    useWhatsAppNumbersMock.mockReturnValue(baseHook({ numbers: [buildNumber()] }));
+    renderPage();
+    expect(screen.getByRole('button', { name: /Conectar número/ })).toBeEnabled();
+  });
+
+  it('lista os números com status legível e resumo no cabeçalho', async () => {
+    const pairing = buildNumber({
+      id: 'n2',
+      name: 'Comercial 2',
+      phone: null,
+      status: getNumberStatus({ status: 'qr_required' }),
+      sentCount: null,
+      lastActivityLabel: null,
+    });
+    useWhatsAppNumbersMock.mockReturnValue(baseHook({ numbers: [buildNumber(), pairing] }));
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText('1 conectado')).toBeInTheDocument();
+    expect(screen.getByText('1 precisa de atenção')).toBeInTheDocument();
+
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('+55 11 91234-5678')).toBeInTheDocument();
+    expect(within(table).getByText('Conectado')).toBeInTheDocument();
+    expect(within(table).getByText('Aguardando pareamento')).toBeInTheDocument();
+    expect(within(table).getByText('Ainda não pareado')).toBeInTheDocument();
+
+    await user.click(within(table).getByRole('button', { name: 'Conectar' }));
+    expect(screen.getByTestId('connect-sheet')).toHaveTextContent('Conectar Comercial 2');
+  });
+
+  it('mostra erro amigável com nova tentativa quando a lista não carrega', async () => {
+    const hook = baseHook({
+      error: { code: 'WHATSAPP_NOT_CONFIGURED', title: 'WhatsApp ainda não está disponível', message: 'Fale com o suporte.' },
+    });
+    useWhatsAppNumbersMock.mockReturnValue(hook);
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText('WhatsApp ainda não está disponível')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Tentar novamente/ }));
+    expect(hook.refresh).toHaveBeenCalled();
+  });
+
+  it('confirma a exclusão listando as consequências antes de excluir', async () => {
+    const hook = baseHook({ numbers: [buildNumber()] });
+    useWhatsAppNumbersMock.mockReturnValue(hook);
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getAllByRole('button', { name: /Mais ações para Comercial 1/ })[0]);
+    await user.click(await screen.findByRole('menuitem', { name: /Excluir número/ }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText('Excluir Comercial 1?')).toBeInTheDocument();
+    expect(within(dialog).getByText(/desconectado do celular/)).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getByText(/2 regras ativas usam este número/)).toBeInTheDocument());
+    expect(hook.removeNumber).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Excluir número' }));
+    await waitFor(() => expect(hook.removeNumber).toHaveBeenCalledWith(expect.objectContaining({ id: 'n1' })));
+  });
+
+  it('o diagnóstico aponta para a nova página de configurações quando está habilitado', async () => {
+    diagnosticsEnabledMock.mockReturnValue(true);
+    useWhatsAppNumbersMock.mockReturnValue(baseHook({ numbers: [buildNumber()] }));
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getAllByRole('button', { name: /Mais ações para Comercial 1/ })[0]);
+    expect(await screen.findByRole('menuitem', { name: /Ver diagnóstico/ })).toHaveAttribute(
+      'href',
+      '/settings/diagnostics?instance=n1',
     );
+  });
 
-    expect(await screen.findByText('Instância em foco')).toBeInTheDocument();
-    const refreshButton = await screen.findByRole('button', { name: /Atualizar lista/i });
+  it('esconde o diagnóstico quando a ferramenta está desligada', async () => {
+    diagnosticsEnabledMock.mockReturnValue(false);
+    useWhatsAppNumbersMock.mockReturnValue(baseHook({ numbers: [buildNumber()] }));
+    const user = userEvent.setup();
+    renderPage();
 
-    const continueButtons = screen.getAllByRole('button', { name: /^Continuar$/i });
-    fireEvent.click(continueButtons[0]);
-    expect(onContinueMock).toHaveBeenCalledTimes(1);
+    await user.click(screen.getAllByRole('button', { name: /Mais ações para Comercial 1/ })[0]);
+    await screen.findByRole('menu');
+    expect(screen.queryByRole('menuitem', { name: /Ver diagnóstico/ })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(refreshButton);
-    expect(handleRefreshInstancesMock).toHaveBeenCalledTimes(1);
-
-    const qrButton = await screen.findByRole('button', { name: /Gerar QR Code/i });
-    fireEvent.click(qrButton);
-    expect(handleViewQrMock).toHaveBeenCalledTimes(1);
-
-    expect(screen.queryByText('Campanhas e roteamento')).not.toBeInTheDocument();
+  it('sugere o próximo nome livre', () => {
+    expect(suggestNumberName([{ name: 'Comercial 1' }, { name: 'Comercial 3' }])).toBe('Comercial 2');
   });
 });

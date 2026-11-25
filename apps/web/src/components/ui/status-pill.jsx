@@ -5,14 +5,12 @@ import { cva } from 'class-variance-authority';
 import { cn } from '@/lib/utils.js';
 
 const statusPillVariants = cva(
-  'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--color-ring)65%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-canvas)] disabled:pointer-events-none disabled:opacity-60',
+  'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:color-mix(in_oklab,var(--color-ring)65%,transparent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-canvas)] disabled:pointer-events-none disabled:opacity-60',
   {
     variants: {
       tone: {
-        neutral:
-          'border-[color:color-mix(in_oklab,var(--color-border)62%,transparent)] bg-[color:color-mix(in_oklab,var(--color-surface-shell)92%,transparent)] text-[color:var(--color-muted-foreground)]',
-        primary:
-          'border-[color:color-mix(in_oklab,var(--color-primary)50%,transparent)] bg-[color:color-mix(in_oklab,var(--color-primary)22%,transparent)] text-[color:var(--color-primary-foreground)]',
+        neutral: 'border-border bg-surface-sunken text-muted-foreground',
+        primary: 'border-primary-soft-border bg-primary-soft text-primary-soft-foreground',
         success:
           'border-[color:color-mix(in_oklab,var(--tone-success-border)100%,transparent)] bg-[color:var(--tone-success-surface)] text-[color:var(--tone-success-foreground)]',
         warning:
@@ -23,9 +21,9 @@ const statusPillVariants = cva(
           'border-[color:var(--color-status-whatsapp-border)] bg-[color:var(--color-status-whatsapp-surface)] text-[color:var(--color-status-whatsapp-foreground)]',
       },
       size: {
-        sm: 'px-2.5 py-1 text-[11px]',
-        md: 'px-3 py-1.5 text-xs',
-        lg: 'px-3.5 py-2 text-sm',
+        sm: 'px-2 py-0.5 text-xs',
+        md: 'px-2.5 py-1 text-xs',
+        lg: 'px-3 py-1.5 text-sm',
       },
       withDot: {
         true: 'pl-2.5',
@@ -48,7 +46,7 @@ const IndicatorDot = ({ tone }) => (
   <span
     aria-hidden
     className={cn(
-      'inline-flex size-2 rounded-full shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-border)50%,transparent)]',
+      'inline-flex size-2 rounded-full',
       {
         neutral: 'bg-[color:var(--color-muted-foreground)]',
         primary: 'bg-[color:var(--color-primary)]',

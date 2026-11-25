@@ -7,7 +7,7 @@ import {
   parseInstancesPayload,
   resolveInstanceStatus,
   shouldDisplayInstance,
-} from '../instances.js';
+} from '../../lib/instances';
 
 const sampleInstance = {
   id: 'ABC123',
@@ -85,7 +85,7 @@ describe('WhatsApp instances helpers', () => {
 
     const parsed = parseInstancesPayload(payload);
 
-    expect(parsed.instances).toHaveLength(2);
+    expect(parsed.instances).toHaveLength(1);
     expect(parsed.status).toBe('connected');
     expect(parsed.connected).toBe(true);
     expect(parsed.qr).toMatchObject({ qr: '1234', qrCode: '1234' });

@@ -1,53 +1,78 @@
-import { formatDistanceToNow, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
+import { Globe, History, Mail, MessageCircle, MoreHorizontal, Phone } from 'lucide-react';
+import { EmptyState, ErrorState } from '@/components/page';
+import { Skeleton } from '@/components/ui/skeleton.jsx';
+import { formatDateTime, formatRelativeShort } from '@/features/crm/utils/labels';
 
-const formatTimestamp = (value) => {
-  if (!value) {
-    return 'há instantes';
+export const INTERACTION_CHANNELS = [
+  { value: 'WHATSAPP', label: 'WhatsApp', icon: MessageCircle },
+  { value: 'PHONE', label: 'Ligação', icon: Phone },
+  { value: 'EMAIL', label: 'E-mail', icon: Mail },
+  { value: 'WEB', label: 'Site', icon: Globe },
+  { value: 'OTHER', label: 'Outro', icon: MoreHorizontal },
+];
+
+const CHANNEL_BY_VALUE = new Map(INTERACTION_CHANNELS.map((entry) => [entry.value, entry]));
+
+const DIRECTION_LABELS = { INBOUND: 'Recebida', OUTBOUND: 'Enviada' };
+
+/** Histórico de interações do contato (GET /api/contacts/:id/interactions). */
+const ContactTimeline = ({ items = [], isLoading = false, error = null, onRetry }) => {
+  if (isLoading) {
+    return (
+      <div className="space-y-3" aria-busy="true">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <Skeleton key={index} className="h-14 w-full rounded-md" />
+        ))}
+      </div>
+    );
   }
 
-  try {
-    const date = typeof value === 'string' ? parseISO(value) : new Date(value);
-    return formatDistanceToNow(date, { addSuffix: true, locale: ptBR });
-  } catch {
-    return 'há instantes';
+  if (error) {
+    return <ErrorState size="compact" title="Não foi possível carregar o histórico" error={error} onRetry={onRetry} />;
   }
-};
 
-const ContactTimeline = ({ items = [] }) => (
-  <Card className="h-full">
-    <CardHeader>
-      <CardTitle>Timeline</CardTitle>
-    </CardHeader>
-    <CardContent className="h-full min-h-[300px]">
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhuma interação registrada para este contato.</p>
-      ) : (
-        <ScrollArea className="h-[360px] pr-4">
-          <ol className="space-y-4 text-sm">
-            {items.map((item) => (
-              <li key={item.id} className="rounded-lg border border-border/70 p-4">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span className="font-medium uppercase tracking-wide">{item.type ?? 'interação'}</span>
-                  <span>{formatTimestamp(item.createdAt)}</span>
-                </div>
-                <p className="mt-2 text-sm leading-relaxed text-foreground">
-                  {item.description ?? item.message ?? 'Evento registrado na linha do tempo.'}
-                </p>
-                {item.metadata ? (
-                  <pre className="mt-3 overflow-x-auto rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
-                    {JSON.stringify(item.metadata, null, 2)}
-                  </pre>
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        size="compact"
+        icon={History}
+        title="Nenhuma interação registrada"
+        description="Registre ligações e atendimentos fora do WhatsApp para manter o histórico completo."
+      />
+    );
+  }
+
+  return (
+    <ol className="relative space-y-4 before:absolute before:inset-y-2 before:left-4 before:w-px before:bg-border">
+      {items.map((item) => {
+        const channel = CHANNEL_BY_VALUE.get(item.channel) ?? CHANNEL_BY_VALUE.get('OTHER');
+        const Icon = channel.icon;
+        const when = item.occurredAt ?? item.createdAt;
+        return (
+          <li key={item.id} className="relative flex gap-3">
+            <span className="z-10 flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-muted-foreground">
+              <Icon className="size-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1 pt-1">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{channel.label}</span>
+                {DIRECTION_LABELS[item.direction] ? ` · ${DIRECTION_LABELS[item.direction]}` : ''}
+                {when ? (
+                  <>
+                    {' · '}
+                    <time dateTime={new Date(when).toISOString()} title={formatDateTime(when) ?? undefined}>
+                      {formatRelativeShort(when)}
+                    </time>
+                  </>
                 ) : null}
-              </li>
-            ))}
-          </ol>
-        </ScrollArea>
-      )}
-    </CardContent>
-  </Card>
-);
+              </p>
+              <p className="mt-1 whitespace-pre-line text-sm text-foreground">{item.summary || 'Interação sem resumo.'}</p>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+};
 
 export default ContactTimeline;

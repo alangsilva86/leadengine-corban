@@ -17,9 +17,11 @@ export const useMessagesQuery = ({
   ticketId,
   enabled = true,
   pageSize = DEFAULT_PAGE_SIZE,
+  refetchInterval = false,
 } = {}) => {
   return useInfiniteQuery({
     enabled: enabled && Boolean(ticketId),
+    refetchInterval,
     queryKey: ['chat', 'messages', ticketId, pageSize],
     initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage?.cursors?.next ?? null,

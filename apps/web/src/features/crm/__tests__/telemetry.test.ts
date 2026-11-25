@@ -26,13 +26,17 @@ describe('emitCrmTelemetry', () => {
     window.removeEventListener('leadengine:crm-telemetry', handler);
   });
 
-  it('silently skips when window is unavailable', () => {
-    const originalAdd = window.addEventListener;
-    const spy = vi.spyOn(window, 'addEventListener');
+  it('does not throw when analytics is unavailable or tracking fails', () => {
+    delete (window as any).analytics;
+    expect(() => emitCrmTelemetry('crm.view.change')).not.toThrow();
 
-    emitCrmTelemetry('crm.view.change');
-
-    expect(spy).toHaveBeenCalled();
-    window.addEventListener = originalAdd;
+    (window as any).analytics = {
+      track: vi.fn(() => {
+        throw new Error('offline');
+      }),
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(() => emitCrmTelemetry('crm.view.change', { leadId: 'lead-1' })).not.toThrow();
+    expect(warn).toHaveBeenCalled();
   });
 });

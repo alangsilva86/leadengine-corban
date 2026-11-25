@@ -1,221 +1,249 @@
-import { Fragment, useMemo } from 'react';
-import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Inbox, Loader2, MessageSquarePlus, SearchX, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
-import { Checkbox } from '@/components/ui/checkbox.jsx';
-import { cn } from '@/lib/utils.js';
-import { getTicketIdentity } from '../../utils/ticketIdentity.js';
-import InstanceBadge from '../Shared/InstanceBadge.jsx';
+import { Skeleton } from '@/components/ui/skeleton.jsx';
+import { EmptyState, ErrorState } from '@/components/page';
+import QueueListItem from './QueueListItem.jsx';
 
-const resolveWindowStatus = (minutes) => {
-  if (minutes === null || minutes === undefined) {
-    return { label: 'Sem janela', tone: 'neutral' };
-  }
+const ITEM_SELECTOR = '[data-queue-item]';
+const NEXT_KEYS = new Set(['ArrowDown', 'j', 'J']);
+const PREVIOUS_KEYS = new Set(['ArrowUp', 'k', 'K']);
 
-  if (minutes <= 0) {
-    return { label: 'Expirado', tone: 'expired' };
-  }
-
-  if (minutes <= 10) {
-    return { label: `Crítico • ${minutes} min`, tone: 'critical' };
-  }
-
-  if (minutes <= 30) {
-    return { label: `Atenção • ${minutes} min`, tone: 'warning' };
-  }
-
-  return { label: `Em dia • ${minutes} min`, tone: 'success' };
+const useMinuteClock = () => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+  return now;
 };
 
-const formatPreview = (ticket) => {
-  if (ticket?.lastMessagePreview) {
-    return ticket.lastMessagePreview;
-  }
-  if (ticket?.timeline?.lastDirection === 'INBOUND') {
-    return 'Aguardando resposta';
-  }
-  if (ticket?.timeline?.lastDirection === 'OUTBOUND') {
-    return 'Aguardando cliente';
-  }
-  return 'Sem mensagens registradas';
-};
-
-const formatTime = (iso) => {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-};
-
-const QueueListItem = ({ ticket, selected, onSelect, selectedForBulk = false, onToggleSelection }) => {
-  const windowStats = ticket?.window;
-  const { label: slaLabel } = resolveWindowStatus(windowStats?.remainingMinutes ?? null);
-  const lastInbound = formatTime(ticket?.timeline?.lastInboundAt);
-  const lastOutbound = formatTime(ticket?.timeline?.lastOutboundAt);
-  const agentTyping = ticket?.timeline?.typing;
-  const { displayName, displayPhone, remoteJid } = getTicketIdentity(ticket);
-  const instanceId =
-    ticket?.metadata?.sourceInstance ??
-    ticket?.instanceId ??
-    ticket?.metadata?.instanceId ??
-    ticket?.timeline?.instanceId ??
-    null;
-
-  const unreadInbound = ticket.timeline?.unreadInboundCount ?? 0;
-  const lastActivity = lastInbound ?? lastOutbound ?? '—';
-  const preview = formatPreview(ticket);
-
-  return (
-    <button
-      type="button"
-      data-active={selected ? 'true' : 'false'}
-      data-bulk-selected={selectedForBulk ? 'true' : 'false'}
-      aria-pressed={selected}
-      onClick={() => onSelect?.(ticket.id)}
-      className={cn(
-        'group/list relative w-full rounded-2xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-left transition-colors duration-150 hover:border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_38%,transparent)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_90%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]',
-        selected && 'border-[color:color-mix(in_srgb,var(--accent-inbox-primary)_45%,transparent)] bg-[color:color-mix(in_srgb,var(--accent-inbox-primary)_12%,transparent)]',
-        'data-[bulk-selected=true]:ring-2 data-[bulk-selected=true]:ring-[color:var(--accent-inbox-primary)] data-[bulk-selected=true]:ring-offset-2 data-[bulk-selected=true]:ring-offset-[color:var(--surface-shell)]'
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex h-5 items-center pt-1">
-          <Checkbox
-            checked={selectedForBulk}
-            onCheckedChange={() => onToggleSelection?.(ticket.id)}
-            onClick={(event) => event.stopPropagation()}
-            className="h-4 w-4"
-            aria-label={selectedForBulk ? 'Remover ticket da seleção' : 'Selecionar ticket para ações em massa'}
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center justify-between gap-2 text-[10px] text-[color:var(--color-inbox-foreground-muted)]">
-            <InstanceBadge instanceId={instanceId} />
-            <span>{lastActivity}</span>
+const ListSkeleton = () => (
+  <div aria-hidden className="flex flex-col">
+    {Array.from({ length: 7 }).map((_, index) => (
+      <div key={index} className="flex items-start gap-3 border-b border-border px-3 py-3">
+        <Skeleton className="size-9 rounded-full bg-surface-sunken" />
+        <div className="flex flex-1 flex-col gap-2 pt-0.5">
+          <div className="flex items-center justify-between gap-6">
+            <Skeleton className="h-3.5 w-2/5 bg-surface-sunken" />
+            <Skeleton className="h-3 w-8 bg-surface-sunken" />
           </div>
-          <div className="mt-2 flex min-w-0 items-center gap-2">
-            <p className="truncate text-sm font-semibold text-[color:var(--color-inbox-foreground)]" title={displayName}>
-              {displayName}
-            </p>
-            {unreadInbound > 0 ? (
-              <span className="inline-flex items-center justify-center rounded-full bg-[color:var(--accent-inbox-primary)]/10 px-2 py-0.5 text-[11px] font-semibold text-[color:var(--accent-inbox-primary)]">
-                +{unreadInbound}
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--color-inbox-foreground-muted)]">
-            <span className="truncate">{preview}</span>
-            <span className="hidden overflow-hidden text-[10px] uppercase tracking-wide text-[color:var(--color-inbox-foreground-muted)]/70 group-hover/list:inline">
-              {slaLabel}
-            </span>
-          </div>
-        </div>
-        <div className="hidden flex-col items-end gap-1 text-xs text-[color:var(--color-inbox-foreground-muted)] group-hover/list:flex">
-          <span>{ticket.pipelineStep ?? ticket.metadata?.pipelineStep ?? 'Sem etapa'}</span>
-          <span className="text-[10px]">{displayPhone ?? remoteJid ?? 'Sem telefone'}</span>
+          <Skeleton className="h-3 w-4/5 bg-surface-sunken" />
+          <Skeleton className="h-3 w-3/5 bg-surface-sunken" />
         </div>
       </div>
-      {agentTyping ? (
-        <div className="mt-2 flex items-center gap-1 text-[10px] font-medium text-[color:var(--accent-inbox-primary)]">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-[color:var(--accent-inbox-primary)]" />
-          Digitando…
-        </div>
-      ) : null}
-    </button>
-  );
-};
+    ))}
+  </div>
+);
+
+const QueueMissingNotice = ({ compact = false }) => (
+  <EmptyState
+    icon={Settings2}
+    size={compact ? 'compact' : 'default'}
+    title="Nenhuma fila ativa"
+    description="Crie uma fila para começar a receber mensagens."
+    className={compact ? 'border-b border-border bg-warning-soft' : undefined}
+    action={
+      <Button asChild size="sm" variant="outline">
+        <a href="/settings">Abrir configurações</a>
+      </Button>
+    }
+  />
+);
 
 const QueueList = ({
-  tickets,
+  tickets = [],
   selectedTicketId,
   selectedTicketIds = [],
   onSelectTicket,
   onToggleTicketSelection,
   onClearSelection,
-  loading,
-  onRefresh,
+  isInitialLoading = false,
+  error = null,
+  onRetry,
   typingAgents = [],
-  metrics,
+  currentUser = null,
+  total,
+  loadedCount,
+  hasMore = false,
+  isLoadingMore = false,
+  onLoadMore,
+  hasActiveFilters = false,
+  onClearFilters,
+  queueMissing = false,
+  contactLink = null,
   onBulkRegisterLoss,
   bulkActionPending = false,
   bulkActionsDisabled = false,
 }) => {
-  const typingTicketIds = useMemo(() => new Set(typingAgents.map((agent) => agent.ticketId)), [typingAgents]);
+  const listRef = useRef(null);
+  const now = useMinuteClock();
+  const typingTicketIds = useMemo(
+    () => new Set((typingAgents ?? []).map((agent) => agent?.ticketId).filter(Boolean)),
+    [typingAgents],
+  );
   const selectionCount = Array.isArray(selectedTicketIds) ? selectedTicketIds.length : 0;
-  const selectionLabel =
-    selectionCount === 1 ? '1 ticket selecionado' : `${selectionCount} tickets selecionados`;
+  const selectionMode = selectionCount > 0;
+  const selectionLabel = selectionCount === 1 ? '1 conversa selecionada' : `${selectionCount} conversas selecionadas`;
+
+  // ↑/↓ (ou J/K) movem o foco entre conversas; Enter abre.
+  const handleItemKeyDown = useCallback((event) => {
+    const isNext = NEXT_KEYS.has(event.key);
+    const isPrevious = PREVIOUS_KEYS.has(event.key);
+    if ((!isNext && !isPrevious) || event.altKey || event.ctrlKey || event.metaKey) {
+      return;
+    }
+    const container = listRef.current;
+    if (!container) return;
+    const items = Array.from(container.querySelectorAll(ITEM_SELECTOR));
+    const index = items.indexOf(event.currentTarget);
+    if (index === -1) return;
+    const nextIndex = isNext ? Math.min(items.length - 1, index + 1) : Math.max(0, index - 1);
+    event.preventDefault();
+    items[nextIndex]?.focus();
+    items[nextIndex]?.scrollIntoView?.({ block: 'nearest' });
+  }, []);
+
+  if (isInitialLoading && tickets.length === 0) {
+    return (
+      <div role="status" aria-label="Carregando conversas">
+        <ListSkeleton />
+      </div>
+    );
+  }
+
+  if (error && tickets.length === 0) {
+    return (
+      <ErrorState
+        size="compact"
+        title="Não foi possível carregar as conversas"
+        error={error}
+        onRetry={onRetry}
+      />
+    );
+  }
+
+  // Link vindo do CRM/Contatos para um contato sem conversa: nada é enviado sozinho.
+  if (contactLink && contactLink.status !== 'loading') {
+    const name = contactLink.contactName ?? 'este contato';
+    return (
+      <EmptyState
+        icon={contactLink.status === 'error' ? SearchX : MessageSquarePlus}
+        size="compact"
+        title={contactLink.status === 'error' ? 'Não foi possível abrir a conversa' : `Nenhuma conversa com ${name}`}
+        description={
+          contactLink.status === 'error'
+            ? 'Procure o contato pelo nome ou telefone, ou veja todas as conversas.'
+            : 'Inicie uma conversa no WhatsApp. Você escreve a primeira mensagem antes de enviar.'
+        }
+        action={
+          contactLink.status !== 'error' && typeof contactLink.onStartConversation === 'function' ? (
+            <Button type="button" size="sm" onClick={contactLink.onStartConversation}>
+              Nova conversa
+            </Button>
+          ) : null
+        }
+        secondaryAction={
+          <Button type="button" variant="ghost" size="sm" onClick={contactLink.onDismiss}>
+            Ver todas as conversas
+          </Button>
+        }
+      />
+    );
+  }
+
+  const shownCount = typeof loadedCount === 'number' ? loadedCount : tickets.length;
+  const totalCount = typeof total === 'number' ? Math.max(total, shownCount) : shownCount;
 
   return (
-    <div className="flex min-h-0 flex-col gap-3">
-      <div className="flex items-center justify-between gap-2 px-1">
-        <h2 className="text-sm font-semibold text-[color:var(--color-inbox-foreground)]">Filas de atendimento</h2>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="text-[color:var(--color-inbox-foreground-muted)] hover:text-[color:var(--color-inbox-foreground)]"
-          onClick={onRefresh}
-          disabled={loading}
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          <span className="sr-only">Sincronizar</span>
-        </Button>
-      </div>
-
-      {selectionCount > 0 ? (
-        <div className="mx-1 flex flex-col gap-2 rounded-xl border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] px-3 py-2 text-xs text-[color:var(--color-inbox-foreground)]">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-medium">{selectionLabel}</span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onClearSelection?.()}
-                className="h-7"
-              >
-                Limpar
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => onBulkRegisterLoss?.()}
-                disabled={bulkActionsDisabled || selectionCount === 0}
-                className="h-7"
-              >
-                {bulkActionPending ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
-                Registrar perda
-              </Button>
-            </div>
+    <div className="flex min-h-0 flex-col">
+      {selectionMode ? (
+        <div className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-border bg-surface px-3 py-2 text-sm">
+          <span className="font-medium text-foreground" aria-live="polite">
+            {selectionLabel}
+          </span>
+          <div className="flex items-center gap-1.5">
+            <Button type="button" variant="ghost" size="xs" onClick={() => onClearSelection?.()}>
+              Limpar
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => onBulkRegisterLoss?.()}
+              disabled={bulkActionsDisabled || selectionCount === 0}
+            >
+              {bulkActionPending ? <Loader2 className="animate-spin" aria-hidden /> : null}
+              Registrar perda
+            </Button>
           </div>
-          <p className="text-[10px] text-[color:var(--color-inbox-foreground-muted)]">
-            Aplique ações em massa nos tickets selecionados.
-          </p>
         </div>
       ) : null}
 
-      <div className="space-y-2 px-1 pb-6">
-        {tickets.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-6 text-center text-sm text-[color:var(--color-inbox-foreground-muted)]">
-            <AlertTriangle className="h-5 w-5 text-[color:var(--color-inbox-foreground-muted)]" />
-            <p>Nenhum ticket encontrado com os filtros atuais.</p>
-          </div>
+      {contactLink?.status === 'loading' ? (
+        <p className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs text-muted-foreground" role="status">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          Abrindo a conversa do contato…
+        </p>
+      ) : null}
+      {queueMissing ? <QueueMissingNotice compact={tickets.length > 0} /> : null}
+
+      {tickets.length === 0 ? (
+        queueMissing ? null : hasActiveFilters ? (
+          <EmptyState
+            icon={SearchX}
+            size="compact"
+            title="Nenhuma conversa encontrada"
+            description="Tente outro nome ou telefone, ou limpe os filtros."
+            action={
+              onClearFilters ? (
+                <Button type="button" variant="outline" size="sm" onClick={onClearFilters}>
+                  Limpar filtros
+                </Button>
+              ) : null
+            }
+          />
         ) : (
-          tickets.map((ticket) => (
-            <Fragment key={ticket.id}>
-              <QueueListItem
-                ticket={{
-                  ...ticket,
-                  timeline: {
-                    ...ticket.timeline,
-                    typing: typingTicketIds.has(ticket.id),
-                  },
-                }}
-                selected={ticket.id === selectedTicketId}
-                selectedForBulk={selectedTicketIds.includes(ticket.id)}
-                onSelect={onSelectTicket}
-                onToggleSelection={onToggleTicketSelection}
-              />
-            </Fragment>
-          ))
-        )}
-      </div>
+          <EmptyState
+            icon={Inbox}
+            size="compact"
+            title="Nenhuma conversa por aqui"
+            description="Quando um cliente mandar mensagem no WhatsApp, a conversa aparece nesta lista."
+          />
+        )
+      ) : (
+        <ul ref={listRef} aria-label="Conversas" className="flex flex-col">
+          {tickets.map((ticket) => (
+            <QueueListItem
+              key={ticket.id}
+              ticket={ticket}
+              typing={typingTicketIds.has(ticket.id)}
+              selected={ticket.id === selectedTicketId}
+              selectedForBulk={selectedTicketIds.includes(ticket.id)}
+              selectionMode={selectionMode}
+              currentUser={currentUser}
+              now={now}
+              onSelect={onSelectTicket}
+              onToggleSelection={onToggleTicketSelection}
+              onKeyDown={handleItemKeyDown}
+            />
+          ))}
+        </ul>
+      )}
+
+      {tickets.length > 0 && (hasMore || totalCount > shownCount) ? (
+        <div className="flex flex-col items-center gap-2 px-3 py-4 text-xs text-muted-foreground">
+          <span>
+            Mostrando {shownCount} de {totalCount}
+          </span>
+          {hasMore && typeof onLoadMore === 'function' ? (
+            <Button type="button" variant="outline" size="sm" onClick={onLoadMore} disabled={isLoadingMore}>
+              {isLoadingMore ? <Loader2 className="animate-spin" aria-hidden /> : null}
+              Carregar mais
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };

@@ -1,21 +1,13 @@
 import { memo } from 'react';
-import { Card, CardContent } from '@/components/ui/card.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
+import { ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
 import type { DashboardStat } from '../useDashboardData';
 
-const changeBadgeVariants: Record<string, string> = {
-  up: 'bg-success/15 text-success-strong-foreground',
-  down: 'bg-error/15 text-error-soft-foreground',
-  neutral: 'bg-muted text-muted-foreground',
-};
-
-const statIconStyles: Record<DashboardStat['color'], string> = {
-  blue: 'bg-primary/15 text-primary',
-  green: 'bg-success/15 text-success',
-  purple: 'bg-accent text-accent-foreground',
-  orange: 'bg-warning/15 text-warning',
+const trendStyles: Record<string, string> = {
+  up: 'text-success-soft-foreground',
+  down: 'text-danger-soft-foreground',
+  neutral: 'text-muted-foreground',
 };
 
 export interface DashboardStatsWidgetProps {
@@ -24,46 +16,41 @@ export interface DashboardStatsWidgetProps {
   className?: string;
 }
 
+const hasDelta = (change: string | null | undefined) => Boolean(change && change !== '—');
+
+/** Indicadores-chave. A variação só aparece quando existe base de comparação (nada de "—" decorativo). */
 const DashboardStatsWidgetComponent = ({ stats, loading = false, className }: DashboardStatsWidgetProps) => (
-  <div className={cn('grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4', className)}>
+  <div className={cn('grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4', className)}>
     {loading
       ? Array.from({ length: 4 }).map((_, index) => (
-          <Card
+          <div
             key={`stat-skeleton-${index}`}
-            className="transition-shadow duration-200 hover:shadow-lg"
+            className="rounded-lg border border-border bg-card p-5 shadow-xs"
             data-testid="dashboard-stat-skeleton"
           >
-            <CardContent className="space-y-4 p-6">
-              <div className="flex items-center justify-between">
-                <Skeleton className="h-10 w-10 rounded-lg" />
-                <Skeleton className="h-6 w-16 rounded-full" />
-              </div>
-              <div className="space-y-2">
-                <Skeleton className="h-7 w-24" />
-                <Skeleton className="h-4 w-32" />
-              </div>
-            </CardContent>
-          </Card>
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="mt-3 h-8 w-20" />
+          </div>
         ))
       : stats.map((stat) => (
-          <Card
+          <div
             key={stat.id}
-            className="transition-shadow duration-200 hover:shadow-lg"
+            className="rounded-lg border border-border bg-card p-5 shadow-xs"
             data-testid="dashboard-stat-card"
           >
-            <CardContent className="space-y-4 p-6">
-              <div className="flex items-center justify-between">
-                <div className={cn('flex items-center justify-center rounded-lg p-2', statIconStyles[stat.color])}>
-                  <stat.icon className="h-5 w-5" />
-                </div>
-                <Badge className={changeBadgeVariants[stat.trend] ?? changeBadgeVariants.neutral}>{stat.change}</Badge>
-              </div>
-              <div className="space-y-1">
-                <h3 className="text-2xl font-semibold text-foreground">{stat.value}</h3>
-                <p className="text-sm text-muted-foreground">{stat.title}</p>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium text-muted-foreground">{stat.title}</p>
+              <stat.icon className="size-4 text-subtle-foreground" aria-hidden="true" />
+            </div>
+            <p className="mt-2 text-3xl font-semibold tracking-tight text-foreground tabular-nums">{stat.value}</p>
+            {hasDelta(stat.change) ? (
+              <p className={cn('mt-1 flex items-center gap-1 text-xs font-medium', trendStyles[stat.trend] ?? trendStyles.neutral)}>
+                {stat.trend === 'up' ? <ArrowUpRight className="size-3.5" aria-hidden="true" /> : null}
+                {stat.trend === 'down' ? <ArrowDownRight className="size-3.5" aria-hidden="true" /> : null}
+                {stat.change}
+              </p>
+            ) : null}
+          </div>
         ))}
   </div>
 );

@@ -11,17 +11,19 @@ import { useSLAClock } from './useSLAClock.js';
 import { useConversationScroll } from './useConversationScroll.js';
 import { useComposerMetrics } from './useComposerMetrics.js';
 import useWhatsAppInstances from '@/features/whatsapp/hooks/useWhatsAppInstances.jsx';
+import { getTicketIdentity } from '../../../utils/ticketIdentity.js';
+import { isTicketClosed, resolveTicketInstanceId, resolveWindowState } from '../utils/presentation.js';
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const describeInstanceStatus = (status, connected) => {
   const normalized = typeof status === 'string' ? status.trim().toLowerCase() : null;
   const map = {
-    connected: { label: 'Conectada', tone: 'success' },
+    connected: { label: 'Conectado', tone: 'success' },
     connecting: { label: 'Conectando', tone: 'info' },
-    disconnected: { label: 'Desconectada', tone: 'warning' },
-    qr_required: { label: 'QR necessário', tone: 'warning' },
-    error: { label: 'Erro', tone: 'danger' },
+    disconnected: { label: 'Desconectado', tone: 'warning' },
+    qr_required: { label: 'Precisa ler o QR Code', tone: 'warning' },
+    error: { label: 'Com erro', tone: 'danger' },
   };
   if (normalized && map[normalized]) {
     return map[normalized];
@@ -36,7 +38,6 @@ export const useConversationExperience = ({
   typingIndicator,
   onSendMessage,
   onCreateNote,
-  onSendTemplate,
   onCreateNextStep,
   onRegisterResult,
   onRegisterCallResult,
@@ -49,6 +50,8 @@ export const useConversationExperience = ({
   onDealFieldSave = async () => {},
   nextStepValue = '',
   onNextStepSave = async () => {},
+  onStageChange,
+  pendingStage = null,
   isRegisteringResult = false,
   currentUser = null,
   isSending = false,
@@ -61,6 +64,8 @@ export const useConversationExperience = ({
   onAiModeChange,
   onTakeOver,
   onGiveBackToAi,
+  onReopen,
+  onBack,
   composerNotice: composerNoticeProp = null,
 }) => {
   const disabled = Boolean(composerDisabled);
@@ -102,27 +107,7 @@ export const useConversationExperience = ({
     loadInstances({ forceRefresh: false }).catch(() => {});
   }, [loadInstances]);
 
-  const defaultInstanceId = useMemo(() => {
-    if (!ticket || !isRecord(ticket.metadata)) {
-      return null;
-    }
-    const metadata = ticket.metadata;
-    const whatsappMeta = isRecord(metadata.whatsapp) ? metadata.whatsapp : {};
-    const candidates = [
-      whatsappMeta.instanceId,
-      metadata.instanceId,
-      whatsappMeta.instance_id,
-      metadata.instance_id,
-      whatsappMeta.instance,
-      metadata.whatsappInstanceId,
-    ];
-    for (const candidate of candidates) {
-      if (typeof candidate === 'string' && candidate.trim().length > 0) {
-        return candidate.trim();
-      }
-    }
-    return null;
-  }, [ticket]);
+  const defaultInstanceId = useMemo(() => resolveTicketInstanceId(ticket), [ticket]);
 
   useEffect(() => {
     const currentTicketId = ticket?.id ?? null;
@@ -253,19 +238,19 @@ export const useConversationExperience = ({
     if (instanceOptions.length === 0 && instancesReady) {
       return {
         type: 'error',
-        message: 'Nenhuma instância conectada encontrada. Conecte uma instância do WhatsApp para responder.',
+        message: 'Nenhum número de WhatsApp conectado. Conecte um número para responder.',
       };
     }
     if (!selectedInstanceOption && instanceOptions.length > 0) {
       return {
         type: 'warning',
-        message: 'Selecione uma instância para responder esta conversa.',
+        message: 'Escolha por qual número responder esta conversa.',
       };
     }
     if (selectedInstanceOption && !selectedInstanceOption.connected) {
       return {
         type: 'error',
-        message: `Instância ${selectedInstanceOption.label} está desconectada. Escolha outra instância ativa antes de enviar.`,
+        message: `O número ${selectedInstanceOption.label} está desconectado. Escolha outro número antes de enviar.`,
       };
     }
     if (selectionDiffersFromDefault && selectedInstanceOption && selectedInstanceOption.connected) {
@@ -276,7 +261,7 @@ export const useConversationExperience = ({
         'não definido';
       return {
         type: 'info',
-        message: `Respondendo via ${selectedInstanceOption.label}. Instância padrão: ${defaultLabel}.`,
+        message: `Respondendo por ${selectedInstanceOption.label}. Número padrão: ${defaultLabel}.`,
       };
     }
     if (
@@ -286,7 +271,7 @@ export const useConversationExperience = ({
     ) {
       return {
         type: 'warning',
-        message: `Instância padrão (${defaultInstanceOption.label}) está desconectada. Considere selecionar outra instância ativa.`,
+        message: `O número padrão (${defaultInstanceOption.label}) está desconectado. Considere enviar por outro número.`,
       };
     }
     return null;
@@ -344,6 +329,7 @@ export const useConversationExperience = ({
       defaultLabel:
         defaultInstanceOption?.label ?? defaultInstanceOption?.description ?? null,
       loading: Boolean(loadingInstances),
+      ready: Boolean(instancesReady),
       disabled: false,
       onSelect: handleInstanceSelect,
       onRefresh: handleInstanceRefresh,
@@ -359,6 +345,7 @@ export const useConversationExperience = ({
       handleInstanceSelect,
       instanceNotice,
       instanceOptions,
+      instancesReady,
       loadingInstances,
       selectedInstanceConnected,
       selectedInstanceOption,
@@ -420,7 +407,6 @@ export const useConversationExperience = ({
       }
 
       return onSendMessage?.(basePayload);
-      aiReplyStream.reset();
     },
     [
       aiReplyStream,
@@ -431,14 +417,10 @@ export const useConversationExperience = ({
     ],
   );
 
-  const handleComposerTemplate = useCallback(
-    (template) => {
-      if (!template) return;
-      const text = template.body ?? template.content ?? template;
-      onSendMessage?.({ content: text, template });
-    },
-    [onSendMessage],
-  );
+  // Modelos nunca são enviados sozinhos: abrimos o seletor e o texto vai para o composer.
+  const handleOpenTemplates = useCallback(() => {
+    composerApiRef.current?.openTemplatePicker?.();
+  }, []);
 
   const handleComposerCreateNote = useCallback(
     (note) => {
@@ -594,6 +576,10 @@ export const useConversationExperience = ({
     return typingAgents;
   }, [aiReplyStream.status, typingAgents]);
 
+  const contactIdentity = useMemo(() => getTicketIdentity(ticket), [ticket]);
+  const windowState = useMemo(() => resolveWindowState(ticket), [ticket]);
+  const ticketClosed = isTicketClosed(ticket);
+
   const headerProps = useMemo(
     () => ({
       ticket,
@@ -601,18 +587,21 @@ export const useConversationExperience = ({
       onRegisterResult,
       onRegisterCallResult,
       onAssign,
-      onSendTemplate,
       onCreateNextStep,
       onGenerateProposal,
       onScheduleFollowUp,
       onSendSMS,
       onAttachFile: handleAttachFileFromHeader,
+      onOpenTemplates: handleOpenTemplates,
+      onBack,
       onEditContact,
       isRegisteringResult,
       onContactFieldSave,
       onDealFieldSave,
       nextStepValue,
       onNextStepSave,
+      onStageChange,
+      pendingStage,
       onFocusComposer: handleFocusComposer,
       currentUser,
       slaClock,
@@ -639,6 +628,8 @@ export const useConversationExperience = ({
       currentUser,
       handleAttachFileFromHeader,
       handleFocusComposer,
+      handleOpenTemplates,
+      onBack,
       normalizedAiMode,
       aiModeChangeDisabled,
       onAiModeChange,
@@ -655,11 +646,12 @@ export const useConversationExperience = ({
       onEditContact,
       onGenerateProposal,
       onNextStepSave,
+      onStageChange,
+      pendingStage,
       onRegisterCallResult,
       onRegisterResult,
       onScheduleFollowUp,
       onSendSMS,
-      onSendTemplate,
       slaClock,
       ticket,
       queueId,
@@ -670,6 +662,10 @@ export const useConversationExperience = ({
   return {
     timeline: {
       items: combinedTimelineItems,
+      isInitialLoading: Boolean(messagesQuery?.isLoading),
+      error: messagesQuery?.isError ? messagesQuery.error ?? null : null,
+      onRetry: () => messagesQuery?.refetch?.(),
+      windowState,
       hasMore,
       isLoadingMore,
       onLoadMore: handleLoadMore,
@@ -684,8 +680,14 @@ export const useConversationExperience = ({
       notice: composerNotice,
       disabled,
       onSend: handleComposerSend,
-      onTemplate: handleComposerTemplate,
       onCreateNote: handleComposerCreateNote,
+      ticketId,
+      contactName: contactIdentity.displayName ?? null,
+      windowState,
+      closed: ticketClosed,
+      onReopen,
+      aiAutonomous: normalizedAiMode === 'auto' && typeof onTakeOver === 'function',
+      onTakeOver,
       onTyping: broadcastTyping,
       aiState,
       isSending,

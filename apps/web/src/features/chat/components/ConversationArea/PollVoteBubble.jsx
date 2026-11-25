@@ -38,9 +38,9 @@ const PollVoteContent = ({
         <ListChecks className="h-4 w-4" aria-hidden="true" />
         Resposta de enquete
       </div>
-      {question ? <span className="text-xs text-foreground-muted">{question}</span> : null}
-      <div className="flex flex-col gap-1 rounded-lg bg-surface-overlay-quiet px-3 py-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground-muted">
+      {question ? <span className="text-xs text-muted-foreground">{question}</span> : null}
+      <div className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           Opções escolhidas
         </span>
         {hasSelections ? (
@@ -50,25 +50,25 @@ const PollVoteContent = ({
             ))}
           </ul>
         ) : (
-          <span className="text-xs text-foreground-muted">Nenhuma opção identificada</span>
+          <span className="text-xs text-muted-foreground">Nenhuma opção identificada</span>
         )}
       </div>
       {pollId ? (
-        <span className="text-[10px] uppercase tracking-wide text-foreground-muted">ID da enquete: {pollId}</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">ID da enquete: {pollId}</span>
       ) : null}
       {totalVotes !== null || totalVoters !== null ? (
-        <div className="flex flex-col gap-0.5 text-[10px] uppercase tracking-wide text-foreground-muted">
+        <div className="flex flex-col gap-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
           {totalVotes !== null ? <span>Total de votos: {totalVotes}</span> : null}
           {totalVoters !== null ? <span>Total de participantes: {totalVoters}</span> : null}
         </div>
       ) : null}
       {formattedTimestamp ? (
-        <span className="text-[10px] uppercase tracking-wide text-foreground-muted">Atualizado em: {formattedTimestamp}</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Atualizado em: {formattedTimestamp}</span>
       ) : null}
       {textContent ? (
-        <p className="whitespace-pre-wrap break-words text-xs text-foreground-muted">{textContent}</p>
+        <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{textContent}</p>
       ) : null}
-      {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+      {caption ? <p className="text-xs text-muted-foreground">{caption}</p> : null}
     </div>
   );
 };
@@ -80,14 +80,14 @@ const PollOptionsContent = ({ title, options = [], totalVotes, totalVoters, capt
       {title}
     </div>
     {options.length > 0 ? (
-      <ul className="ml-5 list-disc space-y-1 text-xs text-foreground-muted">
+      <ul className="ml-5 list-disc space-y-1 text-xs text-muted-foreground">
         {options.map((option, index) => (
           <li key={option.id ?? index} className="flex items-center gap-2">
-            <span className={cn('text-foreground-muted', option.isSelected && 'font-semibold text-foreground')}>
+            <span className={cn('text-muted-foreground', option.isSelected && 'font-semibold text-foreground')}>
               {option.label}
             </span>
             {option.votes !== null && option.votes !== undefined ? (
-              <span className="rounded-full bg-surface-overlay-quiet px-2 py-0.5 text-[10px] text-foreground">
+              <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] text-foreground">
                 {option.votes} voto{option.votes === 1 ? '' : 's'}
               </span>
             ) : null}
@@ -95,11 +95,11 @@ const PollOptionsContent = ({ title, options = [], totalVotes, totalVoters, capt
         ))}
       </ul>
     ) : (
-      <div className="flex flex-col gap-1 rounded-lg bg-surface-overlay-quiet px-3 py-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground-muted">
+      <div className="flex flex-col gap-1 rounded-lg bg-surface-sunken px-3 py-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
           Opções indisponíveis
         </span>
-        <ul className="ml-4 list-disc space-y-1 text-xs text-foreground-muted">
+        <ul className="ml-4 list-disc space-y-1 text-xs text-muted-foreground">
           <li className="italic">
             {isMetadataMissing
               ? 'As opções desta enquete ainda não foram recebidas.'
@@ -109,13 +109,13 @@ const PollOptionsContent = ({ title, options = [], totalVotes, totalVoters, capt
       </div>
     )}
     {totalVotes !== null || totalVoters !== null ? (
-      <span className="text-[10px] uppercase tracking-wide text-foreground-muted">
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
         {totalVotes !== null ? `Total de votos: ${totalVotes}` : null}
         {totalVotes !== null && totalVoters !== null ? ' • ' : null}
         {totalVoters !== null ? `Total de participantes: ${totalVoters}` : null}
       </span>
     ) : null}
-    {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+    {caption ? <p className="text-xs text-muted-foreground">{caption}</p> : null}
   </div>
 );
 

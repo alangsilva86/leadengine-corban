@@ -15,26 +15,6 @@ vi.mock('@/lib/api.js', () => ({
   API_BASE_URL: '',
 }));
 
-vi.mock('../api/useSendMessage.js', () => ({
-  __esModule: true,
-  default: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-}));
-
-vi.mock('../api/useNotesMutation.js', () => ({
-  __esModule: true,
-  default: () => ({ mutate: vi.fn(), isPending: false }),
-}));
-
-vi.mock('../api/useTicketStatusMutation.js', () => ({
-  __esModule: true,
-  default: () => ({ mutateAsync: vi.fn(), isPending: false }),
-}));
-
-vi.mock('../api/useTicketAssignMutation.js', () => ({
-  __esModule: true,
-  default: () => ({ mutate: vi.fn() }),
-}));
-
 vi.mock('../useTypingIndicator.js', () => ({
   __esModule: true,
   default: () => ({ agentsTyping: [], broadcastTyping: vi.fn() }),

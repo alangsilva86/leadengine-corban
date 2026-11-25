@@ -1,10 +1,14 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { act, cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render as rtlRender, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+
+// O Inbox lê parâmetros de URL (deep link ?contactId=) pelo roteador, como no app.
+const render = (ui, options) => rtlRender(ui, { wrapper: MemoryRouter, ...options });
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
-import ChatCommandCenter from '../containers/ChatCommandCenterContainer.js';
+import ChatCommandCenter from '../containers/ChatCommandCenterContainer.tsx';
 
 const apiMock = vi.hoisted(() => ({
   apiGet: vi.fn(async () => ({ mode: 'assist' })),
@@ -100,6 +104,11 @@ vi.mock('../api/useUpdateContactField', () => ({
   default: () => ({
     mutateAsync: vi.fn(async () => ({})),
   }),
+}));
+
+vi.mock('../api/useTicketStageMutation.js', () => ({
+  __esModule: true,
+  default: () => ({ mutateAsync: vi.fn(async () => ({})), isPending: false, variables: undefined }),
 }));
 
 vi.mock('../api/useUpdateDealFields.js', () => ({

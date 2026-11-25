@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
 
 const DEFAULT_INCLUDE = ['contact', 'lead', 'notes'];
+// Limite máximo aceito pela API por página (`paginationValidation`).
+const API_MAX_PAGE_SIZE = 100;
 
 const normalizeFilters = (filters = {}) => {
   const entries = Object.entries(filters)
@@ -36,6 +38,7 @@ const toQueryValue = (value) => {
 
 const buildQueryString = ({
   limit,
+  page,
   includeMetrics,
   include,
   filters,
@@ -44,6 +47,9 @@ const buildQueryString = ({
 }) => {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
+  if (page && page > 1) {
+    params.set('page', String(page));
+  }
 
   if (sortBy) {
     params.set('sortBy', sortBy);
@@ -75,6 +81,15 @@ const buildQueryString = ({
   return params.toString();
 };
 
+const toNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+/**
+ * Busca a lista de conversas.
+ *
+ * `limit` acima de 100 (o máximo da API) é atendido buscando várias páginas e
+ * concatenando os itens. O resultado continua plano (`data.items`), formato que os
+ * escritores de cache do tempo real (`utils/updateTicketsList.js`) esperam.
+ */
 export const useTicketsQuery = ({
   filters = {},
   limit = 40,
@@ -83,6 +98,7 @@ export const useTicketsQuery = ({
   staleTime = 5000,
   sortBy = 'lastMessageAt',
   sortOrder = 'desc',
+  refetchInterval = false,
 } = {}) => {
   const normalizedFilters = useMemo(() => normalizeFilters(filters), [filters]);
 
@@ -99,28 +115,69 @@ export const useTicketsQuery = ({
     queryKey,
     enabled,
     staleTime,
-    keepPreviousData: true,
+    // React Query v5: mantém a lista anterior na tela enquanto a nova busca carrega
+    // (antes `keepPreviousData: true`, ignorado na v5, esvaziava a lista a cada tecla).
+    placeholderData: keepPreviousData,
+    refetchInterval,
     queryFn: async () => {
-      const queryString = buildQueryString({
-        limit,
-        includeMetrics,
-        include: DEFAULT_INCLUDE,
-        filters: normalizedFilters,
-        sortBy,
-        sortOrder,
-      });
+      const pageSize = Math.min(limit, API_MAX_PAGE_SIZE);
+      const pagesNeeded = Math.max(1, Math.ceil(limit / pageSize));
+      const seen = new Set();
+      const items = [];
+      let metrics = null;
+      let raw = null;
+      let total = null;
+      let hasNext = false;
 
-      const payload = await apiGet(`/api/tickets?${queryString}`);
-      const data = payload?.data ?? null;
-      const items = Array.isArray(data?.items) ? data.items : [];
-      const metrics = data?.metrics ?? null;
-      const pagination = data?.pagination ?? { page: 1, limit };
+      for (let page = 1; page <= pagesNeeded; page += 1) {
+        const queryString = buildQueryString({
+          limit: pageSize,
+          page,
+          includeMetrics: includeMetrics && page === 1,
+          include: DEFAULT_INCLUDE,
+          filters: normalizedFilters,
+          sortBy,
+          sortOrder,
+        });
+
+        const payload = await apiGet(`/api/tickets?${queryString}`);
+        const data = payload?.data ?? null;
+        const pageItems = Array.isArray(data?.items) ? data.items : [];
+
+        if (page === 1) {
+          raw = data;
+          metrics = data?.metrics ?? null;
+        }
+        total = toNumber(data?.total) ?? total;
+
+        for (const item of pageItems) {
+          const id = item?.id;
+          if (id && seen.has(id)) continue;
+          if (id) seen.add(id);
+          items.push(item);
+        }
+
+        hasNext =
+          typeof data?.hasNext === 'boolean'
+            ? data.hasNext
+            : total !== null
+              ? items.length < total
+              : pageItems.length >= pageSize;
+
+        if (!hasNext || pageItems.length === 0) {
+          break;
+        }
+      }
+
+      const pagination = raw?.pagination ?? { page: 1, limit };
 
       return {
         items,
         metrics,
         pagination,
-        raw: data,
+        total: total ?? items.length,
+        hasNext,
+        raw,
       };
     },
   });

@@ -1,14 +1,18 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api.js';
 
 export interface FetchCampaignsParams {
-  agreementId: string | null;
+  agreementId?: string | null;
   instanceId?: string | null;
+  /** Status a listar; sem informar, a API devolve só as ativas. */
+  statuses?: string[];
 }
 
+/** Lista regras da empresa da sessão. A origem e o número são filtros opcionais. */
 export async function fetchCampaigns({
   agreementId,
   instanceId,
-}: FetchCampaignsParams): Promise<any[]> {
+  statuses,
+}: FetchCampaignsParams = {}): Promise<any[]> {
   const params = new URLSearchParams();
   if (agreementId) {
     params.set('agreementId', agreementId);
@@ -16,8 +20,15 @@ export async function fetchCampaigns({
   if (instanceId) {
     params.set('instanceId', instanceId);
   }
+  if (statuses && statuses.length > 0) {
+    params.set('status', statuses.join(','));
+  }
   const query = params.toString();
   const response = await apiGet(`/api/campaigns${query ? `?${query}` : ''}`);
+  // A API responde `{ items }`; versões antigas usavam `{ data }`.
+  if (Array.isArray(response?.items)) {
+    return response.items;
+  }
   return Array.isArray(response?.data) ? response.data : [];
 }
 
@@ -48,6 +59,11 @@ export async function updateCampaignStatus(campaignId: string, status: string) {
   await apiPatch(`/api/campaigns/${encodeURIComponent(campaignId)}`, { status });
 }
 
+export async function renameCampaign(campaignId: string, name: string) {
+  await apiPatch(`/api/campaigns/${encodeURIComponent(campaignId)}`, { name });
+}
+
+/** Encerra a regra (a API marca como "encerrada" e solta o número; o histórico é mantido). */
 export async function deleteCampaign(campaignId: string) {
   await apiDelete(`/api/campaigns/${encodeURIComponent(campaignId)}`);
 }

@@ -5,10 +5,10 @@ import { AI_MODE_OPTIONS, DEFAULT_AI_MODE, isValidAiMode } from '../aiModes.js';
 const AI_HANDOFF_CONFIDENCE_THRESHOLD = 0.5;
 
 const AI_CONFIDENCE_TONES = {
-  high: 'border-success-soft-border bg-success-soft text-success-strong',
-  medium: 'border-warning-soft-border bg-warning-soft text-warning-strong',
-  low: 'border-status-error-border bg-status-error-surface text-status-error-foreground',
-  unknown: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
+  high: 'border-transparent bg-success-soft text-success-soft-foreground',
+  medium: 'border-transparent bg-warning-soft text-warning-soft-foreground',
+  low: 'border-transparent bg-danger-soft text-danger-soft-foreground',
+  unknown: 'border-border bg-surface-sunken text-muted-foreground',
 };
 
 const normalizeAiModeValue = (value) => {
@@ -113,7 +113,7 @@ const useAiControlPanel = ({
   );
 
   const takeoverTooltipMessage = useMemo(() => {
-    if (!ticket) return 'Nenhum ticket selecionado';
+    if (!ticket) return 'Nenhuma conversa aberta';
     if (!onTakeOver) return 'Ação indisponível';
     if (aiModeChangeDisabled) return 'Aguardando estado da IA';
     if (normalizedAiMode === 'manual') return 'Agente já está no comando';
@@ -121,7 +121,7 @@ const useAiControlPanel = ({
   }, [aiModeChangeDisabled, normalizedAiMode, onTakeOver, ticket]);
 
   const giveBackTooltipMessage = useMemo(() => {
-    if (!ticket) return 'Nenhum ticket selecionado';
+    if (!ticket) return 'Nenhuma conversa aberta';
     if (!onGiveBackToAi) return 'Ação indisponível';
     if (aiModeChangeDisabled) return 'Aguardando estado da IA';
     if (normalizedAiMode === 'auto') return 'IA já está no comando';

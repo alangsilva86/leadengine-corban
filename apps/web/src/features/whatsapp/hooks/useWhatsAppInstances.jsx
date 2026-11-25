@@ -49,6 +49,7 @@ const ProviderEffects = ({ controller, logger }) => {
   const status = useInstancesStore((state) => state.status);
   const generatingQr = useInstancesStore((state) => state.generatingQr);
   const qrState = useInstancesStore((state) => state.qrState);
+  const realtimeConnected = useInstancesStore((state) => state.realtimeConnected);
 
   useInstancesBootstrap({
     store,
@@ -63,6 +64,7 @@ const ProviderEffects = ({ controller, logger }) => {
     pauseWhenHidden: config.pauseWhenHidden,
     sessionActive,
     authDeferred,
+    realtimeConnected,
   });
 
   useAutoQr({
@@ -121,17 +123,6 @@ export const WhatsAppInstancesProvider = ({ children, logger: loggerProp, ...pro
     });
   }
 
-  const qrCleanupRef = useRef(null);
-  if (!qrCleanupRef.current) {
-    qrCleanupRef.current = createQrService({
-      store: bundle.store,
-      events: bundle.events,
-      api: {
-        get: (path) => apiGet(path),
-      },
-      logger,
-    });
-  }
 
   const providerConfig = useMemo(
     () => ({
@@ -139,7 +130,8 @@ export const WhatsAppInstancesProvider = ({ children, logger: loggerProp, ...pro
       campaignInstanceId: providerConfigProps.campaignInstanceId ?? null,
       autoRefresh: providerConfigProps.autoRefresh ?? false,
       pauseWhenHidden: providerConfigProps.pauseWhenHidden ?? true,
-      autoGenerateQr: providerConfigProps.autoGenerateQr ?? true,
+      // QR só é gerado quando alguém abre "Conectar número"; nada de QR em segundo plano em outras telas.
+      autoGenerateQr: providerConfigProps.autoGenerateQr ?? false,
       initialFetch: providerConfigProps.initialFetch ?? false,
     }),
     [
@@ -152,15 +144,22 @@ export const WhatsAppInstancesProvider = ({ children, logger: loggerProp, ...pro
     ],
   );
 
+  // O serviço de QR vive no ciclo de efeitos: no StrictMode os efeitos montam/desmontam/montam de novo,
+  // e criar no render + descartar no cleanup deixava o QR sem ouvinte (o QR nunca era pedido).
+  // O serviço de API escuta só o emissor deste provider, que é descartado junto com ele.
   useEffect(() => {
+    const disposeQrService = createQrService({
+      store: bundle.store,
+      events: bundle.events,
+      api: {
+        get: (path) => apiGet(path),
+      },
+      logger,
+    });
     return () => {
-      apiServiceRef.current?.dispose?.();
-      if (qrCleanupRef.current) {
-        qrCleanupRef.current();
-        qrCleanupRef.current = null;
-      }
+      disposeQrService();
     };
-  }, []);
+  }, [bundle.events, bundle.store, logger]);
 
   const servicesValue = useMemo(
     () => ({
@@ -185,6 +184,7 @@ export const WhatsAppInstancesProvider = ({ children, logger: loggerProp, ...pro
   );
 };
 
+// A API resolve a empresa pela sessão; só enviamos tenantId quando um acordo explícito o define.
 const ensureTenantMeta = (selectedAgreement, payload) => {
   if (!selectedAgreement?.tenantId) {
     return payload;
@@ -257,16 +257,19 @@ export default function useWhatsAppInstances(options = {}) {
   const rateLimitUntil = useInstancesStore((state) => state.rateLimitUntil);
   const lastForcedAt = useInstancesStore((state) => state.lastForcedAt);
   const hasFetchedOnce = useInstancesStore((state) => state.hasFetchedOnce);
-  const lastTenantIdRef = useRef(selectedAgreement?.tenantId ?? null);
+  const storeError = useInstancesStore((state) => state.error);
+  // Empresa efetiva: a do acordo selecionado (quando houver) ou a da sessão, vinda do provider.
+  const effectiveTenantId = selectedAgreement?.tenantId ?? controller.providerConfig?.tenantId ?? null;
+  const lastTenantIdRef = useRef(effectiveTenantId);
 
   useEffect(() => {
     const desiredConfig = {
-      tenantId: selectedAgreement?.tenantId ?? null,
+      tenantId: effectiveTenantId,
       campaignInstanceId: options.campaignInstanceId ?? null,
       autoGenerateQr:
         typeof autoGenerateQrOption === 'boolean'
           ? autoGenerateQrOption
-          : controller.providerConfig?.autoGenerateQr ?? true,
+          : controller.providerConfig?.autoGenerateQr ?? false,
       autoRefresh:
         typeof autoRefreshOption === 'boolean'
           ? autoRefreshOption
@@ -283,7 +286,7 @@ export default function useWhatsAppInstances(options = {}) {
     store.getState().setConfig(desiredConfig);
   }, [
     store,
-    selectedAgreement?.tenantId,
+    effectiveTenantId,
     options.campaignInstanceId,
     controller.providerConfig?.autoGenerateQr,
     controller.providerConfig?.autoRefresh,
@@ -421,7 +424,7 @@ export default function useWhatsAppInstances(options = {}) {
   );
 
   useEffect(() => {
-    const nextTenantId = selectedAgreement?.tenantId ?? null;
+    const nextTenantId = effectiveTenantId;
     if (lastTenantIdRef.current === nextTenantId) {
       return;
     }
@@ -430,12 +433,12 @@ export default function useWhatsAppInstances(options = {}) {
     if (nextTenantId) {
       void loadInstances({ forceRefresh: true });
     }
-  }, [selectedAgreement?.tenantId, loadInstances, store]);
+  }, [effectiveTenantId, loadInstances, store]);
 
   const connectInstance = useCallback(
-    async (instanceId, pairingOptions = {}) => {
+    async (instanceId, pairingOptions = {}, { notify = true } = {}) => {
       if (!instanceId) {
-        throw new Error('ID da instância é obrigatório para iniciar pareamento.');
+        throw new Error('Escolha um número para conectar.');
       }
       try {
         const result = await services.api.connectInstance({
@@ -452,12 +455,14 @@ export default function useWhatsAppInstances(options = {}) {
       } catch (err) {
         const friendly = applyErrorMessage(
           err,
-          'Não foi possível conectar a instância. Tente novamente em instantes.',
+          'Não foi possível conectar o número. Tente novamente em instantes.',
         );
-        toast.error(friendly.title ?? 'Falha ao conectar instância', {
-          description: friendly.message,
-        });
-        throw err instanceof Error ? err : new Error(friendly.message);
+        if (notify) {
+          toast.error('Não foi possível conectar o número', {
+            description: friendly.message,
+          });
+        }
+        throw err;
       }
     },
     [applyErrorMessage, services.api, setStatus, store],
@@ -466,7 +471,7 @@ export default function useWhatsAppInstances(options = {}) {
   const generateQr = useCallback(
     async (instanceId, options = {}) => {
       if (!instanceId) {
-        throw new Error('ID da instância é obrigatório para gerar o QR Code.');
+        throw new Error('Escolha um número para gerar o QR Code.');
       }
       store.getState().generateQr({
         instanceId,
@@ -506,23 +511,20 @@ export default function useWhatsAppInstances(options = {}) {
     [store],
   );
 
+  /**
+   * Cria um número. A empresa vem da sessão (a API resolve pelo token); só enviamos `tenantId`
+   * quando um acordo explícito foi informado. Retorna o número criado (ou `{ id, name }`).
+   */
   const createInstance = useCallback(
-    async ({ name, id }) => {
+    async ({ name, id, notify = true }) => {
       if (!name || !name.trim()) {
-        const message = 'Informe um nome válido para a nova instância.';
+        const message = 'Informe um nome para o número.';
         onError?.(message, { code: 'INVALID_NAME' });
-        throw new Error(message);
-      }
-      if (!selectedAgreement?.tenantId) {
-        const message =
-          'Selecione um acordo com tenantId válido para criar um novo canal do WhatsApp.';
-        onError?.(message, { code: 'MISSING_TENANT' });
-        toast.warning(message);
         throw new Error(message);
       }
       const normalizedName = name.trim();
       const normalizedId = typeof id === 'string' && id.trim() ? id.trim() : null;
-      const idempotencyKeyParts = [selectedAgreement?.tenantId ?? null, normalizedId ?? normalizedName]
+      const idempotencyKeyParts = [effectiveTenantId, normalizedId ?? normalizedName]
         .filter((value) => typeof value === 'string' && value)
         .map((value) => value?.toString?.().trim())
         .filter(Boolean);
@@ -533,21 +535,25 @@ export default function useWhatsAppInstances(options = {}) {
         idempotencyKey: idempotencyKeyParts.length ? idempotencyKeyParts.join('|') : undefined,
       });
       try {
-        await services.api.createInstance(payload);
-        toast.success('Canal criado! Gerencie e gere o QR no painel de instâncias.');
-        return true;
+        const created = await services.api.createInstance(payload);
+        if (notify) {
+          toast.success('Número criado. Agora é só parear com o celular.');
+        }
+        return created ?? { id: normalizedId, name: normalizedName };
       } catch (err) {
         const friendly = applyErrorMessage(
           err,
-          'Instância não foi provisionada. Tente novamente em instantes.',
+          'Não foi possível criar o número. Tente novamente em instantes.',
         );
-        toast.error(friendly.title ?? 'Falha ao criar instância', {
-          description: friendly.message,
-        });
-        throw err instanceof Error ? err : new Error(friendly.message);
+        if (notify) {
+          toast.error('Não foi possível criar o número', {
+            description: friendly.message,
+          });
+        }
+        throw err;
       }
     },
-    [applyErrorMessage, onError, selectedAgreement, services.api],
+    [applyErrorMessage, effectiveTenantId, onError, selectedAgreement, services.api],
   );
 
   const deleteInstance = useCallback(
@@ -562,24 +568,63 @@ export default function useWhatsAppInstances(options = {}) {
           hard: !instance.id.endsWith('@s.whatsapp.net'),
         });
         toast.success(
-          instance.id.endsWith('@s.whatsapp.net')
-            ? 'Sessão desconectada com sucesso'
-            : 'Instância removida com sucesso',
+          instance.id.endsWith('@s.whatsapp.net') ? 'Número desconectado.' : 'Número excluído.',
         );
       } catch (err) {
         const friendly = applyErrorMessage(
           err,
-          'Não foi possível remover a instância. Tente novamente em instantes.',
+          'Não foi possível excluir o número. Tente novamente em instantes.',
         );
-        toast.error(friendly.title ?? 'Falha ao remover instância', {
+        toast.error('Não foi possível excluir o número', {
           description: friendly.message,
         });
-        throw err instanceof Error ? err : new Error(friendly.message);
+        throw err;
       } finally {
         store.getState().setDeletingInstance(null);
       }
     },
     [applyErrorMessage, services.api, store],
+  );
+
+  /** Desconecta o celular (logout) e mantém o número cadastrado para reconectar depois. */
+  const disconnectInstance = useCallback(
+    async (instanceId) => {
+      if (!instanceId) {
+        return;
+      }
+      store.getState().setDeletingInstance(instanceId);
+      try {
+        await services.api.disconnectInstance({ instanceId });
+        toast.success('Número desconectado.');
+      } catch (err) {
+        const friendly = applyErrorMessage(
+          err,
+          'Não foi possível desconectar o número. Tente novamente em instantes.',
+        );
+        toast.error('Não foi possível desconectar o número', {
+          description: friendly.message,
+        });
+        throw err;
+      } finally {
+        store.getState().setDeletingInstance(null);
+      }
+    },
+    [applyErrorMessage, services.api, store],
+  );
+
+  /** Consulta o status de um número específico sem avisos na tela. Retorna `true` se conectado. */
+  const checkInstanceStatus = useCallback(
+    async (instanceId) => {
+      if (!instanceId) {
+        return false;
+      }
+      try {
+        return await services.api.markConnected({ instanceId, status: 'connected' });
+      } catch {
+        return false;
+      }
+    },
+    [services.api],
   );
 
   const markConnected = useCallback(async () => {
@@ -596,10 +641,10 @@ export default function useWhatsAppInstances(options = {}) {
         setStatus('connected');
         store.getState().setQrData(null);
         setSeconds(null);
-        toast.success('Instância conectada com sucesso.');
+        toast.success('Número conectado.');
       } else {
         store.getState().setError({
-          message: 'A instância ainda não está conectada. Escaneie o QR e tente novamente.',
+          message: 'O número ainda não está conectado. Leia o QR Code e tente novamente.',
           code: null,
         });
       }
@@ -609,7 +654,7 @@ export default function useWhatsAppInstances(options = {}) {
         handleAuthFallback({ error: err });
         return false;
       }
-      applyErrorMessage(err, 'Não foi possível verificar o status da instância.');
+      applyErrorMessage(err, 'Não foi possível verificar o status do número.');
       return false;
     }
   }, [
@@ -628,6 +673,7 @@ export default function useWhatsAppInstances(options = {}) {
     instances,
     instancesReady,
     loadStatus,
+    error: storeError,
     currentInstance,
     status,
     qrData,
@@ -650,6 +696,8 @@ export default function useWhatsAppInstances(options = {}) {
     connectInstance,
     createInstance,
     deleteInstance,
+    disconnectInstance,
+    checkInstanceStatus,
     markConnected,
     handleAuthFallback,
     setSessionActive,

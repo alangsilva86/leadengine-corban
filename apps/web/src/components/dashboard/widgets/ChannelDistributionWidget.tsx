@@ -4,6 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton.jsx';
 import { cn } from '@/lib/utils.js';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import type { ChannelDistributionEntry } from '../useDashboardData';
+import { chartTooltip } from './chart-theme';
 
 export interface ChannelDistributionWidgetProps {
   data: ChannelDistributionEntry[];
@@ -12,10 +13,10 @@ export interface ChannelDistributionWidgetProps {
 }
 
 const ChannelDistributionWidgetComponent = ({ data, loading = false, className }: ChannelDistributionWidgetProps) => (
-  <Card className={cn('transition-shadow duration-200 hover:shadow-lg lg:col-span-1', className)}>
+  <Card className={cn('gap-4 lg:col-span-1', className)}>
     <CardHeader>
-      <CardTitle>Canais de Atendimento</CardTitle>
-      <CardDescription>Distribuição de tickets por canal</CardDescription>
+      <CardTitle>Conversas por canal</CardTitle>
+      <CardDescription>De onde vêm as conversas.</CardDescription>
     </CardHeader>
     <CardContent>
       {loading ? (
@@ -30,7 +31,7 @@ const ChannelDistributionWidgetComponent = ({ data, loading = false, className }
                     <Cell key={`cell-${index}`} fill={entry.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number | string) => `${value}%`} />
+                <Tooltip formatter={(value: number | string) => `${value}%`} {...chartTooltip} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -45,14 +46,14 @@ const ChannelDistributionWidgetComponent = ({ data, loading = false, className }
                   <span className="h-3 w-3 rounded-full" style={{ backgroundColor: channel.color }} />
                   <span className="text-foreground">{channel.name}</span>
                 </div>
-                <span className="font-medium">{channel.value}%</span>
+                <span className="font-medium tabular-nums">{channel.value}%</span>
               </div>
             ))}
           </div>
         </>
       ) : (
         <p className="text-sm text-muted-foreground" data-testid="channel-distribution-empty">
-          Não há dados suficientes para calcular a distribuição por canal.
+          Ainda não há conversas suficientes para mostrar a distribuição.
         </p>
       )}
     </CardContent>

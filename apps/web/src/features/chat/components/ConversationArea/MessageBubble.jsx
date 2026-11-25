@@ -1,6 +1,5 @@
 import { Suspense, lazy, useMemo, useState } from 'react';
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import {
   Dialog,
   DialogContent,
@@ -10,38 +9,37 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog.jsx';
 import { cn } from '@/lib/utils.js';
-import {
-  Check,
-  CheckCheck,
-  BadgeCheck,
-  AlertTriangle,
-  Download,
-  FileText,
-  MapPin,
-  Loader2,
-} from 'lucide-react';
+import { AlertCircle, Check, CheckCheck, Clock3, Download, FileText, Loader2, MapPin } from 'lucide-react';
 
 import { usePollMessage } from '../../hooks/usePollMessage.js';
-import InstanceBadge from '../Shared/InstanceBadge.jsx';
-import useInstancePresentation from '../../hooks/useInstancePresentation.js';
+import { formatMessageTime } from './utils/presentation.js';
 
 const PollVoteBubble = lazy(() => import('./PollVoteBubble.jsx'));
 const ContactBubble = lazy(() => import('./ContactBubble.jsx'));
 const TemplateBubble = lazy(() => import('./TemplateBubble.jsx'));
 
-const STATUS_ICONS = {
-  PENDING: { icon: Loader2, tone: 'text-foreground-muted', label: 'Enviando' },
-  SENT: { icon: Check, tone: 'text-foreground-muted', label: 'Enviado' },
-  DELIVERED: { icon: CheckCheck, tone: 'text-foreground', label: 'Entregue' },
-  READ: { icon: BadgeCheck, tone: 'text-success', label: 'Lido' },
-  FAILED: { icon: AlertTriangle, tone: 'text-status-error', label: 'Falha no envio' },
+// Confirmações de entrega (só em mensagens enviadas): Enviando · ✓ · ✓✓ · ✓✓ azul "Lida" · ⚠ falha.
+const DELIVERY_STATUS = {
+  PENDING: { icon: Clock3, className: 'text-subtle-foreground', label: 'Enviando' },
+  QUEUED: { icon: Clock3, className: 'text-subtle-foreground', label: 'Enviando' },
+  SENT: { icon: Check, className: 'text-subtle-foreground', label: 'Enviada' },
+  DELIVERED: { icon: CheckCheck, className: 'text-subtle-foreground', label: 'Entregue' },
+  READ: { icon: CheckCheck, className: 'text-primary', label: 'Lida' },
+  PLAYED: { icon: CheckCheck, className: 'text-primary', label: 'Lida' },
+  FAILED: { icon: AlertCircle, className: 'text-danger', label: 'Falha no envio' },
+  ERROR: { icon: AlertCircle, className: 'text-danger', label: 'Falha no envio' },
 };
 
-const formatTime = (value) => {
-  if (!value) return '';
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const DeliveryStatus = ({ status }) => {
+  const normalized = typeof status === 'string' ? status.toUpperCase() : 'SENT';
+  const info = DELIVERY_STATUS[normalized] ?? DELIVERY_STATUS.SENT;
+  const Icon = info.icon;
+  return (
+    <span className={cn('inline-flex items-center', info.className)} title={info.label}>
+      <Icon className="size-3.5" aria-hidden />
+      <span className="sr-only">{info.label}</span>
+    </span>
+  );
 };
 
 export const MessageBubble = ({
@@ -50,49 +48,29 @@ export const MessageBubble = ({
   isTail = true,
   isFirst = false,
   showMetadata = true,
+  authorLabel = null,
 }) => {
   const rawDirection = typeof message.direction === 'string' ? message.direction.toLowerCase() : 'inbound';
   const outbound = rawDirection === 'outbound';
-  const tone = outbound
-    ? 'bg-inbox-surface-strong text-inbox-foreground ring-1 ring-inbox-border'
-    : 'bg-inbox-surface text-inbox-foreground ring-1 ring-inbox-border';
+  const normalizedStatus = typeof message.status === 'string' ? message.status.toUpperCase() : 'SENT';
+  const isFailedStatus = normalizedStatus === 'FAILED' || normalizedStatus === 'ERROR';
   const bubbleClass = cn(
-    'max-w-[72%] rounded-2xl px-3 py-2 text-sm leading-tight shadow-[0_10px_30px_-18px_rgba(15,23,42,0.6)] backdrop-blur transition-colors duration-150',
-    tone,
-    outbound ? 'self-end' : 'self-start',
+    'relative min-w-[4.5rem] max-w-[min(80%,36rem)] rounded-2xl px-3 pb-1.5 pt-2 text-sm text-foreground shadow-xs',
+    outbound ? 'bg-bubble-out' : 'border border-border bg-bubble-in',
     isContinuation && (outbound ? 'rounded-tr-md' : 'rounded-tl-md'),
-    !isTail && (outbound ? 'rounded-br-md' : 'rounded-bl-md')
+    !isTail && (outbound ? 'rounded-br-md' : 'rounded-bl-md'),
+    isFailedStatus && 'ring-1 ring-danger',
   );
   const containerClass = cn(
-    'flex w-full flex-col gap-0.5',
+    'flex w-full flex-col gap-1',
     outbound ? 'items-end' : 'items-start',
-    isContinuation ? 'mt-1' : isFirst ? 'mt-0' : 'mt-3'
+    isContinuation ? 'mt-0.5' : isFirst ? 'mt-0' : 'mt-3',
   );
   const metadata = (message.metadata && typeof message.metadata === 'object' ? message.metadata : {}) ?? {};
   const mediaPending =
     metadata.media_pending === true ||
     (typeof metadata.mediaStatus === 'string' && metadata.mediaStatus.toLowerCase() === 'pending');
-  const brokerMetadata = metadata?.broker && typeof metadata.broker === 'object' ? metadata.broker : {};
-  const interactiveMetadata =
-    metadata?.interactive && typeof metadata.interactive === 'object' ? metadata.interactive : null;
-  const rawKeyMeta = metadata.rawKey && typeof metadata.rawKey === 'object' ? metadata.rawKey : {};
-  const sourceInstance =
-    metadata.sourceInstance ?? brokerMetadata.instanceId ?? message.instanceId ?? 'desconhecido';
-  const remoteJid = metadata.remoteJid ?? metadata.chatId ?? rawKeyMeta.remoteJid ?? null;
-  const phoneLabel = metadata.phoneE164 ?? remoteJid ?? message.chatId ?? 'desconhecido';
-  const directionChipTone = outbound
-    ? 'bg-accent text-accent-foreground'
-    : 'bg-success-strong text-white';
-  const directionLabel = outbound ? 'OUT' : 'IN';
-  const timestamp = message.createdAt ? new Date(message.createdAt) : null;
-  const tooltipTimestamp = timestamp && !Number.isNaN(timestamp.getTime()) ? timestamp.toISOString() : null;
-  const instancePresentation = useInstancePresentation(sourceInstance);
-
-  const ack = STATUS_ICONS[message.status ?? 'SENT'] ?? STATUS_ICONS.SENT;
-  const AckIcon = ack.icon;
-  const normalizedStatus = typeof message.status === 'string' ? message.status.toUpperCase() : 'SENT';
-  const isPendingStatus = normalizedStatus === 'PENDING';
-  const isFailedStatus = normalizedStatus === 'FAILED';
+  const time = formatMessageTime(message.createdAt);
 
   const messageType = typeof message.type === 'string' ? message.type.toLowerCase() : 'text';
   const media = message.media && typeof message.media === 'object' ? message.media : null;
@@ -177,7 +155,7 @@ export const MessageBubble = ({
         href={mediaUrl}
         target="_blank"
         rel="noreferrer noopener"
-        className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-overlay-strong"
+        className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-sunken px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-hover"
       >
         <Download className="h-3 w-3" aria-hidden="true" />
         {label}
@@ -187,7 +165,7 @@ export const MessageBubble = ({
   const renderBody = () => {
     if (resolvedType === 'text' && voteBubble?.shouldRender) {
       return (
-        <Suspense fallback={<span className="text-xs text-foreground-muted">Carregando enquete…</span>}>
+        <Suspense fallback={<span className="text-xs text-muted-foreground">Carregando enquete…</span>}>
           <PollVoteBubble
             variant="vote"
             question={voteBubble.question}
@@ -205,7 +183,7 @@ export const MessageBubble = ({
 
     if (resolvedType === 'poll' && pollBubble?.shouldRender) {
       return (
-        <Suspense fallback={<span className="text-xs text-foreground-muted">Carregando enquete…</span>}>
+        <Suspense fallback={<span className="text-xs text-muted-foreground">Carregando enquete…</span>}>
           <PollVoteBubble
             variant="poll"
             title={pollBubble.title}
@@ -225,9 +203,9 @@ export const MessageBubble = ({
 
     if (mediaPending) {
       return (
-        <div className="flex items-center gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2">
-          <Loader2 className="h-4 w-4 animate-spin text-foreground-muted" aria-hidden="true" />
-          <span className="text-xs text-foreground-muted">Processando mídia…</span>
+        <div className="flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
+          <span className="text-xs text-muted-foreground">Processando mídia…</span>
         </div>
       );
     }
@@ -240,17 +218,17 @@ export const MessageBubble = ({
               <button
                 type="button"
                 onClick={() => setPreviewOpen(true)}
-                className="group relative rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[color:var(--accent-inbox-primary)]"
+                className="group relative rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-ring"
               >
                 <img
                   src={mediaUrl}
-                  alt={caption ?? 'Imagem recebida'}
+                  alt={caption ?? 'Imagem'}
                   className="max-h-64 w-full rounded-lg object-contain transition group-hover:brightness-110"
                 />
                 <span className="sr-only">Ampliar imagem</span>
               </button>
             </DialogTrigger>
-            {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
+            {caption ? <figcaption className="text-xs text-muted-foreground">{caption}</figcaption> : null}
             {renderDownloadAction('Baixar imagem')}
           </div>
 
@@ -259,10 +237,10 @@ export const MessageBubble = ({
               <DialogTitle>Pré-visualização da imagem</DialogTitle>
               {caption ? <DialogDescription>{caption}</DialogDescription> : null}
             </DialogHeader>
-            <div className="max-h-[70vh] overflow-hidden rounded-md bg-black/50 p-2">
+            <div className="max-h-[70vh] overflow-hidden rounded-md bg-surface-sunken p-2">
               <img
                 src={mediaUrl}
-                alt={caption ?? 'Imagem recebida'}
+                alt={caption ?? 'Imagem'}
                 className="mx-auto max-h-[65vh] w-full rounded-md object-contain"
               />
             </div>
@@ -284,7 +262,7 @@ export const MessageBubble = ({
               <button
                 type="button"
                 onClick={() => setPreviewOpen(true)}
-                className="group relative rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[color:var(--accent-inbox-primary)]"
+                className="group relative rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-ring"
               >
                 <video
                   controls
@@ -295,7 +273,7 @@ export const MessageBubble = ({
                 <span className="sr-only">Ampliar vídeo</span>
               </button>
             </DialogTrigger>
-            {caption ? <figcaption className="text-xs text-foreground-muted">{caption}</figcaption> : null}
+            {caption ? <figcaption className="text-xs text-muted-foreground">{caption}</figcaption> : null}
             {renderDownloadAction('Baixar vídeo')}
           </div>
 
@@ -304,7 +282,7 @@ export const MessageBubble = ({
               <DialogTitle>Pré-visualização do vídeo</DialogTitle>
               {caption ? <DialogDescription>{caption}</DialogDescription> : null}
             </DialogHeader>
-            <div className="max-h-[70vh] overflow-hidden rounded-md bg-black/50 p-2">
+            <div className="max-h-[70vh] overflow-hidden rounded-md bg-surface-sunken p-2">
               <video
                 controls
                 src={mediaUrl}
@@ -331,7 +309,7 @@ export const MessageBubble = ({
             className="w-full min-w-[240px] max-w-[560px]"
             preload="metadata"
           />
-          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+          {caption ? <p className="text-xs text-muted-foreground">{caption}</p> : null}
           {renderDownloadAction('Baixar áudio')}
         </div>
       );
@@ -347,19 +325,19 @@ export const MessageBubble = ({
               <button
                 type="button"
                 onClick={() => setPreviewOpen(true)}
-                className="flex items-center gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2 text-left transition hover:bg-surface-overlay-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[color:var(--accent-inbox-primary)]"
+                className="flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2 text-left transition hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-ring"
               >
                 <FileText className="h-4 w-4 text-foreground" aria-hidden="true" />
                 <div className="flex flex-col">
                   <span className="text-sm font-semibold text-foreground">{fileName}</span>
-                  <span className="text-xs text-foreground-muted">Documento</span>
+                  <span className="text-xs text-muted-foreground">Documento</span>
                 </div>
               </button>
             </DialogTrigger>
             {mediaUrl ? renderDownloadAction('Baixar arquivo') : (
               <span className="text-xs opacity-60">Pré-visualização indisponível</span>
             )}
-            {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+            {caption ? <p className="text-xs text-muted-foreground">{caption}</p> : null}
           </div>
 
           {mediaUrl ? (
@@ -368,7 +346,7 @@ export const MessageBubble = ({
                 <DialogTitle>{fileName}</DialogTitle>
                 {caption ? <DialogDescription>{caption}</DialogDescription> : null}
               </DialogHeader>
-              <div className="max-h-[70vh] overflow-hidden rounded-md bg-surface-overlay-quiet p-3">
+              <div className="max-h-[70vh] overflow-hidden rounded-md bg-surface-sunken p-3">
                 <div className="flex items-center gap-2 pb-3">
                   <FileText className="h-4 w-4 text-foreground" aria-hidden="true" />
                   <span className="text-sm font-semibold text-foreground">Pré-visualização do documento</span>
@@ -376,7 +354,7 @@ export const MessageBubble = ({
                 <iframe
                   title={`Pré-visualização de ${fileName}`}
                   src={mediaUrl}
-                  className="h-[60vh] w-full rounded-md bg-white"
+                  className="h-[60vh] w-full rounded-md bg-background"
                 />
               </div>
               {renderDownloadAction('Baixar arquivo')}
@@ -399,15 +377,15 @@ export const MessageBubble = ({
 
       return (
         <div className="flex flex-col gap-3">
-          <div className="flex items-start gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+          <div className="flex items-start gap-2 rounded-lg bg-surface-sunken px-3 py-2">
             <MapPin className="mt-0.5 h-4 w-4 text-foreground" aria-hidden="true" />
             <div className="flex flex-col">
               {location.name ? <span className="font-semibold text-foreground">{location.name}</span> : null}
               {location.address ? (
-                <span className="text-xs text-foreground-muted">{location.address}</span>
+                <span className="text-xs text-muted-foreground">{location.address}</span>
               ) : null}
               {typeof latitude === 'number' && typeof longitude === 'number' ? (
-                <span className="text-[10px] uppercase tracking-wide text-foreground-muted">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   {latitude.toFixed(5)}, {longitude.toFixed(5)}
                 </span>
               ) : null}
@@ -418,7 +396,7 @@ export const MessageBubble = ({
               href={mapsUrl}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-overlay-quiet px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-overlay-strong"
+              className="inline-flex w-fit items-center gap-2 rounded-full bg-surface-sunken px-3 py-1 text-xs font-medium text-foreground transition hover:bg-surface-hover"
             >
               <MapPin className="h-3 w-3" aria-hidden="true" />
               Abrir no mapa
@@ -426,7 +404,7 @@ export const MessageBubble = ({
           ) : (
             <span className="text-xs opacity-60">Link de mapa indisponível</span>
           )}
-          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+          {caption ? <p className="text-xs text-muted-foreground">{caption}</p> : null}
         </div>
       );
     }
@@ -443,7 +421,7 @@ export const MessageBubble = ({
       }
 
       return (
-        <Suspense fallback={<span className="text-xs text-foreground-muted">Carregando contatos…</span>}>
+        <Suspense fallback={<span className="text-xs text-muted-foreground">Carregando contatos…</span>}>
           <ContactBubble contacts={contacts} caption={caption} />
         </Suspense>
       );
@@ -456,7 +434,7 @@ export const MessageBubble = ({
           : null) ?? metadata?.template;
 
       return (
-        <Suspense fallback={<span className="text-xs text-foreground-muted">Carregando template…</span>}>
+        <Suspense fallback={<span className="text-xs text-muted-foreground">Carregando template…</span>}>
           <TemplateBubble template={interactiveTemplate} caption={caption} />
         </Suspense>
       );
@@ -465,12 +443,12 @@ export const MessageBubble = ({
     if (mediaUrl) {
       return (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 rounded-lg bg-surface-overlay-quiet px-3 py-2">
+          <div className="flex items-center gap-2 rounded-lg bg-surface-sunken px-3 py-2">
             <Download className="h-4 w-4 text-foreground" aria-hidden="true" />
             <span className="text-sm font-semibold text-foreground">Baixar conteúdo</span>
           </div>
           {renderDownloadAction('Abrir arquivo')}
-          {caption ? <p className="text-xs text-foreground-muted">{caption}</p> : null}
+          {caption ? <p className="text-xs text-muted-foreground">{caption}</p> : null}
         </div>
       );
     }
@@ -478,71 +456,30 @@ export const MessageBubble = ({
     return renderUnsupported(resolvedType);
   };
 
+  const showAuthor = outbound && showMetadata && Boolean(authorLabel);
+
   return (
     <div
       className={containerClass}
       data-direction={outbound ? 'outbound' : 'inbound'}
-      data-status={(message.status ?? 'sent').toString().toLowerCase()}
+      data-status={normalizedStatus.toLowerCase()}
     >
+      {showAuthor ? (
+        <span className="px-1 text-xs font-medium text-muted-foreground">{authorLabel}</span>
+      ) : null}
       <div className={bubbleClass}>
-        {showMetadata ? (
-          <div
-            className={cn(
-              'mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide',
-              outbound ? 'justify-end' : 'justify-start'
-            )}
-          >
-            <span className={cn('rounded-full px-2 py-0.5', directionChipTone)}>{directionLabel}</span>
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <span>
-                  <InstanceBadge instanceId={sourceInstance} withTooltip={false} className="text-[10px]" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent className="space-y-1">
-                <p className="font-semibold">Instância: {instancePresentation.label}</p>
-                <p className="text-xs text-muted-foreground">
-                  Telefone: {instancePresentation.number ?? 'Não informado'}
-                </p>
-                <p className="text-xs text-muted-foreground">Contato: {phoneLabel}</p>
-                {remoteJid ? <p className="text-xs text-muted-foreground">remoteJid: {remoteJid}</p> : null}
-                {tooltipTimestamp ? (
-                  <p className="text-xs text-muted-foreground">timestamp: {tooltipTimestamp}</p>
-                ) : null}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        ) : null}
-
-        <div className="break-words whitespace-pre-wrap text-sm leading-tight">{renderBody()}</div>
-        {isTail ? (
-          <div
-            className={cn(
-              'mt-1 flex items-center gap-2 text-[11px] text-foreground-muted',
-              outbound ? 'justify-end' : 'justify-start'
-            )}
-          >
-            <span>{formatTime(message.createdAt)}</span>
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[color:var(--accent-inbox-primary)]',
-                    ack.tone,
-                    isFailedStatus && 'text-status-error focus-visible:ring-status-error/60'
-                  )}
-                  aria-label={ack.label}
-                >
-                  <AckIcon className={cn('h-3 w-3', isPendingStatus && 'animate-spin')} aria-hidden="true" />
-                  <span className="sr-only">{ack.label}</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{ack.label}</TooltipContent>
-            </Tooltip>
-          </div>
-        ) : null}
+        <div className="break-words whitespace-pre-wrap text-sm leading-snug">{renderBody()}</div>
+        <div className="-mb-0.5 mt-0.5 flex items-center justify-end gap-1 text-[11px] leading-4 text-muted-foreground">
+          {time ? <time dateTime={message.createdAt ?? undefined}>{time}</time> : null}
+          {outbound ? <DeliveryStatus status={normalizedStatus} /> : null}
+        </div>
       </div>
+      {isFailedStatus ? (
+        <span className="flex items-center gap-1 px-1 text-xs font-medium text-danger-soft-foreground" role="status">
+          <AlertCircle className="size-3.5" aria-hidden />
+          Falha no envio — não chegou ao cliente.
+        </span>
+      ) : null}
     </div>
   );
 };

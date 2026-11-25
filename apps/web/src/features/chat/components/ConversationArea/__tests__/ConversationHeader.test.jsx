@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import ConversationHeader, { PrimaryActionButton } from '../ConversationHeader.jsx';
-import { formatStageLabel, normalizeStage, resolvePrimaryAction } from '../utils/stage.js';
+import ConversationHeader, { resolveHeaderPrimaryAction } from '../ConversationHeader.jsx';
+import ContactDetailsPanel from '../ContactDetailsPanel.jsx';
+import { getTicketLeadStage } from '../../../utils/leadStage.js';
 
 vi.mock('sonner', () => ({
   toast: {
@@ -15,26 +16,11 @@ vi.mock('sonner', () => ({
   },
 }));
 
-vi.mock('../../utils/telemetry.js', () => ({
-  __esModule: true,
-  default: vi.fn(),
-}));
-
-vi.mock('../../hooks/usePhoneActions.js', () => ({
-  __esModule: true,
-  usePhoneActions: vi.fn(() => vi.fn()),
-}));
-
 vi.mock('@/hooks/use-clipboard.js', () => ({
   __esModule: true,
   useClipboard: () => ({
     copy: vi.fn(),
   }),
-}));
-
-vi.mock('../QuickComposer.jsx', () => ({
-  __esModule: true,
-  default: () => <div data-testid="quick-composer">QuickComposer</div>,
 }));
 
 vi.mock('../CallResultDialog.jsx', () => ({
@@ -47,214 +33,154 @@ vi.mock('../LossReasonDialog.jsx', () => ({
   default: () => <div data-testid="loss-reason-dialog">LossReasonDialog</div>,
 }));
 
-vi.mock('../CommandBar.jsx', () => ({
-  __esModule: true,
-  CommandBar: () => <div data-testid="command-bar" />,
-}));
-
-vi.mock('../../hooks/useTicketJro.js', () => ({
-  __esModule: true,
-  default: () => ({ state: 'neutral', label: 'Em andamento', progress: 0.5 }),
-}));
-
 vi.mock('@/features/chat/hooks/useInstancePresentation.js', () => ({
   __esModule: true,
   default: () => ({ label: 'Instância mock', color: '#94A3B8', phone: null, number: null }),
 }));
 
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 afterEach(() => {
   cleanup();
 });
 
+// Valores antigos (Inbox/CRM) e ids novos do contrato → etapa do funil único do lead.
 const STAGE_SCENARIOS = [
-  { raw: 'Novo', key: 'NOVO', hasWhatsApp: true },
-  { raw: 'Conectado', key: 'CONECTADO', hasWhatsApp: true },
-  { raw: 'Qualificação', key: 'QUALIFICACAO', hasWhatsApp: false },
-  { raw: 'Proposta', key: 'PROPOSTA', hasWhatsApp: false },
-  { raw: 'Documentação', key: 'DOCUMENTACAO', hasWhatsApp: false },
-  { raw: 'Documentos Averbação', key: 'DOCUMENTOS_AVERBACAO', hasWhatsApp: false },
-  { raw: 'Aguardando - Cliente', key: 'AGUARDANDO_CLIENTE', hasWhatsApp: true },
-  { raw: '  aguardando//cliente  ', key: 'AGUARDANDO_CLIENTE', hasWhatsApp: true },
-  { raw: 'Liquidação', key: 'LIQUIDACAO', hasWhatsApp: false },
-  { raw: 'Aprovado / Liquidação', key: 'APROVADO_LIQUIDACAO', hasWhatsApp: false },
-  { raw: 'Reciclar', key: 'RECICLAR', hasWhatsApp: true },
+  { ticket: { stage: 'novo' }, stage: 'novo', label: 'Novo' },
+  { ticket: { stage: 'conectado' }, stage: 'contato', label: 'Em contato' },
+  { ticket: { pipelineStep: 'Qualificação' }, stage: 'qualificacao', label: 'Qualificação' },
+  { ticket: { stage: 'proposta' }, stage: 'proposta', label: 'Proposta' },
+  { ticket: { stage: 'AGUARDANDO_CLIENTE' }, stage: 'documentacao', label: 'Documentação' },
+  { ticket: { stage: 'documentos_averbacao' }, stage: 'averbacao', label: 'Averbação' },
+  { ticket: { metadata: { pipelineStep: 'Liquidação' } }, stage: 'liquidacao', label: 'Liquidação' },
+  { ticket: { stage: 'aprovado_liquidacao' }, stage: 'ganho', label: 'Ganho' },
+  { ticket: { stage: 'perdido' }, stage: 'perdido', label: 'Perdido' },
+  { ticket: { stage: 'Reciclar' }, stage: 'reciclar', label: 'Reciclar' },
+  { ticket: { stage: 'desconhecido' }, stage: 'novo', label: 'Novo' },
+  { ticket: {}, stage: 'novo', label: 'Novo' },
 ];
 
-describe('ConversationHeader helpers', () => {
-  it('normalizes stage names with accents and separators', () => {
-    STAGE_SCENARIOS.forEach(({ raw, key }) => {
-      expect(normalizeStage(raw)).toBe(key);
+describe('etapa do lead na conversa', () => {
+  it('normaliza valores antigos e novos para o funil único', () => {
+    STAGE_SCENARIOS.forEach(({ ticket, stage }) => {
+      expect(getTicketLeadStage(ticket)).toBe(stage);
     });
   });
 
-  it('resolves a primary action for each funnel stage', () => {
-    STAGE_SCENARIOS.forEach(({ key, hasWhatsApp }) => {
-      const action = resolvePrimaryAction({ stageKey: key, hasWhatsApp, needsContactValidation: false });
-      expect(action).toBeTruthy();
-      expect(action.id).toBeTypeOf('string');
-      expect(action.label).toBeTypeOf('string');
-    });
+  it('prioriza `stage` (dono: o lead) sobre o `pipelineStep` legado', () => {
+    expect(getTicketLeadStage({ stage: 'proposta', pipelineStep: 'Novo' })).toBe('proposta');
   });
 
-  it('renders the primary action button when an action is provided', () => {
-    STAGE_SCENARIOS.forEach(({ key, hasWhatsApp }) => {
-      const action = resolvePrimaryAction({ stageKey: key, hasWhatsApp, needsContactValidation: false });
+  it('pede "Registrar resultado" só em Liquidação, Ganho e Perdido', () => {
+    const base = { ticket: { id: 't', status: 'OPEN' }, assignee: { id: 'a' }, aiMode: 'assist', windowState: null };
+    ['liquidacao', 'ganho', 'perdido'].forEach((stage) => {
+      expect(resolveHeaderPrimaryAction({ ...base, stage })?.id).toBe('register-result');
+    });
+    ['novo', 'contato', 'qualificacao', 'proposta', 'documentacao', 'averbacao', 'reciclar'].forEach((stage) => {
+      expect(resolveHeaderPrimaryAction({ ...base, stage })).toBeNull();
+    });
+    expect(resolveHeaderPrimaryAction({ ...base, ticket: { id: 't', status: 'CLOSED' }, stage: 'ganho' })).toBeNull();
+  });
+
+  it('mostra o chip da etapa com o rótulo do contrato', () => {
+    STAGE_SCENARIOS.forEach(({ ticket, label }) => {
       const { unmount } = render(
-        <PrimaryActionButton action={action} jroState="neutral" onExecute={() => {}} disabled={false} />,
+        <ConversationHeader ticket={{ id: 'ticket-x', status: 'OPEN', contact: { name: 'Cliente Teste' }, window: {}, ...ticket }} />,
       );
-      expect(screen.getByRole('button', { name: action.label })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: `Etapa do lead: ${label}` })).toBeInTheDocument();
       unmount();
     });
   });
 
-  it('prefers contact validation when WhatsApp channel is marked as invalid', () => {
-    const action = resolvePrimaryAction({
-      stageKey: 'NOVO',
-      hasWhatsApp: false,
-      needsContactValidation: true,
-    });
-
-    expect(action).toMatchObject({ id: 'validate-contact', label: 'Validar contato' });
-  });
-
-  it('falls back to calling when WhatsApp is invalid and no validation preset is configured', () => {
-    const action = resolvePrimaryAction({
-      stageKey: 'AGUARDANDO',
-      hasWhatsApp: false,
-      needsContactValidation: true,
-    });
-
-    expect(action).toMatchObject({ id: 'call-followup' });
-    expect(action.label).toContain('Ligar');
-  });
-
-  it('renderiza um indicador acessível para cada etapa do funil', () => {
-    STAGE_SCENARIOS.forEach(({ raw, key }) => {
-      const ticket = {
-        id: `ticket-${key}`,
-        status: 'OPEN',
-        pipelineStep: raw,
-        contact: { name: 'Cliente Teste' },
-        window: {},
-        lead: {},
-      };
-
-      const { unmount } = render(<ConversationHeader ticket={ticket} />);
-
-      const stageLabel = formatStageLabel(key);
-      expect(screen.getByLabelText(`Etapa: ${stageLabel}`)).toBeInTheDocument();
-
-      unmount();
-    });
-  });
-
-  it('abre o popover de etapas ao acionar o chip da etapa atual', async () => {
-    const ticket = {
-      id: 'ticket-novo',
-      status: 'OPEN',
-      pipelineStep: 'Novo',
-      contact: { name: 'Cliente Teste' },
-      window: {},
-      lead: {},
-    };
-
-    render(<ConversationHeader ticket={ticket} />);
-
-    const stageLabel = formatStageLabel('NOVO');
-    const trigger = screen.getByRole('button', { name: `Etapa: ${stageLabel}` });
-
+  it('abre o seletor do funil e muda a etapa pelo chip', async () => {
+    const onStageChange = vi.fn();
     const user = userEvent.setup();
-    await user.click(trigger);
+    render(
+      <ConversationHeader
+        ticket={{ id: 'ticket-q', status: 'OPEN', stage: 'qualificacao', contact: { name: 'Cliente Teste' }, window: {} }}
+        onStageChange={onStageChange}
+      />,
+    );
 
-    expect(await screen.findByText('Próximas etapas')).toBeInTheDocument();
-    expect(screen.getByText('Você está aqui')).toBeInTheDocument();
-    expect(screen.getAllByText('Próxima etapa do funil').length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Etapa do lead: Qualificação. Mudar etapa' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Etapa do lead')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Qualificação (etapa atual)' })).toHaveAttribute('aria-current', 'step');
+    expect(within(dialog).getByRole('button', { name: 'Em contato (concluída)' })).toBeEnabled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Proposta' }));
+    expect(onStageChange).toHaveBeenCalledWith('proposta');
+  });
+
+  it('desabilita as transições proibidas e explica o motivo (Perdido → só Reciclar)', async () => {
+    const user = userEvent.setup();
+    render(
+      <ConversationHeader
+        ticket={{ id: 'ticket-p', status: 'OPEN', stage: 'perdido', contact: { name: 'Cliente Teste' }, window: {} }}
+        onStageChange={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /^Etapa do lead: Perdido/ }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Proposta' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Ganho' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Reciclar' })).toBeEnabled();
+    expect(within(dialog).getByText('Lead perdido só pode voltar para Reciclar.')).toBeInTheDocument();
   });
 });
 
-describe('ContactSummary channel icons', () => {
-  beforeAll(() => {
-    vi.stubGlobal('requestAnimationFrame', (callback) => {
-      const id = setTimeout(() => callback(Date.now()), 0);
-      return id;
-    });
-    vi.stubGlobal('cancelAnimationFrame', (id) => {
-      clearTimeout(id);
-    });
-  });
-
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterAll(() => {
-    vi.unstubAllGlobals();
-  });
-
-  const renderHeaderWithChannel = async (channel) => {
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-
+describe('ContactDetailsPanel channel icons', () => {
+  const renderPanelWithChannel = (channel) => {
     const ticket = {
       id: 'ticket-channel',
       status: 'OPEN',
-      channel: 'WHATSAPP',
+      channel,
       contact: { id: 'contact-1', name: 'Maria Cliente', phone: '+55 11 90000-0000' },
       metadata: { contactPhone: '+55 11 90000-0000' },
       timeline: {
         lastDirection: 'INBOUND',
-        lastInboundAt: fiveMinutesAgo,
-        lastOutboundAt: tenMinutesAgo,
-        lastChannel: channel,
+        lastInboundAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
       },
     };
-
-    render(
-      <ConversationHeader
-        ticket={ticket}
-        typingAgents={[]}
-        onAssign={() => {}}
-        onScheduleFollowUp={() => {}}
-        onRegisterResult={() => {}}
-        onRegisterCallResult={() => {}}
-        onSendTemplate={() => {}}
-        onCreateNextStep={() => {}}
-        onGenerateProposal={() => {}}
-        onSendSMS={() => {}}
-        onAttachFile={() => {}}
-      />,
-    );
-
-    const user = userEvent.setup();
-    const toggleButton = screen.getByRole('button', { name: /Expandir detalhes/i });
-    await user.click(toggleButton);
+    render(<ContactDetailsPanel ticket={ticket} />);
   };
 
-  it('renders WhatsApp icon when last interaction is via WhatsApp', async () => {
-    await renderHeaderWithChannel('whatsapp');
-    expect(await screen.findByTestId('channel-icon-whatsapp')).toBeInTheDocument();
+  it('renders WhatsApp icon when last interaction is via WhatsApp', () => {
+    renderPanelWithChannel('whatsapp');
+    expect(screen.getByTestId('channel-icon-whatsapp')).toBeInTheDocument();
   });
 
-  it('renders phone icon when last interaction is via voice channel', async () => {
-    await renderHeaderWithChannel('voice');
-    expect(await screen.findByTestId('channel-icon-voice')).toBeInTheDocument();
+  it('renders phone icon when last interaction is via voice channel', () => {
+    renderPanelWithChannel('voice');
+    expect(screen.getByTestId('channel-icon-voice')).toBeInTheDocument();
   });
 
-  it('renders email icon when last interaction is via email', async () => {
-    await renderHeaderWithChannel('email');
-    expect(await screen.findByTestId('channel-icon-email')).toBeInTheDocument();
+  it('renders email icon when last interaction is via email', () => {
+    renderPanelWithChannel('email');
+    expect(screen.getByTestId('channel-icon-email')).toBeInTheDocument();
+  });
+
+  it('links to the contact and its opportunities', () => {
+    renderPanelWithChannel('whatsapp');
+    expect(screen.getByRole('link', { name: 'Abrir contato' })).toHaveAttribute('href', '/contacts/contact-1');
+    expect(screen.getByRole('link', { name: 'Ver oportunidades' })).toHaveAttribute(
+      'href',
+      '/crm/opportunities?contactId=contact-1',
+    );
   });
 });
 
 describe('ConversationHeader component', () => {
   beforeAll(() => {
-    vi.stubGlobal('requestAnimationFrame', (callback) => {
-      const id = setTimeout(() => callback(Date.now()), 0);
-      return id;
-    });
-    vi.stubGlobal('cancelAnimationFrame', (handle) => {
-      clearTimeout(handle);
-    });
+    vi.stubGlobal('requestAnimationFrame', (callback) => setTimeout(() => callback(Date.now()), 0));
+    vi.stubGlobal('cancelAnimationFrame', (handle) => clearTimeout(handle));
   });
 
   afterEach(() => {
@@ -266,217 +192,115 @@ describe('ConversationHeader component', () => {
     vi.unstubAllGlobals();
   });
 
-  it('exibe o modo de IA ativo no botão compacto', () => {
-    const ticket = {
-      id: 'ticket-ai-mode',
-      status: 'OPEN',
-      pipelineStep: 'Novo',
-      contact: { id: 'contact-ai-mode', name: 'Cliente Inteligente' },
-    };
+  const baseTicket = {
+    id: 'ticket-header',
+    status: 'OPEN',
+    channel: 'WHATSAPP',
+    stage: 'proposta',
+    userId: 'agent-1',
+    contact: { id: 'contact-1', name: 'Cliente Header', phone: '+55 11 99999-0000' },
+    window: { isOpen: true, expiresAt: new Date(Date.now() + 5 * 3600 * 1000).toISOString() },
+    timeline: { lastDirection: 'OUTBOUND', lastInboundAt: new Date(Date.now() - 3600 * 1000).toISOString() },
+  };
 
+  it('mostra nome em h2 e nenhuma ação principal quando não há o que fazer', () => {
+    render(<ConversationHeader ticket={baseTicket} onAssign={vi.fn()} currentUser={{ id: 'agent-1' }} />);
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Cliente Header' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Assumir conversa|Enviar modelo|Registrar resultado|Ligar agora/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('pede "Assumir conversa" quando ninguém está com a conversa', async () => {
+    const onAssign = vi.fn();
+    const ticket = { ...baseTicket, userId: undefined };
+    render(<ConversationHeader ticket={ticket} onAssign={onAssign} currentUser={{ id: 'agent-9' }} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Assumir conversa' }));
+    expect(onAssign).toHaveBeenCalledWith(ticket, 'agent-9');
+  });
+
+  it('pede "Assumir da IA" quando a IA está no comando', async () => {
+    const onTakeOver = vi.fn();
+    render(<ConversationHeader ticket={baseTicket} aiMode="auto" onTakeOver={onTakeOver} onAssign={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Assumir da IA' }));
+    expect(onTakeOver).toHaveBeenCalledTimes(1);
+  });
+
+  it('pede "Enviar modelo" quando a janela de 24 h encerrou — e não envia nada sozinho', async () => {
+    const onOpenTemplates = vi.fn();
+    const ticket = { ...baseTicket, window: { isOpen: false, expiresAt: null } };
+    render(<ConversationHeader ticket={ticket} onOpenTemplates={onOpenTemplates} onAssign={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Enviar modelo' }));
+    expect(onOpenTemplates).toHaveBeenCalledTimes(1);
+  });
+
+  it('pede "Registrar resultado" nas etapas de fechamento', () => {
+    render(<ConversationHeader ticket={{ ...baseTicket, stage: 'liquidacao' }} onAssign={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Registrar resultado' })).toBeInTheDocument();
+  });
+
+  it('nunca mostra "Ligar agora" como ação principal em conversa de WhatsApp', () => {
     render(
       <ConversationHeader
-        ticket={ticket}
-        aiMode="manual"
-        aiConfidence={0.82}
+        ticket={{ ...baseTicket, stage: 'novo', contact: { id: 'c', name: 'Sem telefone' } }}
+        onAssign={vi.fn()}
       />,
     );
 
-    const trigger = screen.getByRole('button', { name: /Modo IA: Agente no comando/i });
-
-    expect(trigger).toBeInTheDocument();
-    expect(trigger).toHaveTextContent('Agente no comando');
+    expect(screen.queryByRole('button', { name: /Ligar/ })).not.toBeInTheDocument();
   });
 
-  it('propaga callbacks do menu de IA', async () => {
-    const ticket = {
-      id: 'ticket-ai-actions',
-      status: 'OPEN',
-      pipelineStep: 'Novo',
-      contact: { id: 'contact-ai-actions', name: 'Cliente Automação' },
-    };
+  it('alterna o painel do contato com aria-pressed', async () => {
+    const onToggleDetails = vi.fn();
+    const { rerender } = render(<ConversationHeader ticket={baseTicket} onToggleDetails={onToggleDetails} />);
 
+    const toggle = screen.getByRole('button', { name: 'Mostrar detalhes do contato' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(toggle);
+    expect(onToggleDetails).toHaveBeenCalledTimes(1);
+
+    rerender(<ConversationHeader ticket={baseTicket} onToggleDetails={onToggleDetails} detailsOpen />);
+    expect(screen.getByRole('button', { name: 'Mostrar detalhes do contato' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('move o modo da IA para "Mais ações" e propaga as escolhas', async () => {
     const onAiModeChange = vi.fn();
     const onTakeOver = vi.fn();
-    const onGiveBackToAi = vi.fn();
+    const user = userEvent.setup();
 
     render(
       <ConversationHeader
-        ticket={ticket}
+        ticket={baseTicket}
+        aiMode="assist"
         aiConfidence={0.85}
         onAiModeChange={onAiModeChange}
         onTakeOver={onTakeOver}
-        onGiveBackToAi={onGiveBackToAi}
+        onGiveBackToAi={vi.fn()}
       />,
     );
 
-    const user = userEvent.setup();
-    const trigger = screen.getByTestId('ai-mode-menu-trigger');
+    const openAiSubmenu = async () => {
+      await user.click(screen.getByRole('button', { name: 'Mais ações' }));
+      const subTrigger = await screen.findByTestId('ai-mode-menu-trigger');
+      subTrigger.focus();
+      await user.keyboard('{ArrowRight}');
+    };
 
-    await user.click(trigger);
-
-    const manualOption = await screen.findByRole('menuitemradio', { name: 'Agente no comando' });
-    await user.click(manualOption);
-
+    await openAiSubmenu();
+    const manual = await screen.findByRole('menuitemradio', { name: 'Agente no comando' });
+    manual.focus();
+    await user.keyboard('{Enter}');
     expect(onAiModeChange).toHaveBeenCalledWith('manual');
-    expect(onAiModeChange).toHaveBeenCalledTimes(1);
 
-    await user.click(trigger);
-    const takeOverItem = await screen.findByRole('menuitem', { name: 'Assumir' });
-    await user.click(takeOverItem);
-
+    await openAiSubmenu();
+    const takeOver = await screen.findByRole('menuitem', { name: 'Assumir' });
+    takeOver.focus();
+    await user.keyboard('{Enter}');
     expect(onTakeOver).toHaveBeenCalledTimes(1);
-
-    await user.click(trigger);
-    const giveBackItem = await screen.findByRole('menuitem', { name: 'Devolver à IA' });
-    await user.click(giveBackItem);
-
-    expect(onGiveBackToAi).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders liquidation panel only for liquidation stages', async () => {
-    const ticket = {
-      id: 'ticket-liquid',
-      pipelineStep: 'Liquidação',
-      contact: { id: 'contact-1', name: 'Cliente Especial' },
-      metadata: {},
-      lead: {
-        id: 'lead-1',
-        customFields: {
-          deal: {
-            installmentValue: 512.75,
-            netValue: 10000,
-            term: 24,
-            product: 'Consignado',
-            bank: 'Banco Z',
-          },
-        },
-      },
-    };
-
-    const openLabel = 'Abrir painel';
-    const { rerender } = render(
-      <ConversationHeader
-        ticket={ticket}
-        onDealFieldSave={() => {}}
-        renderSummary={(summary, helpers) => (
-          <div>
-            {summary}
-            <button type="button" onClick={() => helpers.onOpenChange(true)}>
-              {openLabel}
-            </button>
-          </div>
-        )}
-      />
-    );
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    fireEvent.click(screen.getByRole('button', { name: openLabel }));
-
-    expect(await screen.findByText('Anexos recentes')).toBeInTheDocument();
-    expect(screen.getByText('Parcela')).toBeInTheDocument();
-
-    rerender(
-      <ConversationHeader
-        ticket={{ ...ticket, pipelineStep: 'Proposta' }}
-        onDealFieldSave={() => {}}
-        renderSummary={(summary, helpers) => (
-          <div>
-            {summary}
-            <button type="button" onClick={() => helpers.onOpenChange(true)}>
-              {openLabel}
-            </button>
-          </div>
-        )}
-      />
-    );
-
-    await waitFor(() => {
-      expect(screen.queryByText('Parcela')).not.toBeInTheDocument();
-    });
-  });
-
-  it('propagates composer height as a CSS variable when provided', async () => {
-    const now = Date.now();
-    const ticket = {
-      id: 'ticket-dynamic-height',
-      status: 'OPEN',
-      channel: 'WHATSAPP',
-      pipelineStep: 'Novo',
-      contact: { id: 'contact-11', name: 'Cliente Dinâmico', phone: '+55 11 99999-0000' },
-      metadata: { contactPhone: '+55 11 99999-0000' },
-      timeline: {
-        lastDirection: 'INBOUND',
-        lastInboundAt: new Date(now - 3 * 60 * 1000).toISOString(),
-        lastOutboundAt: new Date(now - 8 * 60 * 1000).toISOString(),
-        lastChannel: 'whatsapp',
-      },
-    };
-
-    render(
-      <ConversationHeader
-        ticket={ticket}
-        composerHeight={264}
-        typingAgents={[]}
-        onAssign={() => {}}
-        onScheduleFollowUp={() => {}}
-        onRegisterResult={() => {}}
-        onRegisterCallResult={() => {}}
-        onSendTemplate={() => {}}
-        onCreateNextStep={() => {}}
-        onGenerateProposal={() => {}}
-        onSendSMS={() => {}}
-        onAttachFile={() => {}}
-      />
-    );
-
-    const user = userEvent.setup();
-    const toggleButton = screen.getByRole('button', { name: /Expandir detalhes/i });
-    await user.click(toggleButton);
-
-    const details = await screen.findByTestId('conversation-header-details');
-    expect(details.style.getPropertyValue('--conversation-header-composer')).toBe('264px');
-  });
-
-  it('define a altura fixa do summary para 190px', async () => {
-    const ticket = {
-      id: 'ticket-summary-height',
-      status: 'OPEN',
-      channel: 'WHATSAPP',
-      pipelineStep: 'Novo',
-      contact: { id: 'contact-11', name: 'Cliente Dinâmico', phone: '+55 11 99999-0000' },
-      metadata: { contactPhone: '+55 11 99999-0000' },
-      timeline: {
-        lastDirection: 'INBOUND',
-        lastInboundAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-        lastOutboundAt: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
-        lastChannel: 'whatsapp',
-      },
-    };
-
-    render(
-      <ConversationHeader
-        ticket={ticket}
-        typingAgents={[]}
-        onAssign={() => {}}
-        onScheduleFollowUp={() => {}}
-        onRegisterResult={() => {}}
-        onRegisterCallResult={() => {}}
-        onSendTemplate={() => {}}
-        onCreateNextStep={() => {}}
-        onGenerateProposal={() => {}}
-        onSendSMS={() => {}}
-        onAttachFile={() => {}}
-      />
-    );
-
-    const user = userEvent.setup();
-    const toggleButton = screen.getByRole('button', { name: /Expandir detalhes/i });
-    await user.click(toggleButton);
-
-    const details = await screen.findByTestId('conversation-header-details');
-    await waitFor(() => {
-      expect(details.style.getPropertyValue('--conversation-header-summary')).toBe('190px');
-    });
   });
 });

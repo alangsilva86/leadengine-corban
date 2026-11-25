@@ -8,7 +8,7 @@ import EventCard from '../EventCard.jsx';
 const buildEntry = (overrides = {}) => ({
   id: 'event-1',
   type: 'event',
-  date: '2024-02-01T12:00:00.000Z',
+  date: new Date('2024-02-01T12:00:00.000Z'),
   payload: {
     label: 'Evento genérico',
     description: 'Descrição do evento',
@@ -17,11 +17,11 @@ const buildEntry = (overrides = {}) => ({
 });
 
 describe('EventCard', () => {
-  it('renders advanced details when payload includes snapshot/metadata', () => {
+  it('resume simulações/vendas em texto legível, sem JSON', () => {
     const entry = buildEntry({
       type: 'deal',
       payload: {
-        label: 'Negócio registrado',
+        label: 'Venda registrada',
         calculationSnapshot: {
           type: 'deal',
           bank: { label: 'Banco Teste' },
@@ -35,10 +35,10 @@ describe('EventCard', () => {
 
     render(<EventCard entry={entry} />);
 
-    expect(screen.getByText('Negócio registrado')).toBeInTheDocument();
-    expect(screen.getByText(/Ver detalhes avançados/)).toBeInTheDocument();
-    expect(screen.getByText('Snapshot')).toBeInTheDocument();
-    expect(screen.getByText('Metadata')).toBeInTheDocument();
+    expect(screen.getByText('Venda registrada')).toBeInTheDocument();
+    expect(screen.getByText(/Banco Teste · 24x de R\$\s?250,00 · líquido R\$\s?1\.000,00/)).toBeInTheDocument();
+    expect(screen.queryByText(/Ver detalhes avançados/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/"origin"/)).not.toBeInTheDocument();
   });
 
   it('falls back to a generic rendering for unknown types', () => {
@@ -53,6 +53,6 @@ describe('EventCard', () => {
     render(<EventCard entry={entry} />);
 
     expect(screen.getByText('Atualização especial')).toBeInTheDocument();
-    expect(screen.queryByText('Ver detalhes avançados')).not.toBeInTheDocument();
+    expect(screen.getByText(/Conteúdo do evento/)).toBeInTheDocument();
   });
 });

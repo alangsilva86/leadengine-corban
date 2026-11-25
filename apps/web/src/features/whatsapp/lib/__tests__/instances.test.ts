@@ -13,15 +13,15 @@ describe('instances status helpers', () => {
     });
   });
 
-  it('maps pending and failed statuses to appropriate variants', () => {
+  it('maps pending and failed statuses using the single number status model', () => {
     expect(getStatusInfo({ status: 'pending' })).toEqual({
-      label: 'Pendente',
-      variant: 'info',
+      label: 'Aguardando pareamento',
+      variant: 'warning',
       status: 'pending',
       connected: false,
     });
     expect(getStatusInfo({ status: 'failed' })).toEqual({
-      label: 'Falhou',
+      label: 'Erro de conexão',
       variant: 'destructive',
       status: 'failed',
       connected: false,
@@ -41,7 +41,7 @@ describe('instances status helpers', () => {
   it('treats reconnecting instances as visible and selectable candidates', () => {
     const info = getStatusInfo({ status: 'reconnecting' });
     expect(info).toEqual({
-      label: 'Reconectando',
+      label: 'Conectando…',
       variant: 'info',
       status: 'reconnecting',
       connected: false,

@@ -16,24 +16,18 @@ const statusToneVariants = {
 }
 
 const badgeVariants = cva(
-  "inline-flex items-center justify-center rounded-full border border-transparent px-3 py-1 text-[0.7rem] font-medium tracking-wide w-fit whitespace-nowrap shrink-0 gap-1 [&>svg]:pointer-events-none [&>svg]:size-3 focus-visible:outline focus-visible:outline-[2px] focus-visible:outline-offset-2",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border border-transparent px-2 py-0.5 text-xs font-medium [&>svg]:pointer-events-none [&>svg]:size-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
   {
     variants: {
       variant: {
-        default:
-          "bg-[var(--color-surface-strong)] text-[var(--color-foreground)]",
-        secondary:
-          "bg-[var(--color-secondary)] text-[var(--color-secondary-foreground)]",
-        destructive:
-          "bg-[color-mix(in_oklab,_var(--color-error)_22%,_transparent)] text-[var(--color-error-soft-foreground)]",
-        outline:
-          "border-[var(--color-border)] text-[var(--color-foreground)]",
-        success:
-          "bg-[color-mix(in_oklab,_var(--color-success)_22%,_transparent)] text-[var(--color-success-soft-foreground)]",
-        warning:
-          "bg-[color-mix(in_oklab,_var(--color-warning)_22%,_transparent)] text-[var(--color-warning-soft-foreground)]",
-        info:
-          "bg-[var(--color-muted)] text-[var(--color-muted-foreground)]",
+        default: "bg-surface-sunken text-foreground",
+        secondary: "bg-surface-sunken text-muted-foreground",
+        destructive: "bg-danger-soft text-danger-soft-foreground",
+        outline: "border-border text-foreground",
+        success: "bg-success-soft text-success-soft-foreground",
+        warning: "bg-warning-soft text-warning-soft-foreground",
+        info: "bg-info-soft text-info-soft-foreground",
+        primary: "bg-primary-soft text-primary-soft-foreground",
         status:
           "border border-[var(--tone-neutral-border)] bg-[var(--tone-neutral-surface)] text-[var(--tone-neutral-foreground)]",
       },

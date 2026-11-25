@@ -14,7 +14,7 @@ export const WHATSAPP_CAMPAIGN_PRODUCTS = [
   {
     value: 'salary_portability',
     label: 'Portabilidade de salário',
-    description: 'Campanhas focadas em retenção e portabilidade de folha.',
+    description: 'Foco em retenção e portabilidade de folha.',
     defaultMargin: 1.2,
   },
 ];

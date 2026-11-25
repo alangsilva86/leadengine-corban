@@ -1,221 +1,163 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { Suspense } from 'react';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import WhatsAppCampaigns from '../index';
+import { getNumberStatus } from '../../lib/numberStatus';
 
-const useWhatsAppConnectMock = vi.hoisted(() => vi.fn());
+const useCampaignsPageMock = vi.hoisted(() => vi.fn());
 
-const setCreateCampaignOpenMock = vi.fn();
-const reloadCampaignsMock = vi.fn();
-const updateCampaignStatusMock = vi.fn();
-const deleteCampaignMock = vi.fn();
-const setPendingReassignMock = vi.fn();
-const setReassignIntentMock = vi.fn();
-const reassignCampaignMock = vi.fn();
-const onContinueMock = vi.fn();
-const onNavigateStageMock = vi.fn();
+vi.mock('../hooks/useCampaignsPage', () => ({
+  __esModule: true,
+  default: useCampaignsPageMock,
+}));
 
-const stubCampaign = { id: 'campaign-1', name: 'Campanha Demo' };
+beforeAll(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
 
-const defaultHookValue = {
-  statusCopy: { badge: 'Operacional' },
-  statusTone: 'success',
-  confirmLabel: 'Ir para a Inbox',
-  confirmDisabled: false,
-  onBack: vi.fn(),
-  onContinue: onContinueMock,
-  campaigns: [stubCampaign],
-  campaignsLoading: false,
-  campaignError: null,
-  campaignAction: null,
-  reloadCampaigns: reloadCampaignsMock,
-  updateCampaignStatus: updateCampaignStatusMock,
-  deleteCampaign: deleteCampaignMock,
-  reassignCampaign: reassignCampaignMock,
-  canCreateCampaigns: true,
-  selectedAgreement: { id: 'agreement-1', name: 'Convênio XPTO' },
-  selectedInstance: { id: 'instance-1', name: 'Instância A' },
-  setCreateCampaignOpen: setCreateCampaignOpenMock,
-  isCreateCampaignOpen: false,
-  createCampaign: vi.fn(),
-  renderInstances: [{ id: 'instance-1', name: 'Instância A', connected: true }],
-  setPendingReassign: setPendingReassignMock,
-  pendingReassign: null,
-  setReassignIntent: setReassignIntentMock,
-  reassignIntent: 'reassign',
-  fetchCampaignImpact: vi.fn(),
-  agreementName: 'Convênio XPTO',
-  persistentWarning: 'Os leads continuam chegando normalmente.',
-  nextStage: 'Inbox',
-  stepLabel: 'Passo 3 de 5',
-  onboardingDescription: 'Configure campanhas para distribuir os leads.',
-  realtimeConnected: true,
-  connectionStatus: 'connected',
-  connectionHealthy: true,
-  tenantFilterId: null,
-  tenantFilterLabel: null,
-  tenantFilteredOutCount: 0,
-  tenantScopeNotice: null,
-  selectedInstanceBelongsToTenant: true,
+const connected = {
+  id: 'n1',
+  name: 'Comercial 1',
+  phone: '+55 11 91234-5678',
+  status: getNumberStatus({ status: 'connected', connected: true }),
 };
 
-vi.mock('../../connect/useWhatsAppConnect', () => ({
-  __esModule: true,
-  default: useWhatsAppConnectMock,
-}));
+const campaign = {
+  id: 'c1',
+  name: 'INSS Cartão',
+  status: 'active',
+  agreementId: 'inss',
+  agreementName: 'INSS',
+  productType: 'benefit_card',
+  instanceId: 'n1',
+  instanceName: 'Comercial 1',
+  metrics: { total: 12, contacted: 6, won: 1 },
+  updatedAt: new Date().toISOString(),
+};
 
-vi.mock('../../components/CampaignsPanel.jsx', () => ({
-  __esModule: true,
-  default: (props) => (
-    <div data-testid="campaigns-panel">
-      <button type="button" onClick={props.onCreateClick} disabled={!props.canCreateCampaigns}>
-        Nova campanha
-      </button>
-      <button type="button" onClick={() => props.onReassign(stubCampaign)}>
-        Reatribuir campanha
-      </button>
-      <button type="button" onClick={() => props.onDisconnect(stubCampaign)}>
-        Desconectar campanha
-      </button>
-    </div>
-  ),
-}));
+const buildPage = (overrides = {}) => {
+  const numbersList = overrides.numbersList ?? [connected];
+  const campaigns = overrides.campaigns ?? [];
+  return {
+    numbers: {
+      ready: true,
+      numbers: numbersList,
+      instances: numbersList.map((n) => ({ id: n.id, name: n.name, connected: n.status.isConnected })),
+    },
+    numbersById: new Map(numbersList.map((n) => [n.id, n])),
+    counts: {
+      active: campaigns.filter((c) => c.status === 'active').length,
+      paused: campaigns.filter((c) => c.status === 'paused').length,
+      draft: 0,
+      withoutNumber: campaigns.filter((c) => !c.instanceId).length,
+    },
+    campaigns,
+    campaignsLoaded: true,
+    campaignError: null,
+    campaignAction: null,
+    canCreateCampaigns: numbersList.some((n) => n.status.isConnected),
+    isCreateCampaignOpen: false,
+    setCreateCampaignOpen: vi.fn(),
+    pendingReassign: null,
+    setPendingReassign: vi.fn(),
+    reassignIntent: 'reassign',
+    setReassignIntent: vi.fn(),
+    reloadCampaigns: vi.fn(),
+    updateCampaignStatus: vi.fn(() => Promise.resolve()),
+    deleteCampaign: vi.fn(() => Promise.resolve()),
+    reassignCampaign: vi.fn(),
+    renameCampaign: vi.fn(),
+    createCampaign: vi.fn(),
+    fetchCampaignImpact: vi.fn(),
+    ...overrides,
+  };
+};
 
-vi.mock('../../components/CreateCampaignDialog.jsx', () => ({
-  __esModule: true,
-  default: ({ open, onOpenChange }) =>
-    open ? (
-      <div data-testid="create-campaign-dialog">
-        Criar campanha
-        <button type="button" onClick={() => onOpenChange(false)}>
-          Fechar
-        </button>
-      </div>
-    ) : null,
-}));
-
-vi.mock('../../components/ReassignCampaignDialog.jsx', () => ({
-  __esModule: true,
-  default: ({ open, onClose }) =>
-    open ? (
-      <div data-testid="reassign-campaign-dialog">
-        Reatribuir campanha
-        <button type="button" onClick={() => onClose(false)}>
-          Cancelar
-        </button>
-      </div>
-    ) : null,
-}));
+const renderPage = () =>
+  render(
+    <MemoryRouter>
+      <WhatsAppCampaigns />
+    </MemoryRouter>,
+  );
 
 describe('WhatsAppCampaigns', () => {
   beforeEach(() => {
-    useWhatsAppConnectMock.mockReturnValue({ ...defaultHookValue });
-    setCreateCampaignOpenMock.mockClear();
-    reloadCampaignsMock.mockClear();
-    updateCampaignStatusMock.mockClear();
-    deleteCampaignMock.mockClear();
-    setPendingReassignMock.mockClear();
-    setReassignIntentMock.mockClear();
-    reassignCampaignMock.mockClear();
-    onContinueMock.mockClear();
-    onNavigateStageMock.mockClear();
+    useCampaignsPageMock.mockReset();
   });
 
-  it('renders the campaigns dashboard and handles actions', async () => {
-    render(
-      <Suspense fallback={<span>loading</span>}>
-        <WhatsAppCampaigns />
-      </Suspense>
-    );
+  it('sem número conectado mostra o pré-requisito, sem sobrepor a página', () => {
+    useCampaignsPageMock.mockReturnValue(buildPage({ numbersList: [] }));
+    renderPage();
 
-    expect(await screen.findByText('Gerencie suas campanhas')).toBeInTheDocument();
-    expect(screen.getByText('Os leads continuam chegando normalmente.')).toBeInTheDocument();
-    expect(await screen.findByTestId('campaigns-panel')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Nova campanha'));
-    expect(setCreateCampaignOpenMock).toHaveBeenCalledWith(true);
-
-    fireEvent.click(screen.getByText('Reatribuir campanha'));
-    expect(setPendingReassignMock).toHaveBeenCalledWith(stubCampaign);
-    expect(setReassignIntentMock).toHaveBeenCalledWith('reassign');
-
-    fireEvent.click(screen.getByText('Desconectar campanha'));
-    expect(setPendingReassignMock).toHaveBeenCalledWith(stubCampaign);
-    expect(setReassignIntentMock).toHaveBeenCalledWith('disconnect');
-
-    fireEvent.click(screen.getByText('Ir para a Inbox'));
-    expect(onContinueMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('heading', { level: 1, name: 'Regras de roteamento' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Conecte um número para criar regras de roteamento' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Conectar número' })).toHaveAttribute('href', '/channels?connect=1');
+    expect(screen.getByRole('button', { name: /Nova regra/ })).toBeDisabled();
+    // Sem textos colados de onboarding, badges de tenant ou CTA duplicado.
+    expect(screen.queryByText(/Tenant|Passo \d|Configure regra/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Nova regra/ })).toHaveLength(1);
   });
 
-  it('navigates between stages when the stepper is clicked', async () => {
-    render(
-      <Suspense fallback={<span>loading</span>}>
-        <WhatsAppCampaigns
-          onboarding={{
-            stages: [
-              { id: 'channels', label: 'Canais' },
-              { id: 'campaigns', label: 'Campanhas' },
-              { id: 'inbox', label: 'Inbox' },
-            ],
-            activeStep: 1,
-          }}
-          onNavigateStage={onNavigateStageMock}
-        />
-      </Suspense>
+  it('com números desconectados aponta para a lista de números', () => {
+    useCampaignsPageMock.mockReturnValue(
+      buildPage({ numbersList: [{ ...connected, status: getNumberStatus({ status: 'disconnected' }) }] }),
     );
-
-    fireEvent.click(await screen.findByText('Inbox'));
-    expect(onNavigateStageMock).toHaveBeenCalledWith('inbox');
+    renderPage();
+    expect(screen.getByRole('heading', { name: 'Nenhum número conectado agora' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ver números' })).toHaveAttribute('href', '/channels');
   });
 
-  it('shows a warning and disables actions when the connection is offline', async () => {
-    useWhatsAppConnectMock.mockReturnValue({
-      ...defaultHookValue,
-      realtimeConnected: false,
-      connectionStatus: 'disconnected',
-      connectionHealthy: false,
-      canCreateCampaigns: false,
-      statusCopy: { badge: 'Pendente' },
-    });
+  it('com número conectado e sem regras mostra um estado vazio com ação', async () => {
+    const page = buildPage();
+    useCampaignsPageMock.mockReturnValue(page);
+    const user = userEvent.setup();
+    renderPage();
 
-    render(
-      <Suspense fallback={<span>loading</span>}>
-        <WhatsAppCampaigns />
-      </Suspense>,
-    );
-
-    expect(
-      await screen.findByText('Tempo real está offline. Reative a conexão para gerenciar as campanhas.'),
-    ).toBeInTheDocument();
-
-    expect(screen.getByRole('button', { name: 'Nova campanha' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Ir para a Inbox|Continuar/ })).toBeDisabled();
+    expect(screen.getByText('Nenhuma regra de roteamento ainda')).toBeInTheDocument();
+    const buttons = screen.getAllByRole('button', { name: /Nova regra/ });
+    buttons.forEach((button) => expect(button).toBeEnabled());
+    await user.click(buttons[0]);
+    expect(page.setCreateCampaignOpen).toHaveBeenCalledWith(true);
   });
 
-  it('keeps creation enabled when realtime is offline but the instance remains connected', async () => {
-    useWhatsAppConnectMock.mockReturnValue({
-      ...defaultHookValue,
-      realtimeConnected: false,
-      connectionHealthy: true,
-      canCreateCampaigns: true,
-    });
+  it('encerra a regra somente após confirmação', async () => {
+    const page = buildPage({ campaigns: [campaign] });
+    useCampaignsPageMock.mockReturnValue(page);
+    const user = userEvent.setup();
+    renderPage();
 
-    render(
-      <Suspense fallback={<span>loading</span>}>
-        <WhatsAppCampaigns />
-      </Suspense>,
-    );
+    expect(screen.getByText('1 ativa')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Mais ações para INSS · Cartão benefício/ }));
+    await user.click(await screen.findByRole('menuitem', { name: /Encerrar regra/ }));
 
-    expect(
-      await screen.findByText(
-        'Tempo real está offline. Você ainda pode criar ou ajustar campanhas, mas métricas instantâneas ficarão indisponíveis até restabelecer a conexão.',
-      ),
-    ).toBeInTheDocument();
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText('Encerrar INSS · Cartão benefício?')).toBeInTheDocument();
+    expect(page.deleteCampaign).not.toHaveBeenCalled();
 
-    expect(screen.getByRole('button', { name: 'Nova campanha' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /Ir para a Inbox|Continuar/ })).toBeEnabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Encerrar regra' }));
+    await waitFor(() => expect(page.deleteCampaign).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' })));
+  });
+
+  it('mostra erro de carregamento com nova tentativa', async () => {
+    const page = buildPage({ campaignError: 'O serviço está instável.' });
+    useCampaignsPageMock.mockReturnValue(page);
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.getByText('Não foi possível carregar as regras')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Tentar novamente/ }));
+    expect(page.reloadCampaigns).toHaveBeenCalled();
   });
 });

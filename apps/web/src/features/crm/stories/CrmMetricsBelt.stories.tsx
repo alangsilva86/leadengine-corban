@@ -7,9 +7,10 @@ const meta: Meta<typeof CrmMetricsBelt> = {
   args: {
     metrics: [
       { id: 'activeLeads', label: 'Leads ativos', unit: 'count', value: 120, delta: 8, deltaUnit: 'count', trend: 'up' },
-      { id: 'slaCompliance', label: 'Dentro do SLA', unit: 'percentage', value: 84, delta: -3, deltaUnit: 'percentage', trend: 'down' },
-      { id: 'avgResponseTime', label: '1ª resposta média', unit: 'duration', value: 54, delta: -6, deltaUnit: 'duration', trend: 'up' },
+      { id: 'newLeads', label: 'Novos nos últimos 7 dias', unit: 'count', value: 14 },
+      { id: 'stalledLeads', label: 'Sem atualização há 7 dias', unit: 'count', value: 3 },
     ],
+    openValueLabel: 'R$ 58.400',
     source: 'api',
   },
 };

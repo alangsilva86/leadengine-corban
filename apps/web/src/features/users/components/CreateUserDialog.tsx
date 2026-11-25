@@ -121,7 +121,7 @@ const CreateUserDialog = ({ open, onOpenChange, onSubmit, submitting = false }: 
               <SelectContent>
                 <SelectItem value="ADMIN">Administrador</SelectItem>
                 <SelectItem value="SUPERVISOR">Supervisor</SelectItem>
-                <SelectItem value="AGENT">Agente</SelectItem>
+                <SelectItem value="AGENT">Atendente</SelectItem>
               </SelectContent>
             </Select>
           </div>

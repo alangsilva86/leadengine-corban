@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Copy as CopyIcon, Phone as PhoneIcon, MessageCircle, Mail, AlertTriangle } from 'lucide-react';
+import { Copy as CopyIcon, Phone as PhoneIcon, MessageCircle, Mail } from 'lucide-react';
 
 import { Button } from '@/components/ui/button.jsx';
 import { Input } from '@/components/ui/input.jsx';
@@ -22,67 +22,21 @@ import { cn, formatPhoneNumber } from '@/lib/utils.js';
 import { formatDateTime } from '../../utils/datetime.js';
 import { getTicketIdentity } from '../../utils/ticketIdentity.js';
 import { resolveTicketContext } from './utils/ticketMetadata.js';
+import { resolveChannelInfo, toSentenceCase } from './utils/presentation.js';
+import useInstancePresentation from '../../hooks/useInstancePresentation.js';
+import LeadStageBadge from '@/features/crm/components/lead-stage/LeadStageBadge';
+import LeadStageMenu, { LeadStageChip } from '@/features/crm/components/lead-stage/LeadStageMenu';
+import LeadStageTrack from '@/features/crm/components/lead-stage/LeadStageTrack';
+import { LEAD_PIPELINE_STAGES, LEAD_STAGE_DEFINITIONS } from '@/features/crm/utils/lead-stage';
 
-const CHANNEL_PRESENTATION = {
-  WHATSAPP: {
-    id: 'whatsapp',
-    label: 'WhatsApp',
-    icon: MessageCircle,
-    className:
-      'border-[color:var(--color-status-whatsapp-border)] bg-[color:var(--color-status-whatsapp-surface)] text-[color:var(--color-status-whatsapp-foreground)]',
-  },
-  VOICE: {
-    id: 'voice',
-    label: 'Telefone',
-    icon: PhoneIcon,
-    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
-  },
-  EMAIL: {
-    id: 'email',
-    label: 'E-mail',
-    icon: Mail,
-    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground',
-  },
-  DEFAULT: {
-    id: 'unknown',
-    label: 'Canal não identificado',
-    icon: MessageCircle,
-    className: 'border border-surface-overlay-glass-border bg-surface-overlay-quiet text-foreground-muted',
-  },
+const CHANNEL_TONE_CLASSES = {
+  whatsapp: 'bg-whatsapp-soft text-whatsapp-soft-foreground',
+  voice: 'bg-surface-sunken text-foreground',
+  email: 'bg-surface-sunken text-foreground',
+  unknown: 'bg-surface-sunken text-muted-foreground',
 };
 
-const normalizeChannel = (value) => {
-  if (!value) return null;
-
-  const normalized = String(value)
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .trim()
-    .toUpperCase();
-
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized === 'PHONE' || normalized === 'TELEFONE' || normalized === 'CALL') {
-    return 'VOICE';
-  }
-
-  if (normalized === 'E-MAIL' || normalized === 'MAIL') {
-    return 'EMAIL';
-  }
-
-  if (normalized === 'WA') {
-    return 'WHATSAPP';
-  }
-
-  return normalized;
-};
-
-const resolveChannelInfo = (channel) => {
-  const normalized = normalizeChannel(channel);
-  return CHANNEL_PRESENTATION[normalized] ?? CHANNEL_PRESENTATION.DEFAULT;
-};
+const CHANNEL_ICONS = { whatsapp: MessageCircle, voice: PhoneIcon, email: Mail, unknown: MessageCircle };
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -144,9 +98,10 @@ const CopyButton = ({ value, label }) => {
         <Button
           type="button"
           variant="ghost"
-          size="icon"
-          className="h-7 w-7 rounded-full text-foreground-muted hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
+          size="icon-xs"
           onClick={handleCopy}
+          aria-label={`Copiar ${label}`}
         >
           <CopyIcon className="h-4 w-4" aria-hidden />
         </Button>
@@ -184,7 +139,7 @@ const InlineField = ({
 
   return (
     <div className="flex flex-col gap-1" role="group" aria-labelledby={labelId}>
-      <span id={labelId} className="text-xs font-medium uppercase tracking-wide text-foreground-muted">
+      <span id={labelId} className="text-xs font-medium text-muted-foreground">
         {label}
       </span>
       <div className="flex items-center gap-2">
@@ -195,6 +150,8 @@ const InlineField = ({
           placeholder={placeholder}
           type={type}
           disabled={disabled}
+          aria-labelledby={labelId}
+          className="h-9"
         />
         {copyable && draft ? <CopyButton value={draft} label={label} /> : null}
       </div>
@@ -217,25 +174,54 @@ const NextStepEditor = forwardRef(({ value = '', onSave }, elementRef) => {
   );
 
   return (
-    <div className="flex w-full flex-col gap-2 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-semibold text-foreground">Próximo passo</h4>
-          <p className="text-xs text-foreground-muted">Notas rápidas para o próximo contato.</p>
-        </div>
+    <section className="flex w-full flex-col gap-2 border-t border-border pt-4">
+      <div>
+        <h3 className="text-sm font-semibold text-foreground">Próximo passo</h3>
+        <p className="text-xs text-muted-foreground">O que foi combinado para o próximo contato.</p>
       </div>
       <Textarea
         ref={textareaRef}
         defaultValue={value ?? ''}
         rows={4}
         placeholder="Ex.: confirmar documentação e enviar proposta"
+        aria-label="Próximo passo"
         onBlur={(event) => onSave?.(event.target.value)}
       />
-    </div>
+    </section>
   );
 });
 
 NextStepEditor.displayName = 'NextStepEditor';
+
+/** Etapa do lead (a mesma do CRM): chip que abre "Mover para…", trilho do funil e a descrição. */
+const LeadStageSection = ({ stage, onStageChange, pendingStage }) => {
+  const titleId = useId();
+  if (!stage) return null;
+  const definition = LEAD_STAGE_DEFINITIONS[stage];
+  const position = definition.exit ? 'Saída do funil' : `Etapa ${definition.order} de ${LEAD_PIPELINE_STAGES.length}`;
+
+  return (
+    <section className="flex w-full flex-col gap-2 border-t border-border pt-4" aria-labelledby={titleId}>
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 id={titleId} className="text-sm font-semibold text-foreground">
+          Etapa do lead
+        </h3>
+        <span className="text-xs text-muted-foreground tabular-nums">{position}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        {typeof onStageChange === 'function' ? (
+          <LeadStageMenu stage={stage} onSelect={onStageChange} align="start" label="Mudar etapa do lead">
+            <LeadStageChip stage={stage} pending={Boolean(pendingStage)} />
+          </LeadStageMenu>
+        ) : (
+          <LeadStageBadge stage={stage} />
+        )}
+      </div>
+      <LeadStageTrack stage={stage} />
+      <p className="text-xs text-muted-foreground">{definition.description}</p>
+    </section>
+  );
+};
 
 const ContactSummary = ({ ticket }) => {
   const timeline = ticket?.timeline ?? ticket?.metadata?.timeline ?? null;
@@ -245,7 +231,7 @@ const ContactSummary = ({ ticket }) => {
 
   const channel = ticket?.channel ?? ticket?.metadata?.channel ?? ticket?.metadata?.origin ?? null;
   const channelInfo = resolveChannelInfo(channel);
-  const ChannelIcon = channelInfo.icon;
+  const ChannelIcon = CHANNEL_ICONS[channelInfo.id] ?? MessageCircle;
 
   const lastInbound = timeline?.lastInboundAt ? formatDateTime(timeline.lastInboundAt) : '—';
   const lastOutbound = timeline?.lastOutboundAt ? formatDateTime(timeline.lastOutboundAt) : '—';
@@ -261,14 +247,14 @@ const ContactSummary = ({ ticket }) => {
   }, [relativeTime]);
 
   return (
-    <div className="grid gap-3 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4 text-sm">
+    <section className="grid gap-3 border-t border-border pt-4 text-sm">
       <div className="flex flex-col gap-1">
-        <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Última interação</span>
+        <h3 className="text-sm font-semibold text-foreground">Última interação</h3>
         <div className="flex flex-wrap items-center gap-2 text-foreground">
           <span
             className={cn(
-              'inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium',
-              channelInfo.className,
+              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
+              CHANNEL_TONE_CLASSES[channelInfo.id] ?? CHANNEL_TONE_CLASSES.unknown,
             )}
           >
             <ChannelIcon className="h-3.5 w-3.5" aria-hidden data-testid={`channel-icon-${channelInfo.id}`} />
@@ -276,19 +262,19 @@ const ContactSummary = ({ ticket }) => {
           </span>
           <span className="text-sm text-foreground">{directionLabel}</span>
         </div>
-        <span className="text-xs text-foreground-muted">{directionSummary}</span>
+        <span className="text-xs text-muted-foreground">{directionSummary}</span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="flex flex-col gap-1">
-          <span className="font-medium text-foreground-muted uppercase tracking-wide">Cliente</span>
+          <span className="font-medium text-muted-foreground">Cliente escreveu</span>
           <span className="text-sm text-foreground">{lastInbound}</span>
         </div>
         <div className="flex flex-col gap-1">
-          <span className="font-medium text-foreground-muted uppercase tracking-wide">Equipe</span>
+          <span className="font-medium text-muted-foreground">Equipe respondeu</span>
           <span className="text-sm text-foreground">{lastOutbound}</span>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 
@@ -301,6 +287,9 @@ const ContactDetailsPanel = ({
   onNextStepSave,
   nextStepEditorRef,
   contextSectionRef = null,
+  stage = null,
+  onStageChange,
+  pendingStage = null,
 }) => {
   const identity = useMemo(() => getTicketIdentity(ticket), [ticket]);
   const document = ticket?.contact?.document ?? null;
@@ -317,27 +306,30 @@ const ContactDetailsPanel = ({
   }, [ticket?.attachments, ticket?.metadata?.attachments]);
 
   const contextSectionTitleId = useId();
+  const ticketContext = useMemo(() => resolveTicketContext(ticket), [ticket]);
+  const instancePresentation = useInstancePresentation(ticketContext.instance);
   const contextItems = useMemo(() => {
-    const { instance, campaignId, campaignName, productType, strategy } = resolveTicketContext(ticket);
+    const { instance, campaignId, campaignName, productType, strategy } = ticketContext;
+    const instanceLabel = instance ? toSentenceCase(instancePresentation.known ? instancePresentation.label : instance) : null;
     return [
-      { id: 'instance', label: 'Instância', value: instance },
-      { id: 'campaign', label: 'Campanha', value: campaignName ?? campaignId },
+      { id: 'instance', label: 'Número', value: instanceLabel },
+      { id: 'campaign', label: 'Regra de roteamento', value: campaignName ?? campaignId },
       { id: 'product', label: 'Produto', value: productType },
       { id: 'strategy', label: 'Estratégia', value: strategy },
     ].filter(({ value }) => value);
-  }, [ticket]);
+  }, [instancePresentation.known, instancePresentation.label, ticketContext]);
 
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="flex w-full flex-col gap-4 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4">
-        <h4 className="text-sm font-semibold text-foreground">Contato</h4>
+      <section className="flex w-full flex-col gap-3">
+        <h3 className="sr-only">Dados do contato</h3>
         <InlineField
           label="Nome"
           value={displayName}
           placeholder="Nome completo"
           onSave={onContactFieldSave ? (value) => onContactFieldSave('name', value) : undefined}
         />
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3">
           <InlineField
             label="Telefone"
             value={rawPhone ?? ''}
@@ -362,21 +354,20 @@ const ContactDetailsPanel = ({
             copyable
           />
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">Ações de contato</span>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={onCall}>
-                <PhoneIcon className="mr-2 h-3.5 w-3.5" aria-hidden />
-                Ligar agora
+              <Button type="button" variant="outline" size="xs" onClick={onCall}>
+                <PhoneIcon aria-hidden />
+                Ligar
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={onSendSms}>
+              <Button type="button" variant="outline" size="xs" onClick={onSendSms}>
                 Enviar SMS
               </Button>
               {contactId ? (
                 <>
-                  <Button asChild variant="outline" size="sm">
+                  <Button asChild variant="outline" size="xs">
                     <a href={`/contacts/${encodeURIComponent(contactId)}`}>Abrir contato</a>
                   </Button>
-                  <Button asChild variant="outline" size="sm">
+                  <Button asChild variant="outline" size="xs">
                     <a href={`/crm/opportunities?contactId=${encodeURIComponent(contactId)}`}>Ver oportunidades</a>
                   </Button>
                 </>
@@ -384,25 +375,26 @@ const ContactDetailsPanel = ({
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
+      <LeadStageSection stage={stage} onStageChange={onStageChange} pendingStage={pendingStage} />
       <ContactSummary ticket={ticket} />
       <NextStepEditor ref={nextStepEditorRef} value={nextStepValue} onSave={onNextStepSave} />
 
       <div
         ref={contextSectionRef}
         tabIndex={-1}
-        className="flex w-full flex-col gap-3 rounded-2xl border border-surface-overlay-glass-border bg-surface-overlay-quiet/70 p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--surface-shell)]"
+        className="flex w-full flex-col gap-3 border-t border-border pt-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-labelledby={contextSectionTitleId}
       >
-        <h4 id={contextSectionTitleId} className="text-sm font-semibold text-foreground">
-          Contexto do lead
-        </h4>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <h3 id={contextSectionTitleId} className="text-sm font-semibold text-foreground">
+          Origem
+        </h3>
+        <div className="grid grid-cols-2 gap-3">
           {contextItems.length === 0 && <p className="text-sm text-muted-foreground">Sem dados vinculados.</p>}
           {contextItems.map((item) => (
             <div key={item.id} className="flex flex-col gap-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-foreground-muted">{item.label}</span>
+              <span className="text-xs font-medium text-muted-foreground">{item.label}</span>
               <span className="text-sm text-foreground" title={item.value}>
                 {item.value}
               </span>
@@ -411,11 +403,8 @@ const ContactDetailsPanel = ({
         </div>
       </div>
 
-      <div className="w-full rounded-2xl border border-dashed border-surface-overlay-glass-border bg-surface-overlay-quiet/60 p-4 text-xs text-foreground-muted">
-        <div className="flex items-center gap-2 text-foreground">
-          <AlertTriangle className="h-4 w-4" aria-hidden />
-          <span className="font-semibold">Anexos recentes</span>
-        </div>
+      <section className="w-full border-t border-border pt-4 text-xs text-muted-foreground">
+        <h3 className="text-sm font-semibold text-foreground">Anexos recentes</h3>
         {attachments.length ? (
           <ul className="mt-2 space-y-2">
             {attachments.slice(0, 5).map((item, index) => {
@@ -424,10 +413,10 @@ const ContactDetailsPanel = ({
               return (
                 <li
                   key={key}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-surface-overlay-glass-border bg-surface-overlay-quiet px-3 py-2 text-sm text-foreground"
+                  className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface px-3 py-2 text-sm text-foreground"
                 >
                   <span className="min-w-0 flex-1 truncate [overflow-wrap:anywhere]">{label}</span>
-                  <span className="text-xs text-foreground-muted">
+                  <span className="text-xs text-muted-foreground">
                     {item?.size ? `${Math.round(item.size / 1024)} KB` : ''}
                   </span>
                 </li>
@@ -435,9 +424,9 @@ const ContactDetailsPanel = ({
             })}
           </ul>
         ) : (
-          <p className="mt-2 text-sm">Nenhum anexo disponível para este ticket.</p>
+          <p className="mt-1 text-sm">Nenhum anexo nesta conversa.</p>
         )}
-      </div>
+      </section>
     </div>
   );
 };

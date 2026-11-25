@@ -1,49 +1,55 @@
-import { useMemo } from 'react';
+import { List, SearchX } from 'lucide-react';
+import { EmptyState, ErrorState } from '@/components/page';
 import LeadTable from '../components/table/LeadTable';
 import useCrmLeads from '../hooks/useCrmLeads';
 import { useCrmViewContext, useCrmViewState } from '../state/view-context';
-import useCrmPermissions from '../state/permissions';
+import { countActiveFilters } from '../components/CrmToolbar';
 import emitCrmTelemetry from '../utils/telemetry';
 
 const LeadTableView = () => {
-  const { filters, selection } = useCrmViewState();
-  const { selectIds, deselectIds, clearSelection, openLeadDrawer } = useCrmViewContext();
-  const permissions = useCrmPermissions();
-  const { leads, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error, refetch } = useCrmLeads(filters);
-
-  const selectedIds = useMemo(() => selection.selectedIds, [selection.selectedIds]);
-
-  const handleToggleSelect = (leadId: string) => {
-    if (!permissions.canMoveLead) {
-      return;
-    }
-    if (selectedIds.has(leadId)) {
-      deselectIds([leadId]);
-    } else {
-      selectIds([leadId]);
-    }
-  };
+  const { filters } = useCrmViewState();
+  const { openLeadDrawer } = useCrmViewContext();
+  const { leads, total, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading, error, refetch } = useCrmLeads(filters);
 
   const handleOpenDrawer = (leadId: string) => {
-    clearSelection();
-    selectIds([leadId]);
     openLeadDrawer(leadId);
     emitCrmTelemetry('crm.lead.open', { source: 'list', leadId });
   };
 
-  if (error) return <p role="alert">Não foi possível carregar os leads. <button onClick={() => refetch()}>Tentar novamente</button></p>;
+  if (error) {
+    return (
+      <div className="rounded-lg border border-border bg-surface">
+        <ErrorState title="Não foi possível carregar os leads" error={error} onRetry={() => void refetch()} />
+      </div>
+    );
+  }
+
+  if (!isLoading && leads.length === 0) {
+    const filtered = countActiveFilters(filters) > 0 || Boolean(filters.search);
+    return (
+      <div className="rounded-lg border border-border bg-surface">
+        <EmptyState
+          icon={filtered ? SearchX : List}
+          title={filtered ? 'Nenhum lead com esses filtros' : 'Nenhum lead no funil ainda'}
+          description={
+            filtered
+              ? 'Ajuste a busca ou limpe os filtros para ver todos os leads.'
+              : 'Os leads entram aqui quando um contato chega pelo WhatsApp ou por uma regra de roteamento.'
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <LeadTable
       leads={leads}
-      selectedIds={selectedIds}
-      onToggleSelect={handleToggleSelect}
+      total={total}
       onOpenDrawer={handleOpenDrawer}
-      fetchNextPage={fetchNextPage}
+      fetchNextPage={() => void fetchNextPage()}
       hasNextPage={hasNextPage}
       isFetchingNextPage={isFetchingNextPage}
       isLoading={isLoading}
-      selectable={permissions.canMoveLead}
     />
   );
 };

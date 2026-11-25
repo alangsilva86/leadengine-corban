@@ -4,7 +4,7 @@ import type { UserRole } from '../types';
 const roleMap: Record<UserRole, { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
   ADMIN: { label: 'Administrador', variant: 'default' },
   SUPERVISOR: { label: 'Supervisor', variant: 'secondary' },
-  AGENT: { label: 'Agente', variant: 'outline' },
+  AGENT: { label: 'Atendente', variant: 'outline' },
 };
 
 type UserRoleBadgeProps = {

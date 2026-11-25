@@ -97,6 +97,32 @@ const isRetryableCreateError = (error: unknown): boolean => {
 
 const BASE_PATH = '/api/integrations/whatsapp/instances';
 
+/**
+ * O código de pareamento (8 caracteres) pode vir em formatos diferentes conforme a versão da API.
+ * Retorna `null` quando a resposta não traz código — a interface trata esse caso.
+ */
+const extractPairingCode = (response: unknown): string | null => {
+  const visit = (value: unknown, depth: number): string | null => {
+    if (!value || typeof value !== 'object' || depth > 3) {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const pairingRecord =
+      record.pairing && typeof record.pairing === 'object' ? (record.pairing as Record<string, unknown>) : null;
+    for (const candidate of [record.pairingCode, record.pairing_code, pairingRecord?.code]) {
+      if (typeof candidate === 'string' && /^[A-Z0-9]{4}-?[A-Z0-9]{4}$/i.test(candidate.trim())) {
+        return candidate.trim().replace(/-/g, '').toUpperCase();
+      }
+    }
+    for (const key of ['data', 'pairing', 'result']) {
+      const nested = visit(record[key], depth + 1);
+      if (nested) return nested;
+    }
+    return null;
+  };
+  return visit(response, 0);
+};
+
 const normalizeCreateBody = (payload: CreateInstancePayload) => {
   const body: Record<string, unknown> = { name: payload.name };
   if (payload.id) {
@@ -177,7 +203,9 @@ export interface InstancesApiService {
     qr: unknown;
     instance: NormalizedInstance | null;
     instances: NormalizedInstance[];
+    pairingCode: string | null;
   } | null>;
+  disconnectInstance(payload: { instanceId: string }): Promise<void>;
   markConnected(payload: MarkConnectedPayload): Promise<boolean>;
   dispose(): void;
 }
@@ -331,7 +359,7 @@ export const createInstancesApiService = ({
         { requestId: resolvedRequestId },
         {
           message: readErrorMessage(err),
-          code: status ? String(status) : null,
+          code: readErrorPayload(err)?.code ?? (status ? String(status) : null),
         },
       );
       return {
@@ -365,17 +393,9 @@ export const createInstancesApiService = ({
       return parsed.instance ?? null;
     } catch (err) {
       errorLog('Falha ao criar instância WhatsApp', err);
-      const errorPayload = readErrorPayload(err);
-      const responseTimeMs = errorPayload?.details?.responseTimeMs ?? null;
-      const retryable = isRetryableCreateError(err);
-      const extraMessage = [
-        retryable
-          ? 'A criação é idempotente e pode ser reexecutada com o mesmo identificador se o canal não aparecer.'
-          : null,
-        typeof responseTimeMs === 'number' ? `Tempo de resposta do broker: ${Math.round(responseTimeMs)}ms.` : null,
-      ]
-        .filter(Boolean)
-        .join(' ');
+      const extraMessage = isRetryableCreateError(err)
+        ? 'Você pode tentar de novo com segurança: não criaremos números duplicados.'
+        : '';
       const message = `${readErrorMessage(err)}${extraMessage ? ` ${extraMessage}` : ''}`;
 
       store.getState().setLoadingInstances(false);
@@ -425,11 +445,17 @@ export const createInstancesApiService = ({
 
       const response = pairing ? await api.post(endpoint, body) : await api.get(endpoint);
       const parsed = parseInstancesPayload(response);
-      store.getState().applyLoadResult(parsed, {
-        requestId: store.getState().loadRequestId,
-        preferredInstanceId: instanceId,
-        campaignInstanceId: store.getState().config.campaignInstanceId,
-      });
+      // Só substituímos a lista quando a resposta traz a lista completa; caso contrário,
+      // atualizamos apenas o número afetado (o pareamento por código não devolve a lista).
+      if (parsed.instances.length > 1 || (parsed.instances.length === 1 && store.getState().instances.length <= 1)) {
+        store.getState().applyLoadResult(parsed, {
+          requestId: store.getState().loadRequestId,
+          preferredInstanceId: instanceId,
+          campaignInstanceId: store.getState().config.campaignInstanceId,
+        });
+      } else if (parsed.instance) {
+        store.getState().updateInstance(parsed.instance.id, parsed.instance);
+      }
       return {
         instanceId: parsed.instanceId ?? instanceId,
         status: parsed.status ?? null,
@@ -437,6 +463,7 @@ export const createInstancesApiService = ({
         qr: parsed.qr ?? null,
         instance: parsed.instance ?? null,
         instances: parsed.instances ?? [],
+        pairingCode: pairing ? extractPairingCode(response) : null,
       };
     } catch (err) {
       errorLog('Falha ao conectar instância WhatsApp', err);
@@ -444,6 +471,18 @@ export const createInstancesApiService = ({
         message: readErrorMessage(err),
         code: readStatusCode(err)?.toString() ?? null,
       });
+      throw err;
+    }
+  };
+
+  const handleDisconnect = async ({ instanceId }: { instanceId: string }) => {
+    try {
+      log('Desconectando número WhatsApp', { instanceId });
+      const encodedId = encodeURIComponent(instanceId);
+      await api.post(`${BASE_PATH}/${encodedId}/disconnect`, {});
+      await loadInstances({ forceRefresh: true, preferredInstanceId: instanceId });
+    } catch (err) {
+      errorLog('Falha ao desconectar número WhatsApp', err);
       throw err;
     }
   };
@@ -467,7 +506,7 @@ export const createInstancesApiService = ({
         store.getState().setError(null);
       } else {
         store.getState().setError({
-          message: 'A instância ainda não está conectada. Escaneie o QR e tente novamente.',
+          message: 'O número ainda não está conectado. Leia o QR Code e tente novamente.',
           code: null,
         });
       }
@@ -495,6 +534,7 @@ export const createInstancesApiService = ({
     createInstance: handleCreate,
     deleteInstance: handleDelete,
     connectInstance: handleConnect,
+    disconnectInstance: handleDisconnect,
     markConnected,
     dispose() {
       unsubscribes.forEach((dispose) => dispose());

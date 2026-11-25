@@ -28,13 +28,12 @@ describe('WhatsApp instance identifier helpers', () => {
       );
     });
 
-    it('falls back to broker identifiers and empty string', () => {
+    it('uses technical identifiers only as a source of digits (never the raw JID)', () => {
       expect(resolveInstancePhone({ metadata: { phone_number: '+5511666666666' } })).toBe(
         '+5511666666666'
       );
-      expect(resolveInstancePhone({ jid: '5511555555555@s.whatsapp.net' })).toBe(
-        '5511555555555@s.whatsapp.net'
-      );
+      expect(resolveInstancePhone({ jid: '5511555555555@s.whatsapp.net' })).toBe('5511555555555');
+      expect(resolveInstancePhone({ phoneNumber: '5511444444444:12@s.whatsapp.net' })).toBe('5511444444444');
       expect(resolveInstancePhone({})).toBe('');
       expect(resolveInstancePhone(null)).toBe('');
     });

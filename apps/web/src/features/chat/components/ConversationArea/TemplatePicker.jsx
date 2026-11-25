@@ -1,53 +1,65 @@
+import { FileText } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog.jsx';
 import { Button } from '@/components/ui/button.jsx';
+import { fillTemplatePlaceholders } from './utils/presentation.js';
 
-const MOCK_TEMPLATES = [
+export const DEFAULT_TEMPLATES = [
   {
     id: 'template-welcome',
     name: 'Boas-vindas',
-    body: 'Olá {{nome}}, sou da Corban. Podemos ajudar com sua proposta?',
+    body: 'Olá {{nome}}, tudo bem? Aqui é da Corban. Posso te ajudar com sua proposta de consignado?',
   },
   {
     id: 'template-followup',
-    name: 'Follow-up 24h',
-    body: 'Olá {{nome}}, passando para lembrar do nosso combinado. Podemos prosseguir?',
+    name: 'Retomar contato',
+    body: 'Olá {{nome}}, passando para lembrar do nosso combinado. Podemos seguir com a sua proposta?',
   },
   {
     id: 'template-docs',
     name: 'Solicitar documentos',
-    body: 'Para seguir com a análise, preciso dos documentos anexados. Pode enviar por aqui?',
+    body: 'Para seguir com a análise, preciso de uma foto do seu documento com foto e do último contracheque. Pode enviar por aqui?',
   },
 ];
 
-export const TemplatePicker = ({ open, onClose, onSelect }) => {
-  return (
-    <Dialog open={open} onOpenChange={(next) => (!next ? onClose?.() : undefined)}>
-      <DialogContent className="max-w-md border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-bold)] text-[color:var(--color-inbox-foreground)] shadow-[var(--shadow-lg)]">
-        <DialogHeader>
-          <DialogTitle>Selecionar template aprovado</DialogTitle>
-          <DialogDescription>Escolha um template aprovado para inserir no chat.</DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
-          {MOCK_TEMPLATES.map((template) => (
-            <button
-              key={template.id}
-              type="button"
-              className="rounded-lg border border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-inbox-quiet)] p-3 text-left transition hover:border-[color:var(--accent-inbox-primary)] hover:bg-[color:color-mix(in_srgb,var(--surface-overlay-inbox-bold)_92%,transparent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-inbox-primary)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              onClick={() => onSelect?.(template)}
-            >
-              <div className="text-sm font-semibold text-[color:var(--color-inbox-foreground)]">{template.name}</div>
-              <div className="text-xs text-[color:var(--color-inbox-foreground-muted)]">{template.body}</div>
-            </button>
-          ))}
-        </div>
-        <div className="flex justify-end">
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-};
+/**
+ * Modelos de mensagem. Escolher um modelo INSERE o texto no campo de mensagem
+ * (com o nome do cliente preenchido) — o atendente revisa e envia. Nunca envia sozinho.
+ */
+export const TemplatePicker = ({ open, onClose, onSelect, contactName = null, templates = DEFAULT_TEMPLATES }) => (
+  <Dialog open={open} onOpenChange={(next) => (!next ? onClose?.() : undefined)}>
+    <DialogContent className="max-w-lg">
+      <DialogHeader>
+        <DialogTitle>Modelos de mensagem</DialogTitle>
+        <DialogDescription>Escolha um modelo para inserir na mensagem. Você revisa antes de enviar.</DialogDescription>
+      </DialogHeader>
+      <ul className="flex flex-col gap-2">
+        {templates.map((template) => {
+          const preview = fillTemplatePlaceholders(template.body, { contactName });
+          return (
+            <li key={template.id}>
+              <button
+                type="button"
+                className="flex w-full items-start gap-3 rounded-md border border-border bg-surface p-3 text-left transition-colors hover:border-border-strong hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => onSelect?.({ ...template, body: preview })}
+              >
+                <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-foreground">{template.name}</span>
+                  <span className="mt-0.5 block text-sm text-muted-foreground">{preview}</span>
+                </span>
+                <span className="shrink-0 self-center text-xs font-medium text-primary">Inserir</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="flex justify-end">
+        <Button variant="ghost" onClick={onClose}>
+          Cancelar
+        </Button>
+      </div>
+    </DialogContent>
+  </Dialog>
+);
 
 export default TemplatePicker;

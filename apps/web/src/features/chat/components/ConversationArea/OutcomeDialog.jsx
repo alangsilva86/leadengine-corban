@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select.jsx';
 import { cn } from '@/lib/utils.js';
+import { LEAD_STAGE_DEFINITIONS } from '@/features/crm/utils/lead-stage';
 
 const DEFAULT_SUCCESS_STATE = {
   installment: '',
@@ -34,9 +35,10 @@ const DEFAULT_LOSS_STATE = {
   notes: '',
 };
 
+// Mesmos rótulos das saídas do funil do lead (contrato): o resultado também move o lead.
 const OUTCOME_MODES = [
-  { id: 'success', label: 'Negócio ganho' },
-  { id: 'loss', label: 'Registrar perda' },
+  { id: 'success', label: LEAD_STAGE_DEFINITIONS.ganho.label },
+  { id: 'loss', label: LEAD_STAGE_DEFINITIONS.perdido.label },
 ];
 
 const normalizeDecimalInput = (value) => {
@@ -254,7 +256,7 @@ const OutcomeDialog = ({
           </SelectContent>
         </Select>
         {lossSubmitted && !lossState.reason ? (
-          <p className="text-xs text-status-error-foreground">Selecione um motivo para continuar.</p>
+          <p className="text-xs text-danger-soft-foreground">Selecione um motivo para continuar.</p>
         ) : null}
       </div>
       <div className="space-y-2">
@@ -287,7 +289,7 @@ const OutcomeDialog = ({
             Atualize o status do atendimento para manter o funil sempre confiável.
           </DialogDescription>
         </DialogHeader>
-        <div className="rounded-full border border-surface-overlay-glass-border bg-surface-overlay-quiet p-1 text-sm font-medium">
+        <div className="rounded-full border border-border bg-surface-sunken p-1 text-sm font-medium">
           <div className="grid grid-cols-2 gap-1">
             {OUTCOME_MODES.map((item) => (
               <button
@@ -296,8 +298,8 @@ const OutcomeDialog = ({
                 className={cn(
                   'rounded-full px-3 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                   activeMode === item.id
-                    ? 'bg-surface-overlay-strong text-foreground shadow-sm'
-                    : 'text-foreground-muted hover:text-foreground'
+                    ? 'bg-surface-hover text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 )}
                 onClick={() => {
                   if (item.id !== activeMode) {

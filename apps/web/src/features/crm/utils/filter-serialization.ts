@@ -1,4 +1,5 @@
 import type { CrmFilterState } from '../state/types';
+import { parseLeadStage } from './lead-stage';
 
 const sortStrings = (value: string[] | undefined) => {
   if (!Array.isArray(value)) {
@@ -35,9 +36,16 @@ const normalizeDateRange = (range: CrmFilterState['dateRange']) => {
   return { from, to };
 };
 
+/** Etapas de visões salvas antes do funil único ("qualification", "closed-won"…) viram ids do contrato. */
+const normalizeStages = (stages: string[] | undefined) => {
+  if (!Array.isArray(stages)) return [];
+  const mapped = stages.map((stage) => parseLeadStage(stage) ?? stage).filter(Boolean);
+  return sortStrings(Array.from(new Set(mapped))) ?? [];
+};
+
 export const normalizeCrmFilters = (filters: CrmFilterState): CrmFilterState => {
   const normalized: CrmFilterState = {
-    stages: sortStrings(filters.stages) ?? [],
+    stages: normalizeStages(filters.stages),
     owners: sortStrings(filters.owners) ?? [],
     origins: sortStrings(filters.origins) ?? [],
     channels: sortStrings(filters.channels) ?? [],

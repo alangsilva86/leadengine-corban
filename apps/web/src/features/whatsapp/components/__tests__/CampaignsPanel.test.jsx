@@ -2,164 +2,119 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
-import { describe, expect, it, vi } from 'vitest';
-
-const toastErrorMock = vi.fn();
-
-vi.mock('sonner', () => ({
-  toast: {
-    error: (...args) => toastErrorMock(...args),
-  },
-}));
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import CampaignsPanel from '../CampaignsPanel.jsx';
+import { getNumberStatus } from '../../lib/numberStatus';
+
+beforeAll(() => {
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.scrollIntoView ??= () => {};
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
 
 const buildCampaign = (overrides = {}) => ({
-  id: `campaign-${Math.random().toString(36).slice(2, 8)}`,
-  name: 'Campanha WhatsApp',
+  id: 'campaign-1',
+  name: 'INSS Cartão • Comercial 1',
   status: 'active',
-  agreementId: 'agreement-1',
-  agreementName: 'Convênio Alpha',
+  agreementId: 'inss',
+  agreementName: 'INSS',
+  productType: 'benefit_card',
   instanceId: 'instance-1',
-  instanceName: 'Instância Alpha',
+  instanceName: 'Comercial 1',
   metrics: { total: 10, contacted: 4, won: 2, lost: 1 },
-  createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
-  metadata: { product: 'consigned_credit', margin: 1.5, strategy: 'reactive_inbound' },
+  metadata: {},
   ...overrides,
 });
 
+const numbersById = new Map([
+  [
+    'instance-1',
+    { id: 'instance-1', name: 'Comercial 1', phone: '+55 11 91234-5678', status: getNumberStatus({ status: 'connected', connected: true }) },
+  ],
+  ['instance-2', { id: 'instance-2', name: 'Retenção', phone: null, status: getNumberStatus({ status: 'disconnected' }) }],
+]);
+
+const renderPanel = (props = {}) => {
+  const handlers = {
+    onPause: vi.fn(),
+    onResume: vi.fn(),
+    onChangeNumber: vi.fn(),
+    onRename: vi.fn(),
+    onHistory: vi.fn(),
+    onEnd: vi.fn(),
+  };
+  render(<CampaignsPanel campaigns={[buildCampaign()]} numbersById={numbersById} {...handlers} {...props} />);
+  return handlers;
+};
+
 describe('CampaignsPanel', () => {
-  beforeEach(() => {
-    toastErrorMock.mockReset();
+  it('mostra origem · produto, número de destino com status e métricas reais', () => {
+    renderPanel({
+      campaigns: [
+        buildCampaign(),
+        buildCampaign({ id: 'campaign-2', agreementName: 'SIAPE', productType: 'consigned_credit', status: 'paused', instanceId: 'instance-2' }),
+        buildCampaign({ id: 'campaign-3', agreementName: 'Prefeitura', productType: null, status: 'draft', instanceId: null, instanceName: null }),
+      ],
+    });
+
+    const first = screen.getByRole('article', { name: 'INSS · Cartão benefício' });
+    expect(within(first).getByText('Ativa')).toBeInTheDocument();
+    expect(within(first).getByText('Comercial 1')).toBeInTheDocument();
+    expect(within(first).getByText('Leads')).toBeInTheDocument();
+    expect(within(first).getByText('Contactados')).toBeInTheDocument();
+    expect(within(first).getByText('Convertidos')).toBeInTheDocument();
+    expect(within(first).queryByText('Ganhos')).not.toBeInTheDocument();
+
+    const second = screen.getByRole('article', { name: 'SIAPE · Crédito consignado' });
+    expect(within(second).getByText(/Desconectado/)).toBeInTheDocument();
+    expect(within(second).getByRole('button', { name: /Retomar/ })).toBeInTheDocument();
+
+    const third = screen.getByRole('article', { name: 'Prefeitura' });
+    expect(within(third).getByText('Sem número')).toBeInTheDocument();
+    expect(within(third).getByRole('button', { name: /Ativar/ })).toBeInTheDocument();
+
+    // Sem ids crus na tela.
+    expect(screen.queryByText(/campaign-1|instance-1/)).not.toBeInTheDocument();
   });
 
-  it('exibe convênio, estado de vínculo e permite desvincular a instância', async () => {
-    const linkedCampaign = buildCampaign();
-    const awaitingCampaign = buildCampaign({
-      id: 'campaign-2',
-      name: 'Campanha sem instância',
-      status: 'paused',
-      agreementId: 'agreement-2',
-      agreementName: 'Convênio Beta',
-      instanceId: null,
-      instanceName: null,
-    });
-
-    const disconnectMock = vi.fn();
+  it('pausa direto e encerra apenas pedindo confirmação à página', async () => {
     const user = userEvent.setup();
+    const handlers = renderPanel();
 
-    render(
-      <CampaignsPanel
-        agreementName="Convênio Alpha"
-        campaigns={[linkedCampaign, awaitingCampaign]}
-        loading={false}
-        error={null}
-        onRefresh={vi.fn()}
-        onCreateClick={vi.fn()}
-        onPause={vi.fn()}
-        onActivate={vi.fn()}
-        onDelete={vi.fn()}
-        onReassign={vi.fn()}
-        onDisconnect={disconnectMock}
-        actionState={null}
-        selectedInstanceId="instance-1"
-        canCreateCampaigns
-      />
-    );
+    await user.click(screen.getByRole('button', { name: /Pausar/ }));
+    expect(handlers.onPause).toHaveBeenCalledWith(expect.objectContaining({ id: 'campaign-1' }));
 
-    expect(screen.getAllByText(/Convênio Alpha/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Convênio Beta/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Instância vinculada').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Aguardando vínculo').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Leads recebidos')).toHaveLength(2);
-    expect(screen.getAllByText('Contactados')).toHaveLength(2);
-    expect(screen.getAllByText('Crédito consignado')[0]).toBeInTheDocument();
-    expect(screen.getAllByText(/Margem 1\.50%/)[0]).toBeInTheDocument();
-    expect(screen.getAllByText('Inbound reativo')[0]).toBeInTheDocument();
-
-    const [firstActionsButton, secondActionsButton] = screen.getAllByRole('button', {
-      name: /Ações/i,
-    });
-
-    await user.click(firstActionsButton);
-    const disconnectMenuItem = await screen.findByRole('menuitem', {
-      name: /Desvincular instância/i,
-    });
-    await user.click(disconnectMenuItem);
-    expect(disconnectMock).toHaveBeenCalledWith(linkedCampaign);
-
-    await user.click(secondActionsButton);
-    expect(
-      await screen.findByRole('menuitem', { name: /Vincular instância/i }),
-    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Mais ações para INSS · Cartão benefício/ }));
+    await user.click(await screen.findByRole('menuitem', { name: /Encerrar regra/ }));
+    expect(handlers.onEnd).toHaveBeenCalledWith(expect.objectContaining({ id: 'campaign-1' }));
   });
 
-  it('permite atualizar a lista e desabilita criação quando necessário', async () => {
-    const campaigns = [
-      buildCampaign({ id: 'campaign-1', status: 'active' }),
-      buildCampaign({ id: 'campaign-2', status: 'paused', instanceId: null }),
-    ];
-
-    const onRefresh = vi.fn();
-    const onCreateClick = vi.fn();
+  it('abre trocar número e histórico pelo menu', async () => {
     const user = userEvent.setup();
+    const handlers = renderPanel();
 
-    const { rerender, container } = render(
-      <CampaignsPanel
-        agreementName="Convênio Controlado"
-        campaigns={campaigns}
-        loading={false}
-        error={null}
-        onRefresh={onRefresh}
-        onCreateClick={onCreateClick}
-        onPause={vi.fn()}
-        onActivate={vi.fn()}
-        onDelete={vi.fn()}
-        onReassign={vi.fn()}
-        onDisconnect={vi.fn()}
-        actionState={null}
-        selectedInstanceId="instance-1"
-        canCreateCampaigns={false}
-      />
+    await user.click(screen.getByRole('button', { name: /Mais ações/ }));
+    await user.click(await screen.findByRole('menuitem', { name: /Trocar número/ }));
+    expect(handlers.onChangeNumber).toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /Mais ações/ }));
+    await user.click(await screen.findByRole('menuitem', { name: /Histórico da origem/ }));
+    expect(handlers.onHistory).toHaveBeenCalled();
+  });
+
+  it('só mostra filtros quando há muitas regras', () => {
+    const many = Array.from({ length: 7 }, (_, index) =>
+      buildCampaign({ id: `c-${index}`, agreementName: `Origem ${index}`, agreementId: `o-${index}` }),
     );
-
-    const panelScope = within(container.firstElementChild ?? container);
-    const drawerTrigger = panelScope.getByRole('button', { name: /Filtros e atualização/i });
-    const createButton = panelScope.getByRole('button', { name: /Nova campanha/i });
-
-    await user.click(drawerTrigger);
-    const refreshButton = await screen.findByRole('button', { name: /Atualizar lista/i });
-
-    await user.click(refreshButton);
-    expect(onRefresh).toHaveBeenCalledTimes(1);
-    expect(onCreateClick).not.toHaveBeenCalled();
-    expect(toastErrorMock).not.toHaveBeenCalled();
-
-    await user.click(createButton);
-    expect(onCreateClick).not.toHaveBeenCalled();
-    expect(toastErrorMock).toHaveBeenCalled();
-
-    rerender(
-      <CampaignsPanel
-        agreementName="Convênio Controlado"
-        campaigns={campaigns}
-        loading
-        error={null}
-        onRefresh={onRefresh}
-        onCreateClick={onCreateClick}
-        onPause={vi.fn()}
-        onActivate={vi.fn()}
-        onDelete={vi.fn()}
-        onReassign={vi.fn()}
-        onDisconnect={vi.fn()}
-        actionState={null}
-        selectedInstanceId="instance-1"
-        canCreateCampaigns={false}
-      />
-    );
-
-    await user.click(panelScope.getByRole('button', { name: /Filtros e atualização/i }));
-    expect(await screen.findByRole('button', { name: /Atualizar lista/i })).toBeDisabled();
+    renderPanel({ campaigns: many });
+    expect(screen.getByRole('combobox', { name: 'Filtrar por origem' })).toBeInTheDocument();
   });
 });

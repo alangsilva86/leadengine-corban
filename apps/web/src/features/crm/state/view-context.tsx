@@ -39,9 +39,9 @@ const createInitialSelection = (): SelectionState => ({
   lastInteractedId: null,
 });
 
-const INITIAL_STATE = (filters: CrmFilterState): CrmViewContextState => ({
+const INITIAL_STATE = ({ filters, view }: { filters: CrmFilterState; view?: CrmViewType }): CrmViewContextState => ({
   filters,
-  view: 'kanban',
+  view: view ?? 'kanban',
   page: 1,
   pageSize: 30,
   selection: createInitialSelection(),
@@ -130,9 +130,22 @@ type CrmViewContextValue = {
 
 const Context = createContext<CrmViewContextValue | undefined>(undefined);
 
-export const CrmViewProvider = ({ filters, children }: { filters: CrmFilterState; children: ReactNode }) => {
+export const CRM_VIEW_TYPES: CrmViewType[] = ['kanban', 'list', 'calendar', 'timeline', 'aging', 'insights'];
+
+export const isCrmViewType = (value: unknown): value is CrmViewType =>
+  typeof value === 'string' && (CRM_VIEW_TYPES as string[]).includes(value);
+
+export const CrmViewProvider = ({
+  filters,
+  initialView,
+  children,
+}: {
+  filters: CrmFilterState;
+  initialView?: CrmViewType;
+  children: ReactNode;
+}) => {
   const normalizedFilters = useMemo(() => normalizeCrmFilters(filters), [filters]);
-  const [state, dispatch] = useReducer(reducer, normalizedFilters, INITIAL_STATE);
+  const [state, dispatch] = useReducer(reducer, { filters: normalizedFilters, view: initialView }, INITIAL_STATE);
 
   const serializedPropFilters = useMemo(() => JSON.stringify(normalizedFilters), [normalizedFilters]);
   const serializedStateFilters = useMemo(() => JSON.stringify(state.filters), [state.filters]);

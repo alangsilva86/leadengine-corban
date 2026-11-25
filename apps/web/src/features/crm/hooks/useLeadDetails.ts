@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api.js';
 import type { LeadDetail } from '../state/leads';
+import { normalizeLeadStage } from '../utils/lead-stage';
 
 const fetchLeadDetails = async (leadId: string): Promise<LeadDetail> => {
   const response = await apiGet(`/api/crm/leads/${encodeURIComponent(leadId)}`);
   const payload = response?.data ?? response;
   if (!payload?.id) throw new Error('Resposta inválida ao carregar dados do lead.');
-  return payload;
+  return { ...payload, stage: normalizeLeadStage(payload.stage) };
 };
 
 export const useLeadDetails = (leadId: string | null) => {

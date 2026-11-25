@@ -41,7 +41,7 @@ const formatDateTime = (value: string | null): string => {
 const roleOptions: Array<{ label: string; value: UserRole }> = [
   { value: 'ADMIN', label: 'Administrador' },
   { value: 'SUPERVISOR', label: 'Supervisor' },
-  { value: 'AGENT', label: 'Agente' },
+  { value: 'AGENT', label: 'Atendente' },
 ];
 
 type UsersTableProps = {
@@ -89,7 +89,7 @@ const UsersTable = ({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-[220px]">Operador</TableHead>
+              <TableHead className="min-w-[220px]">Pessoa</TableHead>
               <TableHead className="min-w-[180px]">Função</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Último acesso</TableHead>
@@ -125,7 +125,7 @@ const UsersTable = ({
                           ))}
                         </SelectContent>
                       </Select>
-                      <UserRoleBadge role={user.role} />
+                      {!canManage ? <UserRoleBadge role={user.role} /> : null}
                     </div>
                   </TableCell>
                   <TableCell>

@@ -1,36 +1,18 @@
-import { useMemo, useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import { buildConversationTimeline, normaliseMessages } from '../../../hooks/useConversationState.js';
+
+const EMPTY_PAGES = [];
 
 /**
- * Normaliza as páginas da query de mensagens em uma listagem ordenada cronologicamente.
+ * Paginação das mensagens (carregar anteriores) + linha do tempo de reserva,
+ * montada pelo mesmo construtor de `useConversationState`.
  */
 export const useTicketMessages = (messagesQuery) => {
-  const pages = messagesQuery?.data?.pages ?? [];
-  const timelineItems = useMemo(() => {
-    const messages = [];
-
-    for (const page of pages) {
-      if (!page || !Array.isArray(page.items)) {
-        continue;
-      }
-
-      for (const message of page.items) {
-        messages.push(message);
-      }
-    }
-
-    messages.sort((left, right) => {
-      const leftTime = left?.createdAt ? new Date(left.createdAt).getTime() : 0;
-      const rightTime = right?.createdAt ? new Date(right.createdAt).getTime() : 0;
-      return leftTime - rightTime;
-    });
-
-    return messages.map((entry) => ({
-      type: 'message',
-      id: entry.id,
-      date: entry.createdAt ? new Date(entry.createdAt) : undefined,
-      payload: entry,
-    }));
-  }, [pages]);
+  const pages = messagesQuery?.data?.pages ?? EMPTY_PAGES;
+  const timelineItems = useMemo(
+    () => buildConversationTimeline({ messages: normaliseMessages(pages) }),
+    [pages],
+  );
 
   const hasMore = Boolean(messagesQuery?.hasNextPage);
   const isLoadingMore = Boolean(messagesQuery?.isFetchingNextPage);

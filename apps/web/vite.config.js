@@ -7,6 +7,30 @@ import { fileURLToPath } from 'node:url'
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const shouldGenerateCssReport = process.env.GENERATE_CSS_REPORT === 'true'
 
+/** Nome do pacote a partir do caminho do módulo (`…/node_modules/@scope/pkg/…` → `@scope/pkg`). */
+const packageNameOf = (id) => {
+  const index = id.lastIndexOf('/node_modules/')
+  if (index < 0) return null
+  const [scope, name] = id.slice(index + '/node_modules/'.length).split('/')
+  return scope.startsWith('@') ? `${scope}/${name}` : scope
+}
+
+const REACT_CORE_PACKAGES = new Set(['react', 'react-dom', 'scheduler', 'react-router', 'react-router-dom', 'cookie', 'set-cookie-parser'])
+
+/**
+ * Agrupa só o que toda página usa. O resto (recharts, dnd, date-fns, day-picker, qrcode…) fica no chunk da
+ * rota que o importa. Compara pelo nome do pacote: no pnpm o caminho inclui as peer deps
+ * (`recharts@x_react-dom@y`), então testar `id.includes('react')` puxava quase tudo para o vendor inicial.
+ */
+export const manualChunks = (id) => {
+  const pkg = packageNameOf(id)
+  if (!pkg) return undefined
+  if (REACT_CORE_PACKAGES.has(pkg)) return 'vendor-react'
+  if (pkg.startsWith('@tanstack/')) return 'vendor-query'
+  if (pkg === 'lucide-react') return 'vendor-icons'
+  return undefined
+}
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   css: {
@@ -25,7 +49,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['@tanstack/react-query', '@tanstack/query-core', 'recharts'],
+    include: ['@tanstack/react-query', 'recharts'],
   },
   base: '/',
   server: {
@@ -40,18 +64,9 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: shouldGenerateCssReport,
     minify: 'esbuild',
-    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return
-          if (id.includes('/react') || id.includes('react-dom') || id.includes('scheduler')) return 'vendor-react'
-          if (id.includes('react-router-dom')) return 'vendor-router'
-          if (id.includes('@tanstack/react-query')) return 'vendor-query'
-          if (id.includes('recharts')) return 'vendor-recharts'
-          if (id.includes('@radix-ui')) return 'vendor-radix'
-          if (id.includes('lucide-react')) return 'vendor-icons'
-        },
+        manualChunks,
       },
     },
   },

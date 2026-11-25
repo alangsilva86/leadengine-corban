@@ -1,39 +1,68 @@
+import { Link } from 'react-router-dom';
+import { Briefcase, CalendarPlus, MessageCircle, MoreHorizontal, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button.jsx';
-import { Pencil, CheckCircle2, CalendarPlus, Send } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.jsx';
+import { buildInboxHref } from '../../utils/labels';
 
 type LeadActionListProps = {
-  onMarkConnected?: () => void;
-  onScheduleFollowUp?: () => void;
-  onSendMessage?: () => void;
-  onEditLead?: () => void;
-  busy?: boolean;
+  contactId?: string | null;
+  leadId?: string | null;
+  onCreateTask?: () => void;
   canManageTasks?: boolean;
-  canEditLead?: boolean;
 };
 
-const LeadActionList = ({
-  onMarkConnected,
-  onScheduleFollowUp,
-  onSendMessage,
-  onEditLead,
-  busy = false,
-  canManageTasks = true,
-  canEditLead = true,
-}: LeadActionListProps) => (
-  <div className="flex flex-wrap gap-2">
-    <Button type="button" size="sm" onClick={onMarkConnected} disabled={busy || !canManageTasks}>
-      <CheckCircle2 className="mr-2 h-4 w-4" /> Marcar como contato realizado
-    </Button>
-    <Button type="button" size="sm" variant="outline" onClick={onScheduleFollowUp} disabled={busy || !canManageTasks}>
-      <CalendarPlus className="mr-2 h-4 w-4" /> Agendar follow-up
-    </Button>
-    <Button type="button" size="sm" variant="secondary" onClick={onSendMessage} disabled={busy || !canManageTasks}>
-      <Send className="mr-2 h-4 w-4" /> Enviar mensagem
-    </Button>
-    <Button type="button" size="sm" variant="ghost" onClick={onEditLead} disabled={busy || !canEditLead}>
-      <Pencil className="mr-2 h-4 w-4" /> Editar lead
-    </Button>
-  </div>
-);
+/**
+ * Ações do lead que existem de verdade na API:
+ * abrir a conversa no Inbox, criar tarefa, ver o contato e as oportunidades.
+ * (A etapa muda pelo chip "Mover para…" no cabeçalho do painel.)
+ */
+const LeadActionList = ({ contactId, leadId, onCreateTask, canManageTasks = true }: LeadActionListProps) => {
+  const opportunitiesHref = contactId
+    ? `/crm/opportunities?${new URLSearchParams({ contactId, ...(leadId ? { leadId } : {}) })}`
+    : '/crm/opportunities';
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button asChild size="sm" disabled={!contactId}>
+        <Link to={buildInboxHref(contactId)}>
+          <MessageCircle aria-hidden="true" />
+          Abrir conversa
+        </Link>
+      </Button>
+      <Button type="button" size="sm" variant="outline" onClick={onCreateTask} disabled={!contactId || !canManageTasks}>
+        <CalendarPlus aria-hidden="true" />
+        Nova tarefa
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" size="icon-sm" variant="ghost" aria-label="Mais ações do lead" className="text-muted-foreground">
+            <MoreHorizontal />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-52">
+          {contactId ? (
+            <DropdownMenuItem asChild>
+              <Link to={`/contacts/${contactId}`}>
+                <UserRound />
+                Ver contato
+              </Link>
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem asChild>
+            <Link to={opportunitiesHref}>
+              <Briefcase />
+              Oportunidades do contato
+            </Link>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+};
 
 export default LeadActionList;

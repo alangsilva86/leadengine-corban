@@ -43,14 +43,14 @@ vi.mock('../../../hooks/useChatAutoscroll.js', () => ({
   })),
 }));
 
-vi.mock('../../../hooks/useWhatsAppPresence.js', () => ({
+vi.mock('@/features/whatsapp/hooks/useWhatsAppInstances.jsx', () => ({
   __esModule: true,
-  default: vi.fn(() => ({ typingAgents: [], broadcastTyping: vi.fn() })),
-}));
-
-vi.mock('../../../hooks/useSLAClock.js', () => ({
-  __esModule: true,
-  default: vi.fn(() => ({ now: new Date() })),
+  default: () => ({
+    instances: [],
+    loadingInstances: false,
+    instancesReady: true,
+    loadInstances: vi.fn(async () => {}),
+  }),
 }));
 
 vi.mock('../../../utils/telemetry.js', () => ({
@@ -105,7 +105,6 @@ describe('ConversationArea', () => {
           messagesQuery={messagesQuery}
           onSendMessage={() => {}}
           onCreateNote={() => {}}
-          onSendTemplate={() => {}}
           onCreateNextStep={() => {}}
           onRegisterResult={() => {}}
           onRegisterCallResult={() => {}}
@@ -165,7 +164,6 @@ describe('ConversationArea', () => {
           typingIndicator,
           onSendMessage: vi.fn(),
           onCreateNote: vi.fn(),
-          onSendTemplate: vi.fn(),
           onCreateNextStep: vi.fn(),
           onRegisterResult: vi.fn(),
           onRegisterCallResult: vi.fn(),
@@ -189,6 +187,7 @@ describe('ConversationArea', () => {
       ticketId: 'ticket-123',
       contactId: 'contact-1',
       leadId: 'lead-99',
+      queueId: null,
     });
     expect(payload.timeline).toEqual(buildAiContextTimeline(result.current.timeline.items));
 

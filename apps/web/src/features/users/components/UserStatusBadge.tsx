@@ -6,7 +6,7 @@ type UserStatusBadgeProps = {
 
 const UserStatusBadge = ({ isActive }: UserStatusBadgeProps) => (
   <Badge variant={isActive ? 'default' : 'secondary'} className="inline-flex items-center gap-1">
-    <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-muted-foreground/60'}`} />
+    <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-success' : 'bg-subtle-foreground'}`} />
     {isActive ? 'Ativo' : 'Inativo'}
   </Badge>
 );

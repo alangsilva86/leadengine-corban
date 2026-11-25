@@ -18,6 +18,7 @@ vi.mock('recharts', () => {
     XAxis: MockElement,
     YAxis: MockElement,
     Tooltip: MockElement,
+    Legend: MockElement,
   };
 });
 

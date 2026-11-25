@@ -1,80 +1,114 @@
 import { memo } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { Checkbox } from '@/components/ui/checkbox.jsx';
-import { Button } from '@/components/ui/button.jsx';
-import { Badge } from '@/components/ui/badge.jsx';
+import type { MouseEvent } from 'react';
+import { Link } from 'react-router-dom';
+import { MessageCircle } from 'lucide-react';
+import { TableCell, TableRow } from '@/components/ui/table.jsx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.jsx';
 import { cn } from '@/lib/utils.js';
 import type { LeadSummary } from '../../state/leads';
-
-const formatActivity = (value: string | null) => {
-  if (!value) {
-    return 'Sem atividade';
-  }
-  try {
-    return formatDistanceToNow(new Date(value), { addSuffix: true, locale: ptBR });
-  } catch {
-    return 'Atividade desconhecida';
-  }
-};
-
-const formatValue = (value: number | null | undefined) => {
-  if (!value) return '—';
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
-};
+import {
+  IDLE_TONE_CLASS,
+  buildInboxHref,
+  formatBRL,
+  formatDateTime,
+  formatRelativeShort,
+  getIdleTone,
+  getInitials,
+  getSourceIcon,
+  getSourceLabel,
+} from '../../utils/labels';
+import LeadStageBadge from '../lead-stage/LeadStageBadge';
 
 type LeadTableRowProps = {
   lead: LeadSummary;
-  selected: boolean;
-  onToggleSelect: (leadId: string) => void;
   onOpenDrawer: (leadId: string) => void;
-  selectable?: boolean;
 };
 
-const LeadTableRow = memo(({ lead, selected, onToggleSelect, onOpenDrawer, selectable = true }: LeadTableRowProps) => {
+const isInteractive = (target: EventTarget) =>
+  target instanceof Element && Boolean(target.closest('a,button'));
+
+const LeadTableRow = memo(({ lead, onOpenDrawer }: LeadTableRowProps) => {
+  const sourceLabel = getSourceLabel(lead.source);
+  const SourceIcon = getSourceIcon(lead.source);
+  const relative = formatRelativeShort(lead.lastActivityAt);
+  const value = formatBRL(lead.potentialValue);
+
   return (
-    <div
-      className={cn(
-        'grid grid-cols-[32px,minmax(0,1.4fr),minmax(0,1fr),minmax(0,0.9fr),minmax(0,1fr),minmax(0,140px)] items-center gap-3 border-b border-border/50 bg-background px-4 py-3 text-sm transition hover:bg-muted/30',
-        selected && 'bg-primary/5'
-      )}
-      role="row"
+    <TableRow
+      className="cursor-pointer border-border hover:bg-surface-hover"
+      onClick={(event: MouseEvent) => {
+        if (!isInteractive(event.target)) onOpenDrawer(lead.id);
+      }}
     >
-      <div className="flex items-center justify-center" role="gridcell">
-        <Checkbox
-          checked={selected}
-          disabled={!selectable}
-          onCheckedChange={() => selectable && onToggleSelect(lead.id)}
-          aria-label={`Selecionar lead ${lead.name}`}
-        />
-      </div>
-      <button
-        type="button"
-        className="flex min-w-0 flex-col items-start gap-1 text-left"
-        onClick={() => onOpenDrawer(lead.id)}
-      >
-        <span className="truncate text-sm font-medium text-foreground">{lead.name}</span>
-        <span className="truncate text-xs text-muted-foreground">{lead.ownerName ?? 'Sem responsável definido'}</span>
-      </button>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="gridcell">
-        <Badge variant="outline" className="text-[0.65rem] uppercase tracking-wide">
-          {lead.stage ?? 'Sem etapa'}
-        </Badge>
-        <span>{lead.source ?? 'Origem desconhecida'}</span>
-      </div>
-      <div className="text-xs text-muted-foreground" role="gridcell">
-        {lead.channel ?? 'Canal indeterminado'}
-      </div>
-      <div className="text-xs text-muted-foreground" role="gridcell">
-        {formatActivity(lead.lastActivityAt)}
-      </div>
-      <div className="flex items-center justify-end gap-2" role="gridcell">
-        <span className="text-sm font-medium text-foreground">{formatValue(lead.potentialValue ?? null)}</span>
-        <Button type="button" size="sm" variant="outline" onClick={() => onOpenDrawer(lead.id)}>
-          Abrir
-        </Button>
-      </div>
-    </div>
+      <TableCell className="w-full max-w-0 py-2 pl-4">
+        <button
+          type="button"
+          className="max-w-full truncate text-left font-medium text-foreground hover:underline focus-visible:underline focus-visible:outline-none"
+          onClick={() => onOpenDrawer(lead.id)}
+        >
+          {lead.name}
+        </button>
+      </TableCell>
+      <TableCell className="py-2">
+        <LeadStageBadge stage={lead.stage} />
+      </TableCell>
+      <TableCell className="hidden py-2 md:table-cell">
+        {sourceLabel ? (
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <SourceIcon className="size-3.5" aria-hidden="true" />
+            {sourceLabel}
+          </span>
+        ) : (
+          <span className="text-subtle-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="hidden py-2 lg:table-cell">
+        {lead.ownerName ? (
+          <span className="inline-flex items-center gap-2">
+            <span
+              className="flex size-6 items-center justify-center rounded-full bg-primary-soft text-2xs font-medium text-primary-soft-foreground"
+              aria-hidden="true"
+            >
+              {getInitials(lead.ownerName)}
+            </span>
+            {lead.ownerName}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">Sem responsável</span>
+        )}
+      </TableCell>
+      <TableCell className="hidden py-2 sm:table-cell">
+        {relative ? (
+          <span
+            className={cn('tabular-nums', IDLE_TONE_CLASS[getIdleTone(lead.lastActivityAt)])}
+            title={formatDateTime(lead.lastActivityAt) ?? undefined}
+          >
+            {relative}
+          </span>
+        ) : (
+          <span className="text-subtle-foreground">—</span>
+        )}
+      </TableCell>
+      <TableCell className="py-2 text-right font-medium tabular-nums">
+        {value ?? <span className="font-normal text-subtle-foreground">—</span>}
+      </TableCell>
+      <TableCell className="w-12 py-2 pr-3 text-right">
+        {lead.contactId ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                to={buildInboxHref(lead.contactId)}
+                aria-label={`Abrir conversa com ${lead.name}`}
+                className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-whatsapp-soft hover:text-whatsapp-soft-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <MessageCircle className="size-4" aria-hidden="true" />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent>Abrir conversa</TooltipContent>
+          </Tooltip>
+        ) : null}
+      </TableCell>
+    </TableRow>
   );
 });
 

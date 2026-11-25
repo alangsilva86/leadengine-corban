@@ -1,6 +1,8 @@
 import { normalizeWhatsAppStatus } from '@leadengine/wa-status';
-import { normalizeQrPayload as normalizeQrPayloadContract } from '@ticketz/wa-contracts';
+import { normalizeQrPayload as normalizeQrPayloadContract } from '@ticketz/wa-contracts/v1/qr';
 import { extractQrPayload } from '../utils/qr.js';
+import { extractPhoneDigits } from './formatting';
+import { getNumberStatus } from './numberStatus';
 
 export const looksLikeWhatsAppJid = (value: unknown): value is string =>
   typeof value === 'string' && value.toLowerCase().endsWith('@s.whatsapp.net');
@@ -37,7 +39,7 @@ export const readTenantString = (value: unknown): string | null => {
   return null;
 };
 
-const pickTenantId = (record: unknown): string | null => {
+const pickTenantId = (record: unknown, { allowIdFallback = false } = {}): string | null => {
   if (!isPlainRecord(record)) {
     return readTenantString(record);
   }
@@ -67,14 +69,16 @@ const pickTenantId = (record: unknown): string | null => {
   const nestedSources = ['tenant', 'account', 'scope'] as const;
   for (const key of nestedSources) {
     if (record[key] && typeof record[key] === 'object') {
-      const nested = pickTenantId(record[key]);
+      const nested = pickTenantId(record[key], { allowIdFallback: true });
       if (nested) {
         return nested;
       }
     }
   }
 
-  if (typeof record.id === 'string') {
+  // O `id` só identifica a empresa quando estamos dentro de um objeto tenant/account/scope;
+  // no registro do número, `id` é o próprio número.
+  if (allowIdFallback && typeof record.id === 'string') {
     const resolved = readTenantString(record.id);
     if (resolved) {
       return resolved;
@@ -108,7 +112,7 @@ export const resolveTenantId = (record: unknown): string | null => {
     ? ((record as Record<string, unknown>).account as Record<string, unknown>)
     : null;
   if (account) {
-    const accountTenant = pickTenantId(account);
+    const accountTenant = pickTenantId(account, { allowIdFallback: true });
     if (accountTenant) {
       return accountTenant;
     }
@@ -118,7 +122,7 @@ export const resolveTenantId = (record: unknown): string | null => {
     ? ((record as Record<string, unknown>).tenant as Record<string, unknown>)
     : null;
   if (tenant) {
-    const tenantId = pickTenantId(tenant);
+    const tenantId = pickTenantId(tenant, { allowIdFallback: true });
     if (tenantId) {
       return tenantId;
     }
@@ -128,7 +132,7 @@ export const resolveTenantId = (record: unknown): string | null => {
     ? ((record as Record<string, unknown>).scope as Record<string, unknown>)
     : null;
   if (scope) {
-    const scopeTenant = pickTenantId(scope);
+    const scopeTenant = pickTenantId(scope, { allowIdFallback: true });
     if (scopeTenant) {
       return scopeTenant;
     }
@@ -649,24 +653,19 @@ export const getStatusInfo = (instance: unknown): InstanceStatusInfo => {
     connected: typeof record.connected === 'boolean' ? record.connected : undefined,
   });
   const statusKey = normalizedStatus.status ?? resolveNormalizedInstanceStatus(instance);
-  const statusMap: Record<string, InstanceStatusInfo> = {
-    connected: { label: 'Conectado', variant: 'success' },
-    connecting: { label: 'Conectando', variant: 'info' },
-    reconnecting: { label: 'Reconectando', variant: 'info' },
-    pending: { label: 'Pendente', variant: 'info' },
-    disconnected: { label: 'Desconectado', variant: 'secondary' },
-    qr_required: { label: 'QR necessário', variant: 'warning' },
-    failed: { label: 'Falhou', variant: 'destructive' },
-    error: { label: 'Erro', variant: 'destructive' },
-  };
-
-  const baseInfo = statusMap[statusKey] ?? {
-    label: statusKey || 'Indefinido',
-    variant: normalizedStatus.connected ? 'success' : 'secondary',
+  // Rótulos vêm do modelo único de status (lib/numberStatus.ts).
+  const numberStatus = getNumberStatus({ status: statusKey, connected: normalizedStatus.connected });
+  const VARIANT_BY_TONE: Record<string, string> = {
+    success: 'success',
+    info: 'info',
+    warning: 'warning',
+    neutral: 'secondary',
+    danger: 'destructive',
   };
 
   return {
-    ...baseInfo,
+    label: numberStatus.label,
+    variant: VARIANT_BY_TONE[numberStatus.tone] ?? 'secondary',
     status: normalizedStatus.status ?? statusKey,
     connected: normalizedStatus.connected,
   };
@@ -686,16 +685,22 @@ export const resolveInstancePhone = (instance: unknown): string => {
     metadata.phoneNumber,
     metadata.phone_number,
     metadata.msisdn,
-    record.jid,
-    record.session,
   ];
 
   for (const candidate of candidates) {
     if (typeof candidate === 'string') {
       const trimmed = candidate.trim();
       if (trimmed.length > 0) {
-        return trimmed;
+        return looksLikeWhatsAppJid(trimmed) ? extractPhoneDigits(trimmed) ?? '' : trimmed;
       }
+    }
+  }
+
+  // Identificadores técnicos (JID) só servem como fonte dos dígitos — nunca são exibidos crus.
+  for (const candidate of [record.jid, record.session]) {
+    const digits = extractPhoneDigits(candidate);
+    if (digits) {
+      return digits;
     }
   }
 

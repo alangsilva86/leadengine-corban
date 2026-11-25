@@ -200,7 +200,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = useCallback(async ({ email, password, tenantSlug, remember = false }) => {
     if (!email || !password || !tenantSlug) {
-      throw new Error('Informe e-mail, senha e tenant para continuar.');
+      throw new Error('Preencha e-mail, senha e código da empresa.');
     }
 
     sessionVersion.current += 1;

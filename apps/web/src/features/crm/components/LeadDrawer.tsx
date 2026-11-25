@@ -1,23 +1,35 @@
-import { useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import { toast } from 'sonner';
+import { ErrorState } from '@/components/page';
+import { Skeleton } from '@/components/ui/skeleton.jsx';
 import {
-  Drawer,
-  DrawerContent,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerClose,
-} from '@/components/ui/drawer.jsx';
-import { Button } from '@/components/ui/button.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet.jsx';
+import { getFriendlyErrorMessage } from '@/lib/errors.js';
+import ContactTaskDialog from '@/features/contacts/components/ContactTaskDialog.jsx';
+import ContactTasks from '@/features/contacts/components/ContactTasks.jsx';
+import {
+  useCompleteContactTaskMutation,
+  useContactDetailsQuery,
+  useContactTasksQuery,
+} from '@/features/contacts/hooks/useContactsApi.js';
 import useLeadDetails from '../hooks/useLeadDetails';
 import useLeadTimeline from '../hooks/useLeadTimeline';
-import useLeadTasks from '../hooks/useLeadTasks';
+import useMoveLeadStage from '../hooks/useMoveLeadStage';
+import LeadStageTrack from './lead-stage/LeadStageTrack';
+import LeadStageMenu, { LeadStageChip } from './lead-stage/LeadStageMenu';
 import LeadHeader from './lead-drawer/LeadHeader';
 import LeadTimeline from './lead-drawer/LeadTimeline';
-import LeadTaskList from './lead-drawer/LeadTaskList';
+import LeadActionList from './lead-drawer/LeadActionList';
+import useCrmPermissions from '../state/permissions';
 import { useCrmViewContext } from '../state/view-context';
+import { formatBRL } from '../utils/labels';
+import { getLeadStageLabel } from '../utils/lead-stage';
 
 type LeadDrawerProps = {
   open: boolean;
@@ -25,11 +37,25 @@ type LeadDrawerProps = {
   onOpenChange: (nextOpen: boolean) => void;
 };
 
+const Section = ({ title, children }: { title: string; children: ReactNode }) => (
+  <section className="space-y-3">
+    <h3 className="text-sm font-medium text-foreground">{title}</h3>
+    {children}
+  </section>
+);
+
+/** Painel lateral do lead: dados, ações reais (conversa, tarefa), tarefas do contato e atividades. */
 const LeadDrawer = ({ open, leadId, onOpenChange }: LeadDrawerProps) => {
   const { toggleRealtime } = useCrmViewContext();
-  const { lead, isLoading: leadLoading, error: leadError } = useLeadDetails(leadId);
-  const { timeline, isLoading: timelineLoading, error: timelineError } = useLeadTimeline(leadId);
-  const { tasks, isLoading: tasksLoading, error: tasksError } = useLeadTasks(leadId);
+  const { canManageTasks } = useCrmPermissions();
+  const [taskOpen, setTaskOpen] = useState(false);
+  const { lead, isLoading: leadLoading, error: leadError, refetch } = useLeadDetails(leadId);
+  const { timeline, isLoading: timelineLoading, error: timelineError, refetch: refetchTimeline } = useLeadTimeline(leadId);
+  const contactId = lead?.contactId ?? null;
+  const contactQuery = useContactDetailsQuery(contactId, { enabled: open });
+  const tasksQuery = useContactTasksQuery(contactId, { enabled: open });
+  const completeTask = useCompleteContactTaskMutation(contactId);
+  const { moveLead, pendingLeadId } = useMoveLeadStage();
 
   useEffect(() => {
     if (open) {
@@ -39,50 +65,108 @@ const LeadDrawer = ({ open, leadId, onOpenChange }: LeadDrawerProps) => {
     return undefined;
   }, [open, toggleRealtime]);
 
-  const ready = useMemo(() => Boolean(lead) && !leadLoading, [lead, leadLoading]);
+  const value = formatBRL(lead?.potentialValue);
 
   return (
-    <Drawer open={open} onOpenChange={onOpenChange} direction="right">
-      <DrawerContent className="flex h-full max-h-full w-full flex-col sm:max-w-2xl">
-        <DrawerHeader className="border-b border-border/60 pb-4">
-          <DrawerTitle>Lead</DrawerTitle>
-          <DrawerDescription>Detalhes, histórico e próximos passos.</DrawerDescription>
-        </DrawerHeader>
-        <ScrollArea className="flex-1">
-          <div className="flex flex-col gap-6 p-6">
-            {ready && lead && <LeadHeader lead={lead} />}
-            {leadLoading && <p role="status">Carregando lead…</p>}
-            {leadError && <p role="alert">Não foi possível carregar os detalhes do lead.</p>}
-            {lead?.contactId && (
-              <Button asChild><Link to={`/crm/opportunities?${new URLSearchParams({ contactId: lead.contactId, leadId: lead.id })}`}>
-                Abrir oportunidades do contato
-              </Link></Button>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-lg">
+        <SheetHeader className="gap-3 border-b border-border p-4 pr-12">
+          {leadLoading && !lead ? (
+            <>
+              <SheetTitle className="sr-only">Carregando lead</SheetTitle>
+              <SheetDescription className="sr-only">Aguarde enquanto os dados do lead são carregados.</SheetDescription>
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-32" />
+            </>
+          ) : (
+            <>
+              <SheetTitle className="text-lg">{lead?.name ?? 'Lead'}</SheetTitle>
+              <SheetDescription className={lead ? 'sr-only' : undefined}>
+                {lead ? [getLeadStageLabel(lead.stage), value].filter(Boolean).join(' · ') : 'Detalhes do lead'}
+              </SheetDescription>
+              {lead ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <LeadStageMenu
+                      stage={lead.stage}
+                      align="start"
+                      label="Mover lead para"
+                      onSelect={(stage) => void moveLead(lead, stage, { source: 'drawer' })}
+                    >
+                      <LeadStageChip stage={lead.stage} pending={pendingLeadId === lead.id} />
+                    </LeadStageMenu>
+                    {value ? <span className="text-sm font-medium tabular-nums text-foreground">{value}</span> : null}
+                  </div>
+                  <LeadStageTrack stage={lead.stage} className="max-w-xs" />
+                </div>
+              ) : null}
+            </>
+          )}
+          {lead ? (
+            <LeadActionList
+              contactId={contactId}
+              leadId={lead.id}
+              onCreateTask={() => setTaskOpen(true)}
+              canManageTasks={canManageTasks}
+            />
+          ) : null}
+        </SheetHeader>
+
+        <div className="flex-1 space-y-6 overflow-y-auto p-4">
+          {leadError ? (
+            <ErrorState size="compact" title="Não foi possível carregar o lead" error={leadError} onRetry={() => void refetch()} />
+          ) : lead ? (
+            <LeadHeader lead={lead} contact={contactQuery.data ?? null} />
+          ) : (
+            <div className="grid grid-cols-2 gap-3" aria-busy="true">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <Skeleton key={index} className="h-10 w-full" />
+              ))}
+            </div>
+          )}
+
+          {contactId ? (
+            <Section title="Tarefas">
+              <ContactTasks
+                tasks={tasksQuery.data ?? []}
+                isLoading={tasksQuery.isLoading}
+                error={tasksQuery.error}
+                onRetry={() => void tasksQuery.refetch()}
+                onCreateTask={() => setTaskOpen(true)}
+                completingId={completeTask.isPending ? completeTask.variables?.taskId : null}
+                onCompleteTask={(task: { id: string }) =>
+                  completeTask.mutate(
+                    { taskId: task.id },
+                    {
+                      onSuccess: () => toast.success('Tarefa concluída.'),
+                      onError: (error: unknown) => toast.error(getFriendlyErrorMessage(error, 'Não foi possível concluir a tarefa.')),
+                    }
+                  )
+                }
+              />
+            </Section>
+          ) : null}
+
+          <Section title="Atividades">
+            {timelineLoading ? (
+              <Skeleton className="h-24 w-full rounded-md" />
+            ) : timelineError ? (
+              <ErrorState size="compact" title="Histórico indisponível" error={timelineError} onRetry={() => void refetchTimeline()} />
+            ) : (
+              <LeadTimeline events={timeline} />
             )}
+          </Section>
+        </div>
 
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
-              {timelineLoading ? <div className="h-24 animate-pulse rounded-lg bg-muted/40" /> : timelineError ? <p role="alert">Histórico indisponível.</p> : <LeadTimeline events={timeline} />}
-            </section>
-
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Próximas tarefas</h3>
-              {tasksLoading ? <div className="h-24 animate-pulse rounded-lg bg-muted/40" /> : tasksError ? <p role="alert">Tarefas indisponíveis.</p> : <LeadTaskList tasks={tasks} />}
-            </section>
-          </div>
-        </ScrollArea>
-        <DrawerFooter className="flex items-center justify-between border-t border-border/60 bg-muted/20 py-4">
-          <span className="text-xs text-muted-foreground">ID do lead: {leadId ?? 'desconhecido'}</span>
-          <div className="flex items-center gap-2">
-            <DrawerClose asChild>
-              <Button type="button" variant="outline">
-                Fechar
-              </Button>
-            </DrawerClose>
-
-          </div>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+        {contactId ? (
+          <ContactTaskDialog
+            open={taskOpen}
+            onOpenChange={setTaskOpen}
+            contact={{ id: contactId, name: lead?.name }}
+          />
+        ) : null}
+      </SheetContent>
+    </Sheet>
   );
 };
 

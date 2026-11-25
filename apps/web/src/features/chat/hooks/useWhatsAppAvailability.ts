@@ -13,6 +13,19 @@ interface UseWhatsAppAvailabilityInput {
   selectedTicketId?: string | null;
 }
 
+// Só oferecemos "Reconectar ao WhatsApp" quando a falha é de conexão do número/broker.
+const CONNECTION_ERROR_CODES = new Set([
+  'BROKER_ERROR',
+  'BROKER_TIMEOUT',
+  'BROKER_NOT_CONFIGURED',
+  'INSTANCE_NOT_CONNECTED',
+  'INSTANCE_DISCONNECTED',
+  'WHATSAPP_NOT_CONFIGURED',
+]);
+
+const isConnectionError = (code: string | null | undefined) =>
+  typeof code === 'string' && (CONNECTION_ERROR_CODES.has(code) || code.startsWith('BROKER_') || code.startsWith('INSTANCE_'));
+
 export const useWhatsAppAvailability = ({ selectedTicketId }: UseWhatsAppAvailabilityInput) => {
   const [unavailability, setUnavailability] = useState<ReturnType<typeof resolveWhatsAppErrorCopy> | null>(null);
   const [notice, setNotice] = useState<(ReturnType<typeof resolveWhatsAppErrorCopy> & {
@@ -36,8 +49,10 @@ export const useWhatsAppAvailability = ({ selectedTicketId }: UseWhatsAppAvailab
   const notifyOutboundError = useCallback(
     (error: WhatsAppErrorLike | null | undefined, fallbackMessage: string) => {
       const fallback = fallbackMessage || 'Não foi possível enviar a mensagem.';
-      const copy = resolveWhatsAppErrorCopy(error?.payload?.code ?? error?.code, error?.message ?? fallback);
-      const title = copy.title ?? 'Falha ao enviar mensagem';
+      const rawCode =
+        error?.payload?.code ?? (error as any)?.payload?.error?.code ?? (error as any)?.error?.code ?? error?.code ?? null;
+      const copy = resolveWhatsAppErrorCopy(rawCode, error?.message ?? fallback);
+      const title = copy.title ?? 'Mensagem não enviada';
       const recoveryHint =
         typeof error?.payload?.recoveryHint === 'string'
           ? error.payload.recoveryHint
@@ -56,12 +71,14 @@ export const useWhatsAppAvailability = ({ selectedTicketId }: UseWhatsAppAvailab
 
       toast.error(title, { description: enrichedDescription });
 
+      const offerReconnect = isConnectionError(copy.code);
       const banner = {
         ...copy,
+        title,
         description: enrichedDescription,
         requestId,
-        action: 'refresh_instances' as const,
-        actionLabel: 'Reconectar ao WhatsApp',
+        action: offerReconnect ? ('refresh_instances' as const) : null,
+        actionLabel: offerReconnect ? 'Reconectar ao WhatsApp' : null,
         queuedMessageId:
           typeof error?.payload?.error?.queuedMessageId === 'string'
             ? error.payload.error.queuedMessageId

@@ -23,13 +23,10 @@
   "include": [
     "src",
     "scripts",
-    "vite.config.ts",
     "vite.config.js",
     "vite.build.ci.mjs",
     "server.mjs",
     "server.proxy-helpers.mjs",
-    "tailwind.config.ts",
-    "tailwind.tokens.js",
     "../../packages/contracts/src/**/*.ts",
     "../../packages/shared/src/**/*.ts",
     "../../packages/wa-contracts/src/**/*.ts"

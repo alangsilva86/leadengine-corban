@@ -1,12 +1,11 @@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet.jsx';
-import { ScrollArea } from '@/components/ui/scroll-area.jsx';
-import { Separator } from '@/components/ui/separator.jsx';
 import { cn } from '@/lib/utils.js';
 
+/** Painel do contato como folha sobreposta (telas abaixo de 1440px). */
 const ConversationDetailsDrawer = ({
   open,
   onOpenChange,
-  title = 'Detalhes do atendimento',
+  title = 'Detalhes do contato',
   description = null,
   children,
   className,
@@ -15,23 +14,13 @@ const ConversationDetailsDrawer = ({
     <SheetContent
       side="right"
       {...(!description ? { 'aria-describedby': undefined } : {})}
-      className={cn(
-        'border-l border-[color:var(--color-inbox-border)] bg-[color:var(--surface-overlay-strong)] p-0 sm:max-w-md',
-        className,
-      )}
+      className={cn('w-full gap-0 border-l border-border bg-surface p-0 sm:max-w-sm', className)}
     >
-      <SheetHeader className="px-6 py-5">
-        <SheetTitle className="text-base font-semibold text-[color:var(--color-inbox-foreground)]">
-          {title}
-        </SheetTitle>
-        {description ? (
-          <SheetDescription>{description}</SheetDescription>
-        ) : null}
+      <SheetHeader className="border-b border-border px-4 py-3.5">
+        <SheetTitle className="pr-8 text-sm font-semibold text-foreground">{title}</SheetTitle>
+        {description ? <SheetDescription>{description}</SheetDescription> : null}
       </SheetHeader>
-      <Separator className="border-[color:var(--color-inbox-border)]" />
-      <ScrollArea className="min-h-0 flex-1 px-6 py-6">
-        <div className="space-y-6">{children}</div>
-      </ScrollArea>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
     </SheetContent>
   </Sheet>
 );

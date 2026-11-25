@@ -13,9 +13,9 @@ export const pairingPhoneSchema = z
 export const createInstanceSchema = z
   .object({
     name: z
-      .string({ required_error: 'Informe um nome para a instância.' })
+      .string({ required_error: 'Informe um nome para o número.' })
       .trim()
-      .min(1, 'Informe um nome para a instância.'),
+      .min(1, 'Informe um nome para o número.'),
     id: z
       .string()
       .trim()
@@ -31,21 +31,21 @@ export const createInstanceSchema = z
 export const createCampaignSchema = z
   .object({
     name: z
-      .string({ required_error: 'Informe o nome da campanha.' })
+      .string({ required_error: 'Informe o nome da regra.' })
       .trim()
-      .min(1, 'Informe o nome da campanha.'),
+      .min(1, 'Informe o nome da regra.'),
     instanceId: z
-      .string({ required_error: 'Escolha a instância que será vinculada à campanha.' })
+      .string({ required_error: 'Escolha o número que vai receber os leads da regra.' })
       .trim()
-      .min(1, 'Escolha a instância que será vinculada à campanha.'),
+      .min(1, 'Escolha o número que vai receber os leads da regra.'),
     agreementId: z
-      .string({ required_error: 'Selecione a origem responsável pela campanha.' })
+      .string({ required_error: 'Informe a origem dos leads.' })
       .trim()
-      .min(1, 'Selecione a origem responsável pela campanha.'),
+      .min(1, 'Informe a origem dos leads.'),
     agreementName: z
-      .string({ required_error: 'Informe o nome da origem.' })
+      .string({ required_error: 'Informe o nome da origem dos leads.' })
       .trim()
-      .min(1, 'Informe o nome da origem.'),
+      .min(1, 'Informe o nome da origem dos leads.'),
     product: z
       .string({ required_error: 'Selecione o produto principal.' })
       .trim()
@@ -68,7 +68,7 @@ export const createCampaignSchema = z
       .min(1, 'Selecione a estratégia operacional.'),
     status: z
       .enum(['active', 'paused', 'draft'], {
-        required_error: 'Escolha o status inicial da campanha.',
+        required_error: 'Escolha o status inicial da regra.',
       })
       .default('active'),
     leadSource: z.enum(['inbound', 'internal_list', 'partner'], {
