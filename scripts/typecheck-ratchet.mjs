@@ -43,10 +43,24 @@ const runPnpm = (args) => {
   }
 };
 
+// Pacotes referenciados pela API (project references): o typecheck da API lê as declarações (.d.ts)
+// emitidas por `tsc -b`. Sem elas, cada import vira TS6305 e esconde os erros reais daquele arquivo,
+// e a contagem passa a depender do que estiver compilado na máquina.
+const REFERENCED_PACKAGES = ['packages/contracts', 'packages/shared', 'packages/core', 'packages/storage', 'packages/wa-contracts'];
+
 if (prepare) {
-  console.log('Preparando: cliente Prisma e build dos pacotes compartilhados…');
+  console.log('Preparando: cliente Prisma e declarações dos pacotes referenciados…');
   runPnpm(['--filter', '@ticketz/storage', 'run', 'prisma:generate']);
-  runPnpm(['run', 'build:libs']);
+  // --force: o tsup (build:libs) limpa o dist, mas o tsbuildinfo continua dizendo que as declarações
+  // estão em dia; sem forçar, o tsc -b não as reemite e voltam os TS6305.
+  const build = spawnSync(process.execPath, [tscBin, '-b', '--force', ...REFERENCED_PACKAGES.map((dir) => join(ROOT, dir))], {
+    cwd: ROOT,
+    stdio: 'inherit',
+  });
+  if (build.status !== 0) {
+    console.error('\nFalha ao gerar as declarações dos pacotes (tsc -b).');
+    process.exit(build.status ?? 1);
+  }
 }
 
 const ERROR_LINE = /^(.+?)\((\d+),(\d+)\): error (TS\d+):/;
