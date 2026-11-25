@@ -7,7 +7,7 @@
 #   migrate           workspace completo para `prisma migrate deploy` (one-off)
 # ============================================================================
 
-ARG NODE_VERSION=20.19.5
+ARG NODE_VERSION=22.22.2
 
 # ----------------------------------------------------------------------------
 # base: Node + pnpm (versão do packageManager, via Corepack) + OpenSSL para o Prisma

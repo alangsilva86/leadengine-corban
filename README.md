@@ -91,7 +91,7 @@ Cada pasta tem owner claro:
 
 ### Execução local para validar o piloto
 
-Com Node 20.19, pnpm 9.12.3 e Docker, use PostgreSQL e Redis locais. Se as portas estiverem livres, inicie os serviços com `docker compose up -d postgres redis`. Para usar serviços já iniciados, ajuste as portas no arquivo de ambiente.
+Com Node 22 (`nvm use` lê o `.nvmrc`, 22.22.2), pnpm 9.12.3 e Docker, use PostgreSQL e Redis locais. Se as portas estiverem livres, inicie os serviços com `docker compose up -d postgres redis`. Para usar serviços já iniciados, ajuste as portas no arquivo de ambiente.
 
 ```bash
 corepack enable
@@ -115,7 +115,7 @@ O teste `tests/playwright/corban-pilot.spec.ts` usa uma base descartável com o 
 O ambiente local valida a entrada assinada de WhatsApp e o CRM. O envio com número oficial, a formalização bancária e a telefonia dependem de ambientes de homologação próprios.
 
 ### 0. Requisitos de bordo
-- Node.js `>=20.19 <21` (use Volta/nvm/asdf). `corepack enable` habilita pnpm.
+- Node.js `>=22.12 <23` (versão fixada em `.nvmrc`/`.node-version`: 22.22.2; use Volta/nvm/asdf). `corepack enable` habilita pnpm.
 - pnpm `9.12.3` (já travado via `packageManager`).
 - PostgreSQL 15+ e Redis 7 (ou use Docker Compose).
 - Docker + Docker Compose (opcional, mas recomendado para o pacote completo).

@@ -4,7 +4,7 @@ Este teste automatizado garante que a geração de inbox por `instanceId` respon
 
 ## Pré-requisitos
 
-- Node.js >= 20.19 (alinhado com `.nvmrc`).
+- Node.js 22 (`>=22.12 <23`, alinhado com `.nvmrc`).
 - pnpm 9.12.x (`corepack enable`).
 - Browsers Playwright instalados (`pnpm exec playwright install chromium`).
 - Dependências de sistema para Chromium (`pnpm exec playwright install-deps` em ambientes baseados em Ubuntu/Debian).

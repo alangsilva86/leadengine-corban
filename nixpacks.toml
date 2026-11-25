@@ -1,16 +1,17 @@
 # Build da API no Railway (nixpacks). Detalhes e histórico em DEPLOY_GUIDE.md ("Railway / nixpacks").
 #
-# O package.json raiz exige node >=20.19 <21 e pnpm 9.12.3 com engine-strict=true; versões
+# O package.json raiz exige node >=22.12 <23 e pnpm 9.12.3 com engine-strict=true; versões
 # diferentes abortam o `pnpm install` com ERR_PNPM_UNSUPPORTED_ENGINE.
-# - Node: o archive padrão do nixpacks para Node 20 traz 20.18.1, então fixamos um archive
-#   do nixpkgs em que nodejs_20 = 20.19.5 (o mesmo que o nixpacks 1.41 usa para Node 24).
+# - Node: fixamos um archive do nixpkgs (nixpkgs-unstable, abr/2026) em que nodejs_22 = 22.22.2,
+#   a mesma versão do .nvmrc e das imagens Docker (o archive padrão do nixpacks 1.41 para Node 22
+#   traz 22.14.0). As saídas x86_64-linux e aarch64-linux estão no cache.nixos.org (sem compilar).
 # - pnpm: vem do campo packageManager via Corepack (o que o provider Node faz por padrão e
 #   que a lista de comandos abaixo substitui); o pnpm do nixpkgs é 9.15.x.
 # - openssl: o provider o adiciona quando há Prisma, mas uma lista nixPkgs própria o remove.
 
 [phases.setup]
-nixPkgs = ['nodejs_20', 'openssl']
-nixpkgsArchive = '23f9169c4ccce521379e602cc82ed873a1f1b52b'
+nixPkgs = ['nodejs_22', 'openssl']
+nixpkgsArchive = '01fbdeef22b76df85ea168fbfe1bfd9e63681b30'
 
 [phases.install]
 cmds = [

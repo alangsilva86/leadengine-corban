@@ -8,7 +8,7 @@
 # para API_UPSTREAM (padrão http://api:4000, resolvido no momento da requisição).
 # ============================================================================
 
-ARG NODE_VERSION=20.19.5
+ARG NODE_VERSION=22.22.2
 
 # ----------------------------------------------------------------------------
 # build: workspace instalado pelo lockfile e bundle estático do Vite

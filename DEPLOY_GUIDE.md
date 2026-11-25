@@ -147,7 +147,7 @@ As duas imagens são construídas a partir da **raiz** do monorepo (o `.dockerig
 
 | Imagem | Comando | Runtime |
 | --- | --- | --- |
-| API | `docker build -f apps/api/Dockerfile -t ticketz-api .` | `node:20.19.5-bookworm-slim`, usuário `node`, `node dist/server.mjs` na porta `4000`, healthcheck em `/ready` |
+| API | `docker build -f apps/api/Dockerfile -t ticketz-api .` | `node:22.22.2-bookworm-slim`, usuário `node`, `node dist/server.mjs` na porta `4000`, healthcheck em `/ready` |
 | Migrações | `docker build -f apps/api/Dockerfile --target migrate -t ticketz-api-migrate .` | workspace completo; executa `pnpm run db:migrate:deploy` |
 | Web | `docker build -f apps/web/Dockerfile -t ticketz-web --build-arg VITE_API_URL=... .` | `nginx-unprivileged` (uid 101) na porta **8080**, `/health` |
 
@@ -166,7 +166,7 @@ O ambiente da Render deve ser dividido em **dois serviços**: a API (serviço No
 | --- | --- |
 | Build Command | `bash scripts/build-api-render.sh` |
 | Start Command | `NODE_ENV=production NODE_OPTIONS="--max-old-space-size=320" node apps/api/dist/server.mjs` |
-| Node version | Defina `NODE_VERSION=20` (ou deixe o Render usar a versão declarada no `package.json`) |
+| Node version | Defina `NODE_VERSION=22.22.2` (ou deixe o Render ler o `.node-version`/`.nvmrc`; o `package.json` exige `>=22.12 <23`) |
 
 - **Cache**: habilite o diretório `./.pnpm-store` no menu de _Build Cache_ da Render. Os scripts já exportam `PNPM_STORE_PATH=.pnpm-store`, portanto a restauração será automática entre deploys.
 - **Migrações**: utilize um _background worker_ ou _job manual_ com `pnpm run db:migrate:deploy` antes de promover novas releases. O script aplica `prisma migrate deploy` com limite de conexões (1 por padrão) e repetirá automaticamente em caso de saturação temporária do Postgres.
@@ -222,14 +222,16 @@ O serviço da API no Railway é construído pelo `nixpacks.toml` da raiz:
 
 | Fase | Comandos |
 | --- | --- |
-| setup | `nodejs_20` + `openssl` do nixpkgs `23f9169c4ccce521379e602cc82ed873a1f1b52b` (Node 20.19.5) |
+| setup | `nodejs_22` + `openssl` do nixpkgs `01fbdeef22b76df85ea168fbfe1bfd9e63681b30` (Node 22.22.2) |
 | install | `npm install -g corepack@0.24.1 && corepack enable` → `pnpm install --frozen-lockfile --prefer-offline` |
 | build | `pnpm --filter @ticketz/storage run prisma:generate` → `pnpm --filter @ticketz/api run build` |
 | start | `pnpm --filter @ticketz/api run start` (`node dist/server.mjs`) |
 
 Por que o arquivo mudou (nov/2026):
 
-- O `package.json` raiz exige `node >=20.19 <21` e `pnpm 9.12.3` com `engine-strict=true`. A configuração anterior (`nixPkgs = ['nodejs-20_x', 'pnpm']`) entregava, no nixpacks 1.41, Node **20.18.1** e o pnpm do nixpkgs (**9.15.x**); as duas versões fazem o `pnpm install` abortar com `ERR_PNPM_UNSUPPORTED_ENGINE` (reproduzido localmente). Agora o Node vem de um archive do nixpkgs com 20.19.5 (o mesmo que o nixpacks usa para Node 24) e o pnpm exato vem do Corepack, como o provider Node do nixpacks já faz por padrão quando existe `packageManager`.
+- O `package.json` raiz exige `node >=22.12 <23` e `pnpm 9.12.3` com `engine-strict=true`. A configuração anterior (`nixPkgs = ['nodejs-20_x', 'pnpm']`) entregava, no nixpacks 1.41, Node **20.18.1** e o pnpm do nixpkgs (**9.15.x**); as duas versões faziam o `pnpm install` abortar com `ERR_PNPM_UNSUPPORTED_ENGINE`. O pnpm exato vem do Corepack, como o provider Node do nixpacks já faz por padrão quando existe `packageManager`.
+- **Node 22 (nov/2026)**: o Node 20 saiu de suporte (EOL em abr/2026) e o AWS SDK v3 exige Node 22 a partir de jan/2027. O archive `01fbdeef22b76df85ea168fbfe1bfd9e63681b30` (nixpkgs-unstable, 23/abr/2026) tem `nodejs_22 = 22.22.2`, a mesma versão do `.nvmrc` e das imagens Docker. Como foi verificado: o `pkgs/development/web/nodejs/v22.nix` desse commit declara `version = "22.22.2"` com `sha256 = b6bedd3a…3132`, igual ao `node-v22.22.2.tar.xz` do `SHASUMS256.txt` oficial do nodejs.org; o commit é ancestral de `nixpkgs-unstable`; e as saídas `x86_64-linux` (`/nix/store/6x6v11xjf0psckgqmyhfyhw9bdma0rn6-nodejs-22.22.2`) e `aarch64-linux` estão no `cache.nixos.org` (narinfo 200), então o Railway baixa o binário em vez de compilar. O archive padrão do nixpacks 1.41 para Node 22 (`e6f23dc0…`) traz 22.14.0.
+- Para atualizar o patch do Node: mude `.nvmrc`, `.node-version`, `ARG NODE_VERSION` dos dois Dockerfiles e escolha um commit do nixpkgs com a mesma versão (ex.: `curl "https://search.devbox.sh/v1/resolve?name=nodejs&version=<versão>"` devolve um commit com binário em cache; confira o `v22.nix` do commit).
 - `openssl` voltou à lista: o provider o adiciona automaticamente para projetos com Prisma, mas uma lista `nixPkgs` própria o remove.
 - Saíram os `echo`/`grep` de depuração e o `cat CACHE_BUSTER`; o `ls` do bundle virou desnecessário (o build falha se o `tsup` falhar).
 - **Não** é preciso rodar `build:libs` antes do build da API: o `tsup` empacota `@ticketz/{core,shared,storage,contracts,wa-contracts}` a partir do código-fonte (pelos `paths` do `apps/api/tsconfig.json`) e `@leadengine/wa-status` é compilado no `postinstall`. Validado com um clone limpo: build com os comandos acima, `node apps/api/dist/server.mjs` respondendo `/ready` 200 e login (consulta ao Postgres via Prisma) 200.
