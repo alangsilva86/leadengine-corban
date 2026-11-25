@@ -1,27 +1,30 @@
 import type { Request, Response } from 'express';
 import { ZodError, type z } from 'zod';
 
-import { normalizePayload } from '@ticketz/contracts';
+import { normalizePayload, type MessagePayloadInput } from '@ticketz/contracts';
 
 import { respondWithValidationError } from '../../utils/http-validation';
 
 export type NormalizedMessagePayload = ReturnType<typeof normalizePayload>;
 
-export interface ValidateMessageSendRequestResult<TSchema extends z.ZodTypeAny> {
+/** Schemas de envio (SendByTicketSchema, SendByContactSchema…): todos produzem `payload` e, às vezes, `idempotencyKey`. */
+type MessageSendSchema = z.ZodType<{ payload: MessagePayloadInput; idempotencyKey?: string | undefined }>;
+
+export interface ValidateMessageSendRequestResult<TSchema extends MessageSendSchema> {
   parsed: z.infer<TSchema>;
   payload: NormalizedMessagePayload;
-  idempotencyKey?: string;
+  idempotencyKey?: string | undefined;
 }
 
-export interface ValidateMessageSendRequestContext<TSchema extends z.ZodTypeAny>
+export interface ValidateMessageSendRequestContext<TSchema extends MessageSendSchema>
   extends ValidateMessageSendRequestResult<TSchema> {
   req: Request;
   res: Response;
-  headerIdempotencyKey?: string;
-  trimmedHeaderIdempotencyKey?: string;
+  headerIdempotencyKey?: string | undefined;
+  trimmedHeaderIdempotencyKey?: string | undefined;
 }
 
-export interface ValidateMessageSendRequestOptions<TSchema extends z.ZodTypeAny> {
+export interface ValidateMessageSendRequestOptions<TSchema extends MessageSendSchema> {
   schema: TSchema;
   req: Request;
   res: Response;
@@ -30,7 +33,7 @@ export interface ValidateMessageSendRequestOptions<TSchema extends z.ZodTypeAny>
   ) => Promise<boolean | void> | boolean | void;
 }
 
-export const validateMessageSendRequest = async <TSchema extends z.ZodTypeAny>({
+export const validateMessageSendRequest = async <TSchema extends MessageSendSchema>({
   schema,
   req,
   res,

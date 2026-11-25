@@ -57,8 +57,8 @@ const filterSchema = z.object({
   owners: z.array(z.string()).max(30).optional(),
   origins: z.array(z.string()).max(30).optional(),
   channels: z.array(z.string()).max(30).optional(),
-  inactivityDays: z.number().finite().min(0).max(3650).nullish(),
-  score: z.object({ min: z.number().finite().nullish(), max: z.number().finite().nullish() }).nullish(),
+  inactivityDays: z.number().min(0).max(3650).nullish(),
+  score: z.object({ min: z.number().nullish(), max: z.number().nullish() }).nullish(),
   dateRange: z.object({ from: z.string().nullish(), to: z.string().nullish() }).nullish(),
 });
 const parseFilters = (raw: unknown) => {

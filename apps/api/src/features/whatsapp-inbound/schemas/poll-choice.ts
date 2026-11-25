@@ -23,7 +23,7 @@ export const PollChoiceSelectedOptionSchema = z
     id: z.string().min(1, 'Option id is required'),
     title: z.string().nullable().optional(),
   })
-  .passthrough();
+  .loose();
 
 export const PollChoiceEventSchema = z.object({
   id: z.string().min(1).optional(),
@@ -45,11 +45,12 @@ export const PollChoiceEventSchema = z.object({
   selectedOptionIds: z.array(z.string().min(1)).optional(),
   selectedOptions: z.array(PollChoiceSelectedOptionSchema).optional(),
   options: z.array(PollChoiceOptionSchema).default([]),
-  aggregates: PollChoiceAggregatesSchema.optional().default({
+  // Fábrica: no zod 4 o default é só copiado em nível raso, e o optionTotals seria compartilhado entre parses.
+  aggregates: PollChoiceAggregatesSchema.optional().default(() => ({
     totalVoters: 0,
     totalVotes: 0,
     optionTotals: {},
-  }),
+  })),
   timestamp: z.string().optional().nullable(),
 });
 

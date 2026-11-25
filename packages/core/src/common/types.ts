@@ -4,10 +4,11 @@ import { z } from 'zod';
 // Base Types
 // ============================================================================
 
-export const EntityIdSchema = z.string().uuid();
+// z.guid() aceita qualquer UUID no formato 8-4-4-4-12, como o .uuid() do zod 3 (o z.uuid() do zod 4 exige RFC 9562).
+export const EntityIdSchema = z.guid();
 export type EntityId = z.infer<typeof EntityIdSchema>;
 
-export const TenantIdSchema = z.string().uuid();
+export const TenantIdSchema = z.guid();
 export type TenantId = z.infer<typeof TenantIdSchema>;
 
 export const TimestampSchema = z.date();
@@ -47,8 +48,8 @@ export const DomainEventSchema = z.object({
   aggregateId: EntityIdSchema,
   aggregateType: z.string(),
   tenantId: TenantIdSchema,
-  payload: z.record(z.unknown()),
-  metadata: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   occurredAt: TimestampSchema,
   version: z.number().int().positive(),
 });
@@ -96,7 +97,7 @@ export type PaginatedResult<T> = {
 export const PhoneNumberSchema = z.string().regex(/^\+[1-9]\d{1,14}$/);
 export type PhoneNumber = z.infer<typeof PhoneNumberSchema>;
 
-export const EmailSchema = z.string().email();
+export const EmailSchema = z.email();
 export type Email = z.infer<typeof EmailSchema>;
 
 export const DocumentSchema = z.string().min(1);

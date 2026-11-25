@@ -5,17 +5,17 @@ const isoDateString = z
   .string()
   .trim()
   .refine((value) => value.length > 0, {
-    message: 'A data não pode estar vazia quando informada.',
+    error: 'A data não pode estar vazia quando informada.',
   })
   .refine((value) => !Number.isNaN(Date.parse(value)), {
-    message: 'Use uma data/hora no formato ISO 8601 (ex.: 2025-01-01T00:00:00Z).',
+    error: 'Use uma data/hora no formato ISO 8601 (ex.: 2025-01-01T00:00:00Z).',
   });
 
 const ConfigSchema = z
   .object({
-    baseUrl: z.string().url({ message: 'LEAD_ENGINE_BROKER_BASE_URL precisa ser uma URL válida.' }),
-    creditBaseUrl: z.string().url().optional(),
-    basicToken: z.string().min(1, { message: 'LEAD_ENGINE_BASIC_TOKEN é obrigatório.' }),
+    baseUrl: z.url({ error: 'LEAD_ENGINE_BROKER_BASE_URL precisa ser uma URL válida.' }),
+    creditBaseUrl: z.url().optional(),
+    basicToken: z.string().min(1, { error: 'LEAD_ENGINE_BASIC_TOKEN é obrigatório.' }),
     timeoutMs: z.number().int().positive().default(8000),
     defaultStartDate: isoDateString.optional(),
     defaultEndDate: isoDateString.optional(),
@@ -26,7 +26,7 @@ const ConfigSchema = z
       const end = Date.parse(config.defaultEndDate);
       if (start > end) {
         ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           message: 'LEAD_ENGINE_DEFAULT_START_DATE deve ser anterior à LEAD_ENGINE_DEFAULT_END_DATE.',
           path: ['defaultStartDate'],
         });

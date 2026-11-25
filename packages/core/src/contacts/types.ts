@@ -33,11 +33,11 @@ export const ContactSchema = BaseEntitySchema.extend({
   phone: PhoneNumberSchema.optional(),
   email: EmailSchema.optional(),
   document: z.string().max(50).optional(),
-  avatar: z.string().url().optional(),
+  avatar: z.url().optional(),
   status: ContactStatusSchema.default('ACTIVE'),
   isBlocked: z.boolean().default(false),
   tags: z.array(z.string()).default([]),
-  customFields: z.record(z.unknown()).default({}),
+  customFields: z.record(z.string(), z.unknown()).default({}),
   lastInteractionAt: TimestampSchema.optional(),
   notes: z.string().max(5000).optional(),
 });
@@ -48,11 +48,11 @@ export const CreateContactPayloadSchema = z.object({
   phone: PhoneNumberSchema.optional(),
   email: EmailSchema.optional(),
   document: z.string().max(50).optional(),
-  avatar: z.string().url().optional(),
+  avatar: z.url().optional(),
   status: ContactStatusSchema.optional(),
   isBlocked: z.boolean().optional(),
   tags: z.array(z.string()).optional(),
-  customFields: z.record(z.unknown()).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
   lastInteractionAt: TimestampSchema.optional(),
   notes: z.string().max(5000).optional(),
 });
@@ -99,7 +99,7 @@ export const ContactInteractionSchema = z.object({
   channel: ContactInteractionChannelSchema,
   direction: ContactInteractionDirectionSchema,
   summary: z.string().max(500),
-  payload: z.record(z.unknown()).default({}),
+  payload: z.record(z.string(), z.unknown()).default({}),
   occurredAt: TimestampSchema,
   createdAt: TimestampSchema,
 });
@@ -109,7 +109,7 @@ export const CreateContactInteractionPayloadSchema = z.object({
   channel: ContactInteractionChannelSchema,
   direction: ContactInteractionDirectionSchema.default('INBOUND'),
   summary: z.string().min(1).max(500),
-  payload: z.record(z.unknown()).optional(),
+  payload: z.record(z.string(), z.unknown()).optional(),
   occurredAt: TimestampSchema.optional(),
 });
 export type CreateContactInteractionPayload = z.infer<typeof CreateContactInteractionPayloadSchema>;
@@ -130,7 +130,7 @@ export const ContactTaskSchema = z.object({
   dueAt: TimestampSchema.optional(),
   status: ContactTaskStatusSchema.default('PENDING'),
   assigneeId: EntityIdSchema.optional(),
-  metadata: z.record(z.unknown()).default({}),
+  metadata: z.record(z.string(), z.unknown()).default({}),
   completedAt: TimestampSchema.optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
@@ -142,7 +142,7 @@ export const CreateContactTaskPayloadSchema = z.object({
   description: z.string().max(2000).optional(),
   dueAt: TimestampSchema.optional(),
   assigneeId: EntityIdSchema.optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type CreateContactTaskPayload = z.infer<typeof CreateContactTaskPayloadSchema>;
 
@@ -159,7 +159,7 @@ export const UpdateContactTaskPayloadSchema = z.object({
   dueAt: TimestampSchema.optional(),
   status: ContactTaskStatusSchema.optional(),
   assigneeId: EntityIdSchema.optional().nullable(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   completedAt: TimestampSchema.optional().nullable(),
 });
 export type UpdateContactTaskPayload = z.infer<typeof UpdateContactTaskPayloadSchema>;
@@ -201,17 +201,17 @@ export const WhatsappActionPayloadSchema = z.object({
     .object({
       name: z.string().min(1),
       language: z.string().min(2).max(5),
-      components: z.array(z.record(z.unknown())).default([]),
+      components: z.array(z.record(z.string(), z.unknown())).default([]),
     })
     .optional(),
   message: z
     .object({
       type: z.enum(['text', 'media']),
       text: z.string().max(1000).optional(),
-      mediaUrl: z.string().url().optional(),
+      mediaUrl: z.url().optional(),
     })
     .optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type WhatsappActionPayload = z.infer<typeof WhatsappActionPayloadSchema>;
 

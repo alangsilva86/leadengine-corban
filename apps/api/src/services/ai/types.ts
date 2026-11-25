@@ -7,7 +7,7 @@ export const AiConversationMessageSchema = z
   .object({
     role: z.enum(['user', 'assistant', 'system']).default('user'),
     content: z.string().min(1),
-    timestamp: z.string().datetime().optional(),
+    timestamp: z.iso.datetime().optional(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
@@ -39,7 +39,7 @@ export const AiReplySchema = z
     id: z.string(),
     role: z.literal('assistant'),
     content: z.string(),
-    createdAt: z.string().datetime(),
+    createdAt: z.iso.datetime(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
@@ -54,8 +54,8 @@ export const AiMemorySchema = z
     topic: z.string(),
     content: z.string(),
     metadata: z.record(z.string(), z.unknown()).nullable(),
-    updatedAt: z.string().datetime(),
-    expiresAt: z.string().datetime().nullable(),
+    updatedAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime().nullable(),
   })
   .strict();
 

@@ -9,7 +9,7 @@ import { asyncHandler } from '../middleware/error-handler';
 const router = Router();
 const reference = z.string().trim().min(1).max(80);
 const nextAction = z.string().trim().min(1).max(300);
-const nextActionAt = z.string().datetime({ offset: true }).transform(s => new Date(s)).nullable().optional();
+const nextActionAt = z.iso.datetime({ offset: true }).transform(s => new Date(s)).nullable().optional();
 const createInput = z.object({
   contactId: reference, leadId: reference.optional(), agreementRef: reference,
   employmentRef: reference, productRef: reference, nextAction, nextActionAt,
@@ -18,7 +18,7 @@ const createInput = z.object({
 const stageSchema = z.string().trim().min(1).max(40).transform((value, ctx) => {
   const parsed = parseLeadStage(value);
   if (!parsed) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Etapa inválida.' });
+    ctx.addIssue({ code: 'custom', message: 'Etapa inválida.' });
     return z.NEVER;
   }
   return parsed;
@@ -50,7 +50,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
 
 router.post('/', asyncHandler(async (req: Request, res: Response) => {
   const { tenantId, id: ownerId } = req.user!;
-  const key = z.string().uuid().safeParse(req.header('Idempotency-Key'));
+  const key = z.guid().safeParse(req.header('Idempotency-Key'));
   const parsed = createInput.safeParse(req.body);
   if (!key.success || !parsed.success) {
     throw new ValidationError('Informe contato, convênio, vínculo, produto, próxima ação e a chave do cadastro.');

@@ -22,7 +22,7 @@ const PhoneSchema = z
       ctx.addIssue({
         code: 'too_small',
         minimum: MIN_LENGTH,
-        type: 'number',
+        origin: 'string',
         inclusive: true,
         message: `Informe um telefone com ao menos ${MIN_LENGTH} dígitos.`,
         path: [],
@@ -33,7 +33,7 @@ const PhoneSchema = z
       ctx.addIssue({
         code: 'too_big',
         maximum: MAX_LENGTH,
-        type: 'number',
+        origin: 'string',
         inclusive: true,
         message: `Telefone excede o limite de ${MAX_LENGTH} dígitos para E.164.`,
         path: [],

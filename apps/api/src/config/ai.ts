@@ -25,7 +25,7 @@ const aiEnvSchema = z.object({
 const parsed = aiEnvSchema.safeParse(process.env);
 
 if (!parsed.success) {
-  logger.warn('AI config env validation failed', { error: parsed.error.flatten() });
+  logger.warn('AI config env validation failed', { error: z.flattenError(parsed.error) });
 }
 
 const env = parsed.success ? parsed.data : aiEnvSchema.parse({});

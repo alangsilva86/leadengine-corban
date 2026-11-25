@@ -255,7 +255,7 @@ export const errorHandler = (
       status: 400,
       code: 'VALIDATION_ERROR',
       message: 'Invalid request data',
-      details: error.errors.map(err => ({
+      details: error.issues.map(err => ({
         path: err.path.join('.'),
         message: err.message,
         code: err.code,

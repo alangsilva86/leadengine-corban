@@ -155,7 +155,7 @@ const useWhatsappCampaignActions = ({
         segments,
       });
       if (!parsed.success) {
-        const message = parsed.error.errors[0]?.message ?? 'Falha ao validar os dados da regra.';
+        const message = parsed.error.issues[0]?.message ?? 'Falha ao validar os dados da regra.';
         throw new Error(message);
       }
 

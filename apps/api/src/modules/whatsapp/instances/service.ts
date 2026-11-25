@@ -725,7 +725,10 @@ export class WhatsAppInstanceInvalidPayloadError extends Error {
 
 export const createWhatsAppInstanceSchema = z
   .object({
-    name: z.string({ required_error: 'Nome da instância é obrigatório.' }).trim().min(1, 'Nome da instância é obrigatório.'),
+    name: z
+      .string({ error: (issue) => (issue.input === undefined ? 'Nome da instância é obrigatório.' : undefined) })
+      .trim()
+      .min(1, 'Nome da instância é obrigatório.'),
     id: z
       .string()
       .transform((value) => value.trim())

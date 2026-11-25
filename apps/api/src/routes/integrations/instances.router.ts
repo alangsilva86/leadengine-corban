@@ -152,7 +152,7 @@ const buildQrResponse = async ({
   if (!instanceId) {
     const issues: ZodIssue[] = [
       {
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         path: ['params', 'id'],
         message: INVALID_INSTANCE_ID_MESSAGE,
       },
@@ -590,7 +590,7 @@ router.get(
     if (!instanceId) {
       const issues: ZodIssue[] = [
         {
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['params', 'id'],
           message: INVALID_INSTANCE_ID_MESSAGE,
         },
@@ -881,7 +881,7 @@ router.post(
     if (!instanceId) {
       const issues: ZodIssue[] = [
         {
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['params', 'id'],
           message: INVALID_INSTANCE_ID_MESSAGE,
         },
@@ -1167,7 +1167,7 @@ router.delete(
     if (!instanceId) {
       const issues: ZodIssue[] = [
         {
-          code: z.ZodIssueCode.custom,
+          code: 'custom',
           path: ['params', 'id'],
           message: INVALID_INSTANCE_ID_MESSAGE,
         },

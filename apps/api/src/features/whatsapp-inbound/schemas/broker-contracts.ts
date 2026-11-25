@@ -61,7 +61,7 @@ const normalizeTimestamp = (value: string | number | null | undefined): string |
   }
 };
 
-const safeRecord = z.record(z.unknown()).catch(() => ({} as Record<string, unknown>));
+const safeRecord = z.record(z.string(), z.unknown()).catch(() => ({} as Record<string, unknown>));
 
 export const BrokerInboundContactSchema = z
   .object({
@@ -98,9 +98,11 @@ export const BrokerInboundEventPayloadSchema = z
     instanceId: trimmedString.optional(),
     timestamp: timestampInput,
     direction: directionInput,
-    contact: BrokerInboundContactSchema.default({}) as unknown as z.ZodType<BrokerInboundContact>,
-    message: BrokerInboundMessageSchema.default({}) as unknown as z.ZodType<BrokerInboundMessage>,
-    metadata: BrokerInboundMetadataSchema.default({}) as unknown as z.ZodType<BrokerInboundMetadata>,
+    // prefault (e não default): o valor ausente passa pelo schema, como no .default() do zod 3;
+    // assim o contato vazio ainda recebe `registrations: null` do transform.
+    contact: BrokerInboundContactSchema.prefault({}) as unknown as z.ZodType<BrokerInboundContact>,
+    message: BrokerInboundMessageSchema.prefault({}) as unknown as z.ZodType<BrokerInboundMessage>,
+    metadata: BrokerInboundMetadataSchema.prefault({}) as unknown as z.ZodType<BrokerInboundMetadata>,
   })
   .transform((payload) => {
     const normalizedTimestamp = normalizeTimestamp(payload.timestamp);
@@ -139,7 +141,7 @@ export const BrokerInboundEventSchema = z
   .superRefine((event, ctx) => {
     if (!event.type && !event.event) {
       ctx.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: 'custom',
         message: 'Expected type or event field',
         path: ['type'],
       });
@@ -247,7 +249,7 @@ export const BrokerOutboundMessageSchema = z
     previewUrl: z.boolean().optional(),
     media: z
       .object({
-        url: z.string().url(),
+        url: z.url(),
         mimetype: trimmedString.optional(),
         filename: trimmedString.optional(),
         size: z.number().int().positive().optional(),

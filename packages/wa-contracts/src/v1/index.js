@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { normalizeQrPayload } from './qr';
-const metadataSchema = z.record(z.unknown());
+const metadataSchema = z.record(z.string(), z.unknown());
 const baseSessionSchema = z.object({
     sessionId: z.string().min(1),
     instanceId: z.string().min(1).optional(),

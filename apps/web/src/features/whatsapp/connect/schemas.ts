@@ -1,9 +1,14 @@
 import { z } from 'zod';
 
+/** Mensagem quando o campo não foi enviado (equivale ao `required_error` do zod 3). */
+const requiredError = (message: string) => ({
+  error: (issue: { input?: unknown }) => (issue.input === undefined ? message : undefined),
+});
+
 const pairingPhoneSchema = z
   .object({
     phone: z
-      .string({ required_error: 'Informe o telefone que receberá o código.' })
+      .string(requiredError('Informe o telefone que receberá o código.'))
       .trim()
       .min(10, 'Informe o telefone que receberá o código.')
       .regex(/^[0-9+()\-\s]+$/, 'Use apenas números e caracteres válidos.'),
@@ -13,7 +18,7 @@ const pairingPhoneSchema = z
 const createInstanceSchema = z
   .object({
     name: z
-      .string({ required_error: 'Informe um nome para o número.' })
+      .string(requiredError('Informe um nome para o número.'))
       .trim()
       .min(1, 'Informe um nome para o número.'),
     id: z
@@ -31,23 +36,23 @@ const createInstanceSchema = z
 export const createCampaignSchema = z
   .object({
     name: z
-      .string({ required_error: 'Informe o nome da regra.' })
+      .string(requiredError('Informe o nome da regra.'))
       .trim()
       .min(1, 'Informe o nome da regra.'),
     instanceId: z
-      .string({ required_error: 'Escolha o número que vai receber os leads da regra.' })
+      .string(requiredError('Escolha o número que vai receber os leads da regra.'))
       .trim()
       .min(1, 'Escolha o número que vai receber os leads da regra.'),
     agreementId: z
-      .string({ required_error: 'Informe a origem dos leads.' })
+      .string(requiredError('Informe a origem dos leads.'))
       .trim()
       .min(1, 'Informe a origem dos leads.'),
     agreementName: z
-      .string({ required_error: 'Informe o nome da origem dos leads.' })
+      .string(requiredError('Informe o nome da origem dos leads.'))
       .trim()
       .min(1, 'Informe o nome da origem dos leads.'),
     product: z
-      .string({ required_error: 'Selecione o produto principal.' })
+      .string(requiredError('Selecione o produto principal.'))
       .trim()
       .min(1, 'Selecione o produto principal.'),
     margin: z
@@ -58,22 +63,18 @@ export const createCampaignSchema = z
           return Number.isFinite(parsed) ? parsed : value;
         }
         return value;
-      }, z.number({ required_error: 'Informe a margem desejada.' }))
+      }, z.number(requiredError('Informe a margem desejada.')))
       .refine((value) => (typeof value === 'number' ? value > 0 : false), {
-        message: 'Informe a margem desejada.',
+        error: 'Informe a margem desejada.',
       }),
     strategy: z
-      .string({ required_error: 'Selecione a estratégia operacional.' })
+      .string(requiredError('Selecione a estratégia operacional.'))
       .trim()
       .min(1, 'Selecione a estratégia operacional.'),
     status: z
-      .enum(['active', 'paused', 'draft'], {
-        required_error: 'Escolha o status inicial da regra.',
-      })
+      .enum(['active', 'paused', 'draft'], requiredError('Escolha o status inicial da regra.'))
       .default('active'),
-    leadSource: z.enum(['inbound', 'internal_list', 'partner'], {
-      required_error: 'Selecione a origem dos leads.',
-    }),
+    leadSource: z.enum(['inbound', 'internal_list', 'partner'], requiredError('Selecione a origem dos leads.')),
     marginType: z
       .string()
       .trim()

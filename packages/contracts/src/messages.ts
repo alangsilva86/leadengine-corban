@@ -29,7 +29,7 @@ const MediaPayloadBaseSchema = z
   .object({
     text: OptionalTrimmed,
     caption: OptionalTrimmed,
-    mediaUrl: z.string().url(),
+    mediaUrl: z.url(),
     mimeType: OptionalTrimmed,
     fileName: OptionalTrimmed,
     previewUrl: z.boolean().optional(),
@@ -78,7 +78,7 @@ const PollOptionObjectSchema = z
     count: z.number().int().nonnegative().optional(),
   })
   .partial()
-  .passthrough();
+  .loose();
 
 const PollOptionSchema = z.union([z.string(), PollOptionObjectSchema]);
 
@@ -86,10 +86,10 @@ const PollAggregatesSchema = z
   .object({
     totalVotes: z.number().int().nonnegative().optional(),
     totalVoters: z.number().int().nonnegative().optional(),
-    optionTotals: z.record(z.number().int().nonnegative()).optional(),
+    optionTotals: z.record(z.string(), z.number().int().nonnegative()).optional(),
   })
   .partial()
-  .passthrough();
+  .loose();
 
 const PollVoteSchema = z
   .object({
@@ -98,7 +98,7 @@ const PollVoteSchema = z
     optionIds: z.array(z.string()).optional(),
   })
   .partial()
-  .passthrough();
+  .loose();
 
 const PollDescriptorSchema = z
   .object({
@@ -114,10 +114,10 @@ const PollDescriptorSchema = z
     options: z.array(PollOptionSchema).optional(),
     selectedOptions: z.array(PollOptionSchema).optional(),
     aggregates: PollAggregatesSchema.optional(),
-    optionTotals: z.record(z.number().int().nonnegative()).optional(),
+    optionTotals: z.record(z.string(), z.number().int().nonnegative()).optional(),
   })
   .partial()
-  .passthrough();
+  .loose();
 
 const PollChoiceMetadataSchema = z
   .object({
@@ -127,14 +127,14 @@ const PollChoiceMetadataSchema = z
     options: z.array(PollOptionSchema).optional(),
   })
   .partial()
-  .passthrough();
+  .loose();
 
 const InteractivePollMetadataSchema = z
   .object({
     poll: PollDescriptorSchema.optional(),
   })
   .partial()
-  .passthrough();
+  .loose();
 
 export const PollMetadataSchema = z
   .object({
@@ -144,21 +144,21 @@ export const PollMetadataSchema = z
     interactive: InteractivePollMetadataSchema.optional(),
   })
   .partial()
-  .passthrough();
+  .loose();
 
 const LocationDescriptorSchema = z
   .object({
     latitude: z
-      .number({ required_error: 'Informe a latitude.' })
+      .number({ error: (issue) => (issue.input === undefined ? 'Informe a latitude.' : undefined) })
       .min(-90, 'Latitude deve ser >= -90.')
       .max(90, 'Latitude deve ser <= 90.'),
     longitude: z
-      .number({ required_error: 'Informe a longitude.' })
+      .number({ error: (issue) => (issue.input === undefined ? 'Informe a longitude.' : undefined) })
       .min(-180, 'Longitude deve ser >= -180.')
       .max(180, 'Longitude deve ser <= 180.'),
     name: OptionalTrimmed,
     address: OptionalTrimmed,
-    url: z.string().url().optional(),
+    url: z.url().optional(),
   })
   .strict();
 
@@ -174,7 +174,7 @@ const LocationMessagePayloadSchema = z
 const EmailSchema = z
   .string()
   .transform((value) => value.trim())
-  .pipe(z.string().email('Informe um e-mail válido.'));
+  .pipe(z.email('Informe um e-mail válido.'));
 
 const ContactEmailSchema = z
   .object({
@@ -276,7 +276,7 @@ const TemplateImageParameterSchema = z
     type: z.literal('image'),
     image: z
       .object({
-        link: z.string().url(),
+        link: z.url(),
       })
       .strict(),
   })
@@ -287,7 +287,7 @@ const TemplateDocumentParameterSchema = z
     type: z.literal('document'),
     document: z
       .object({
-        link: z.string().url(),
+        link: z.url(),
         filename: OptionalTrimmed,
       })
       .strict(),
@@ -299,7 +299,7 @@ const TemplateVideoParameterSchema = z
     type: z.literal('video'),
     video: z
       .object({
-        link: z.string().url(),
+        link: z.url(),
       })
       .strict(),
   })

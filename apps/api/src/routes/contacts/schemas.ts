@@ -1,5 +1,5 @@
 import type { Response } from 'express';
-import { ZodError, z, type ZodSchema } from 'zod';
+import { ZodError, z } from 'zod';
 import { ContactStatusSchema, ContactTaskStatusSchema } from '@ticketz/core';
 
 import { respondWithValidationError } from '../../utils/http-validation';
@@ -113,12 +113,13 @@ export const ListContactTasksQuerySchema = PaginationQuerySchema.extend({
   status: TaskStatusParamSchema,
 });
 
-export const ContactResourceIdSchema = z.union([z.string().cuid(), z.string().uuid()]);
+// z.guid() mantém a validação permissiva do .uuid() do zod 3 (o z.uuid() do zod 4 exige RFC 9562).
+export const ContactResourceIdSchema = z.union([z.cuid(), z.guid()]);
 
 export const ContactIdParamSchema = z.object({ contactId: ContactResourceIdSchema });
 export const TaskIdParamSchema = z.object({ taskId: ContactResourceIdSchema });
 
-export const parseOrRespond = <T>(schema: ZodSchema<T>, payload: unknown, res: Response): T | null => {
+export const parseOrRespond = <T>(schema: z.ZodType<T>, payload: unknown, res: Response): T | null => {
   try {
     return schema.parse(payload);
   } catch (error) {

@@ -1,5 +1,5 @@
 {
-  "total": 416,
+  "total": 405,
   "files": {
     "apps/api/src/data/lead-allocation-store.ts": 1,
     "apps/api/src/features/debug/routes/messages.ts": 1,
@@ -28,7 +28,7 @@
     "apps/api/src/routes/ai.ts": 9,
     "apps/api/src/routes/campaigns.ts": 6,
     "apps/api/src/routes/contact-tasks.ts": 3,
-    "apps/api/src/routes/contacts.ts": 12,
+    "apps/api/src/routes/contacts.ts": 11,
     "apps/api/src/routes/contacts/schemas.ts": 1,
     "apps/api/src/routes/crm.ts": 1,
     "apps/api/src/routes/integrations/whatsapp.messages.ts": 13,
@@ -36,7 +36,7 @@
     "apps/api/src/routes/leads.ts": 1,
     "apps/api/src/routes/messages.contact.ts": 2,
     "apps/api/src/routes/messages.ticket.ts": 3,
-    "apps/api/src/routes/messages/shared.ts": 2,
+    "apps/api/src/routes/messages/shared.ts": 1,
     "apps/api/src/routes/opportunities.ts": 1,
     "apps/api/src/routes/preferences.ts": 3,
     "apps/api/src/routes/queues.ts": 2,
@@ -82,7 +82,6 @@
     "apps/web/src/features/chat/actions/inventory.test.ts": 3,
     "apps/web/src/features/chat/containers/ChatCommandCenterContainer.tsx": 6,
     "apps/web/src/features/chat/hooks/useWhatsAppAvailability.ts": 11,
-    "apps/web/src/features/chat/utils/validation.ts": 9,
     "apps/web/src/features/crm/components/CrmMetricsBelt.tsx": 2,
     "apps/web/src/features/crm/components/CrmSavedViewsMenu.tsx": 10,
     "apps/web/src/features/crm/components/CrmToolbar.tsx": 2,
